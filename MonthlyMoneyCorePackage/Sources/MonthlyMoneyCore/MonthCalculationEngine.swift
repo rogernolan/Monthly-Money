@@ -31,7 +31,7 @@ public enum MonthCalculationEngine {
     public static func debitsTotalExLiving(from items: [PlannedItem]) -> Decimal { fixedTotal(from: items) + transferExLivingTotal(from: items) }
     public static func projectedNetCredit(from items: [PlannedItem]) -> Decimal { creditsTotal(from: items) - debitsTotalExLiving(from: items) }
     public static func netOutgoingsDue(from items: [PlannedItem]) -> Decimal { debitsDue(from: items) - creditsDue(from: items) }
-    public static func projectedBalance(openingBalance: Decimal, from items: [PlannedItem]) -> Decimal { openingBalance + projectedNetCredit(from: items) }
+    public static func projectedBalance(openingBalance: Decimal, from items: [PlannedItem]) -> Decimal { openingBalance - netOutgoingsDue(from: items) }
 
     public static func suggestedLiving(projectedNetCredit: Decimal, livingBuffer: Decimal, monthlyBudgetFromWeekModel: Decimal, minSuggestedLiving: Decimal) -> Decimal {
         max(minSuggestedLiving, min(projectedNetCredit - livingBuffer, monthlyBudgetFromWeekModel))

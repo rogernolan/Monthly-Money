@@ -59,7 +59,7 @@ enum MonthCalculationEngine {
     }
 
     static func projectedBalance(openingBalance: Decimal, from items: [PlannedItem]) -> Decimal {
-        openingBalance + projectedNetCredit(from: items)
+        openingBalance - netOutgoingsDue(from: items)
     }
 
     static func suggestedLiving(

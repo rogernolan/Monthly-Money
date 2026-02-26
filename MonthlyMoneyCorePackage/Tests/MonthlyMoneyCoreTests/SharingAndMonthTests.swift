@@ -66,6 +66,31 @@ final class SharingAndMonthTests: XCTestCase {
         )
     }
 
+    func testProjectedBalanceMatchesDueTotalsArithmetic() {
+        let month = YearMonth(year: 2026, month: 2)
+        let accountID = UUID()
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200, isPaid: false),
+            PlannedItem(accountID: accountID, monthKey: month, type: .transfer, label: "Living expenses", amount: 500, isPaid: false),
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Salary", amount: 2000, isPaid: false)
+        ]
+
+        let openingBalance: Decimal = 1000
+        let totals = MonthCalculationEngine.calculate(
+            items: items,
+            openingBalance: openingBalance,
+            livingBuffer: 100,
+            weeklyEstimate: 100,
+            weekendEstimate: 10,
+            minSuggestedLiving: 250,
+            yearMonth: month
+        )
+
+        XCTAssertEqual(totals.netOutgoingsDue, -300)
+        XCTAssertEqual(totals.projectedBalance, openingBalance - totals.netOutgoingsDue)
+        XCTAssertEqual(totals.projectedBalance, 1300)
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(scope: .privateScope),
