@@ -1,32 +1,48 @@
-//
-//  MonthlyMoneyApp.swift
-//  MonthlyMoney
-//
-//  Created by Roger Nolan on 26/02/2026.
-//
-
 import SwiftUI
 import SwiftData
 
 @main
 struct MonthlyMoneyApp: App {
-    var sharedModelContainer: ModelContainer = {
+    let repository: AccountRepository
+
+    init() {
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            repository = AccountRepository(
+                privateStore: InMemoryAccountDataStore(scope: .privateScope),
+                sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+            )
+            return
+        }
+
         let schema = Schema([
-            Item.self,
+            Account.self,
+            PlannedItem.self,
+            Transaction.self
         ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
 
         do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
+            // CloudKit can be wired here when container identifiers are in place.
+            // v1 falls back to local persisted stores for both scopes.
+            let privateContainer = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration("PrivateStore", schema: schema, isStoredInMemoryOnly: false)]
+            )
+            let sharedContainer = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration("SharedStore", schema: schema, isStoredInMemoryOnly: false)]
+            )
+            repository = AccountRepository(
+                privateStore: SwiftDataAccountDataStore(scope: .privateScope, modelContainer: privateContainer),
+                sharedStore: SwiftDataAccountDataStore(scope: .sharedScope, modelContainer: sharedContainer)
+            )
         } catch {
             fatalError("Could not create ModelContainer: \(error)")
         }
-    }()
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ContentView(repository: repository)
         }
-        .modelContainer(sharedModelContainer)
     }
 }

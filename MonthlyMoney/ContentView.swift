@@ -1,61 +1,64 @@
-//
-//  ContentView.swift
-//  MonthlyMoney
-//
-//  Created by Roger Nolan on 26/02/2026.
-//
-
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
+    @StateObject private var state: AppState
+    private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
+    init(repository: AccountRepository) {
+        _state = StateObject(wrappedValue: AppState(repository: repository))
+    }
 
     var body: some View {
-        NavigationSplitView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
-                    } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
-                    }
-                }
-                .onDelete(perform: deleteItems)
+        TabView {
+            NavigationStack {
+                MonthView()
             }
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+            .tabItem {
+                Label("Month", systemImage: "calendar")
             }
-        } detail: {
-            Text("Select an item")
-        }
-    }
 
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
+            NavigationStack {
+                DailyView()
+            }
+            .tabItem {
+                Label("Daily", systemImage: "sun.max")
+            }
 
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
+            NavigationStack {
+                SavingsView()
+            }
+            .tabItem {
+                Label("Savings", systemImage: "banknote")
+            }
+
+            NavigationStack {
+                SinkingFundsView()
+            }
+            .tabItem {
+                Label("Sinking Funds", systemImage: "circle.grid.2x2")
+            }
+
+            NavigationStack {
+                SettingsView()
+            }
+            .tabItem {
+                Label("Settings", systemImage: "gearshape")
+            }
+        }
+        .environmentObject(state)
+        .task {
+            if !isRunningTests {
+                await state.bootstrapIfNeeded()
             }
         }
     }
 }
 
 #Preview {
-    ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
+    ContentView(
+        repository: AccountRepository(
+            privateStore: InMemoryAccountDataStore(scope: .privateScope),
+            sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+        )
+    )
 }
