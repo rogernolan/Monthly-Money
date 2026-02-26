@@ -1,0 +1,695 @@
+{
+  "builtTestProducts" : [
+    {
+      "binaryPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.xctest/Contents/MacOS/MonthlyMoneyCorePackageTests",
+      "packagePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage",
+      "productName" : "MonthlyMoneyCorePackageTests"
+    }
+  ],
+  "copyCommands" : {
+
+  },
+  "explicitTargetDependencyImportCheckingMode" : {
+    "none" : {
+
+    }
+  },
+  "generatedSourceTargetSet" : [
+
+  ],
+  "pluginDescriptions" : [
+
+  ],
+  "swiftCommands" : {
+    "C.MonthlyMoneyCore-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/sources",
+      "importPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/AccountSharingService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/DomainModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/MonthCalculationEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/Repository.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "MonthlyMoneyCore",
+      "moduleOutputPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCore.swiftmodule",
+      "objects" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.swift.o",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.swift.o",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.swift.o",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/include/MonthlyMoneyCore-Swift.h",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "monthlymoneycorepackage"
+      ],
+      "outputFileMapPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCore.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/AccountSharingService.swift",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/DomainModels.swift",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/MonthCalculationEngine.swift",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/Repository.swift"
+      ],
+      "tempsPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.MonthlyMoneyCorePackageTests-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/sources",
+      "importPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCoreTests.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "MonthlyMoneyCorePackageTests",
+      "moduleOutputPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCorePackageTests.swiftmodule",
+      "objects" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/runner.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-emit-objc-header",
+        "-emit-objc-header-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/include/MonthlyMoneyCorePackageTests-Swift.h",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "monthlymoneycorepackage"
+      ],
+      "outputFileMapPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCorePackageTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift"
+      ],
+      "tempsPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build",
+      "wholeModuleOptimization" : false
+    },
+    "C.MonthlyMoneyCoreTests-arm64-apple-macosx26.0-debug.module" : {
+      "executable" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "fileList" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/sources",
+      "importPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "inputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Tests/MonthlyMoneyCoreTests/SharingAndMonthTests.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCore.swiftmodule"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/sources"
+        }
+      ],
+      "isLibrary" : true,
+      "moduleName" : "MonthlyMoneyCoreTests",
+      "moduleOutputPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCoreTests.swiftmodule",
+      "objects" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/SharingAndMonthTests.swift.o"
+      ],
+      "otherArguments" : [
+        "-target",
+        "arm64-apple-macosx14.0",
+        "-incremental",
+        "-enable-batch-mode",
+        "-serialize-diagnostics",
+        "-index-store-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+        "-Onone",
+        "-enable-testing",
+        "-Xfrontend",
+        "-enable-cross-import-overlays",
+        "-j10",
+        "-DSWIFT_PACKAGE",
+        "-DDEBUG",
+        "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+        "-module-cache-path",
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+        "-parseable-output",
+        "-parse-as-library",
+        "-swift-version",
+        "5",
+        "-plugin-path",
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+        "-sdk",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-F",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-I",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-L",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+        "-g",
+        "-Xcc",
+        "-isysroot",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+        "-Xcc",
+        "-F",
+        "-Xcc",
+        "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+        "-Xcc",
+        "-fPIC",
+        "-Xcc",
+        "-g",
+        "-package-name",
+        "monthlymoneycorepackage"
+      ],
+      "outputFileMapPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/output-file-map.json",
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/SharingAndMonthTests.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules/MonthlyMoneyCoreTests.swiftmodule"
+        }
+      ],
+      "prepareForIndexing" : false,
+      "sources" : [
+        "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Tests/MonthlyMoneyCoreTests/SharingAndMonthTests.swift"
+      ],
+      "tempsPath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build",
+      "wholeModuleOptimization" : false
+    }
+  },
+  "swiftFrontendCommands" : {
+
+  },
+  "swiftTargetScanArgs" : {
+    "MonthlyMoneyCore" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "MonthlyMoneyCore",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-c",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/AccountSharingService.swift",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/DomainModels.swift",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/MonthCalculationEngine.swift",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/Repository.swift",
+      "-I",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/include/MonthlyMoneyCore-Swift.h",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "MonthlyMoneyCorePackageTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "MonthlyMoneyCorePackageTests",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-c",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift",
+      "-I",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-emit-objc-header",
+      "-emit-objc-header-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/include/MonthlyMoneyCorePackageTests-Swift.h",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ],
+    "MonthlyMoneyCoreTests" : [
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc",
+      "-module-name",
+      "MonthlyMoneyCoreTests",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-c",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Tests/MonthlyMoneyCoreTests/SharingAndMonthTests.swift",
+      "-I",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/Modules",
+      "-target",
+      "arm64-apple-macosx14.0",
+      "-incremental",
+      "-enable-batch-mode",
+      "-serialize-diagnostics",
+      "-index-store-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/index/store",
+      "-Onone",
+      "-enable-testing",
+      "-Xfrontend",
+      "-enable-cross-import-overlays",
+      "-j10",
+      "-DSWIFT_PACKAGE",
+      "-DDEBUG",
+      "-DSWIFT_MODULE_RESOURCE_BUNDLE_UNAVAILABLE",
+      "-module-cache-path",
+      "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/ModuleCache",
+      "-parseable-output",
+      "-parse-as-library",
+      "-swift-version",
+      "5",
+      "-plugin-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/host/plugins/testing",
+      "-sdk",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-F",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-I",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-L",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/usr/lib",
+      "-g",
+      "-Xcc",
+      "-isysroot",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX26.2.sdk",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/Frameworks",
+      "-Xcc",
+      "-F",
+      "-Xcc",
+      "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/Library/PrivateFrameworks",
+      "-Xcc",
+      "-fPIC",
+      "-Xcc",
+      "-g",
+      "-package-name",
+      "monthlymoneycorepackage",
+      "-driver-use-frontend-path",
+      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+    ]
+  },
+  "targetDependencyMap" : {
+    "MonthlyMoneyCore" : [
+
+    ],
+    "MonthlyMoneyCorePackageTests" : [
+      "MonthlyMoneyCoreTests",
+      "MonthlyMoneyCore"
+    ],
+    "MonthlyMoneyCoreTests" : [
+      "MonthlyMoneyCore"
+    ]
+  },
+  "testDiscoveryCommands" : {
+
+  },
+  "testEntryPointCommands" : {
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift" : {
+      "inputs" : [
+
+      ],
+      "outputs" : [
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift"
+        }
+      ]
+    }
+  },
+  "traitConfiguration" : {
+    "default" : {
+
+    }
+  },
+  "writeCommands" : {
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/AccountSharingService.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/DomainModels.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/MonthCalculationEngine.swift"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/Repository.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/sources"
+    },
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.derived/runner.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/sources"
+    },
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.product/Objects.LinkFileList" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<link-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.build/runner.swift.o"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/SharingAndMonthTests.swift.o"
+        }
+      ],
+      "outputFilePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCorePackageTests.product/Objects.LinkFileList"
+    },
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/sources" : {
+      "alwaysOutOfDate" : false,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<sources-file-list>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Tests/MonthlyMoneyCoreTests/SharingAndMonthTests.swift"
+        }
+      ],
+      "outputFilePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCoreTests.build/sources"
+    },
+    "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt" : {
+      "alwaysOutOfDate" : true,
+      "inputs" : [
+        {
+          "kind" : "virtual",
+          "name" : "<swift-get-version>"
+        },
+        {
+          "kind" : "file",
+          "name" : "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc"
+        }
+      ],
+      "outputFilePath" : "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/swift-version--58304C5D6DBC2206.txt"
+    }
+  }
+}

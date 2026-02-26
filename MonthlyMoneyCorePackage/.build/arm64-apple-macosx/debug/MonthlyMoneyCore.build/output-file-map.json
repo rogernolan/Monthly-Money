@@ -1,0 +1,33 @@
+{
+  "": {
+    "swift-dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/master.swiftdeps"
+  },
+  "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/AccountSharingService.swift": {
+    "dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.d",
+    "object": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.swift.o",
+    "swiftmodule": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService~partial.swiftmodule",
+    "swift-dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.swiftdeps",
+    "diagnostics": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/AccountSharingService.dia"
+  },
+  "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/DomainModels.swift": {
+    "dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.d",
+    "object": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.swift.o",
+    "swiftmodule": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels~partial.swiftmodule",
+    "swift-dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.swiftdeps",
+    "diagnostics": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/DomainModels.dia"
+  },
+  "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/MonthCalculationEngine.swift": {
+    "dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.d",
+    "object": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.swift.o",
+    "swiftmodule": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine~partial.swiftmodule",
+    "swift-dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.swiftdeps",
+    "diagnostics": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/MonthCalculationEngine.dia"
+  },
+  "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/Sources/MonthlyMoneyCore/Repository.swift": {
+    "dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.d",
+    "object": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.swift.o",
+    "swiftmodule": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository~partial.swiftmodule",
+    "swift-dependencies": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.swiftdeps",
+    "diagnostics": "/Users/rog/Development/MonthlyMoney/MonthlyMoneyCorePackage/.build/arm64-apple-macosx/debug/MonthlyMoneyCore.build/Repository.dia"
+  }
+}
