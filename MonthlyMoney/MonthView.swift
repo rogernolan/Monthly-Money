@@ -11,6 +11,7 @@ private enum MonthItemFilter: String, CaseIterable, Identifiable {
 struct MonthView: View {
     @EnvironmentObject private var state: AppState
     @State private var filter: MonthItemFilter = .all
+    @State private var activeNewEntry: NewMonthItemSeed?
 
     private var debits: [PlannedItem] {
         sorted(state.monthItems.filter { $0.type == .fixedDebit || $0.type == .transfer })
@@ -32,18 +33,29 @@ struct MonthView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            fixedHeader
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 10)
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                fixedHeader
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 10)
 
-            Divider()
+                Divider()
 
-            List {
-                itemSection(title: filter.rawValue, items: filteredItems)
+                List {
+                    itemSection(title: filter.rawValue, items: filteredItems)
+                }
+                .listStyle(.insetGrouped)
             }
-            .listStyle(.insetGrouped)
+
+            floatingAddButton
+                .padding(.trailing, 18)
+                .padding(.bottom, 10)
+                .zIndex(1)
+        }
+        .navigationDestination(item: $activeNewEntry) { seed in
+            MonthItemEditorView(newType: seed.type, dueDay: seed.dueDay)
+                .environmentObject(state)
         }
     }
 
@@ -142,6 +154,46 @@ struct MonthView: View {
         )
     }
 
+    private var todayDay: Int {
+        Calendar.current.component(.day, from: Date())
+    }
+
+    private var defaultTypeForNewEntry: PlannedItemType {
+        switch filter {
+        case .credits:
+            return .credit
+        case .all, .debits:
+            return .fixedDebit
+        }
+    }
+
+    private var floatingAddButton: some View {
+        Button {
+            activeNewEntry = NewMonthItemSeed(type: defaultTypeForNewEntry, dueDay: todayDay)
+        } label: {
+            Image(systemName: "plus")
+                .font(.headline.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(red: 0.16, green: 0.58, blue: 0.34), Color(red: 0.09, green: 0.41, blue: 0.22)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                )
+                .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+        }
+        .buttonStyle(.plain)
+        .padding(.trailing, 4)
+        .disabled(state.isSelectedMonthInPast)
+        .opacity(state.isSelectedMonthInPast ? 0.45 : 1.0)
+        .accessibilityLabel("New entry")
+    }
+
     private func amountCard(
         title: String,
         value: Decimal,
@@ -209,7 +261,7 @@ struct MonthView: View {
 
             ForEach(items) { item in
                 NavigationLink {
-                    MonthItemNotesView(item: item)
+                    MonthItemEditorView(item: item)
                         .environmentObject(state)
                 } label: {
                     HStack(spacing: 8) {
@@ -218,7 +270,7 @@ struct MonthView: View {
                             .foregroundStyle(item.type == .credit ? Color.green : Color.red)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.label)
+                            Text(item.label.isEmpty ? " " : item.label)
                             Text(dueText(item))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -320,39 +372,121 @@ struct MonthView: View {
     }
 }
 
-private struct MonthItemNotesView: View {
+private struct MonthItemEditorView: View {
     @EnvironmentObject private var state: AppState
-    let item: PlannedItem
-    @State private var notes: String
+    @Environment(\.dismiss) private var dismiss
+    private let item: PlannedItem?
+    @State private var draft: MonthItemEditorDraft
 
     init(item: PlannedItem) {
         self.item = item
-        _notes = State(initialValue: item.notes)
+        _draft = State(initialValue: MonthItemEditorDraft(item: item))
+    }
+
+    init(newType: PlannedItemType, dueDay: Int?) {
+        item = nil
+        _draft = State(initialValue: MonthItemEditorDraft(newType: newType, dueDay: dueDay))
     }
 
     var body: some View {
         Form {
+            Section("Details") {
+                TextField("Name", text: $draft.label)
+                    .disabled(!isEditable)
+
+                Picker("Type", selection: $draft.entryKind) {
+                    ForEach(MonthEntryKind.allCases) { kind in
+                        Text(kind.title).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!isEditable)
+
+                TextField("Amount", text: $draft.amountText)
+                    .keyboardType(.decimalPad)
+                    .disabled(!isEditable)
+
+                Picker("Day", selection: $draft.dueSelection) {
+                    Text("Floating").tag(MonthDueSelection.floating)
+                    ForEach(1...31, id: \.self) { day in
+                        Text(ordinal(day)).tag(MonthDueSelection.day(day))
+                    }
+                }
+                .disabled(!isEditable)
+            }
+
             Section("Notes") {
-                TextEditor(text: $notes)
+                TextEditor(text: $draft.notes)
                     .frame(minHeight: 160)
+                    .disabled(!isEditable)
             }
         }
-        .navigationTitle(item.label)
+        .navigationTitle(draft.label.isEmpty ? "Entry" : draft.label)
+        .onChange(of: draft.amountText) { _, _ in
+            draft.normalizeAmountInput()
+        }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
-                Button("Save") {
-                    state.update(
-                        item: item,
-                        label: item.label,
-                        amount: item.amount,
-                        dueDay: item.dueDay,
-                        dueText: item.dueText,
-                        notes: notes
-                    )
+                if isEditable {
+                    Button("Save") {
+                        save()
+                    }
+                    .disabled(!draft.canSave)
                 }
             }
         }
     }
+
+    private var isEditable: Bool {
+        !state.isSelectedMonthInPast
+    }
+
+    private func save() {
+        if let item {
+            state.update(
+                item: item,
+                label: draft.label,
+                amount: draft.amount,
+                dueDay: draft.dueSelection.value,
+                dueText: nil,
+                type: draft.resolvedType(existingItemType: item.type),
+                notes: draft.notes
+            )
+            dismiss()
+            return
+        }
+        if state.createEntry(
+            type: draft.resolvedType(),
+            label: draft.label,
+            amount: draft.amount,
+            dueDay: draft.dueSelection.value,
+            notes: draft.notes
+        ) != nil {
+            dismiss()
+        }
+    }
+
+    private func ordinal(_ day: Int) -> String {
+        let remainder100 = day % 100
+        let suffix: String
+        if remainder100 >= 11 && remainder100 <= 13 {
+            suffix = "th"
+        } else {
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(day)\(suffix)"
+    }
+}
+
+private struct NewMonthItemSeed: Identifiable, Hashable {
+    let id = UUID()
+    let type: PlannedItemType
+    let dueDay: Int?
 }
 
 private struct EditableCurrencyField: View {
