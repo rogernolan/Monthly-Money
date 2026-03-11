@@ -1,59 +1,78 @@
 import Foundation
 
-public enum AccountSharingError: Error, Equatable {
-    case accountNotFound
-    case accountAlreadyShared
+public enum BudgetSharingError: Error, Equatable {
+    case budgetNotFound
+    case budgetAlreadyShared
     case reverseMigrationNotSupported
     case invalidMonthKey
 }
 
-public protocol AccountShareProvider {
-    func createShare(for account: Account) throws
+public protocol BudgetShareProvider: AnyObject {
+    func createShare(for budget: Budget) throws
 }
 
-public struct NoOpAccountShareProvider: AccountShareProvider {
-    public init() {}
-    public func createShare(for account: Account) throws {}
+public final class NoOpBudgetShareProvider: BudgetShareProvider {
+    public static let shared = NoOpBudgetShareProvider()
+
+    private init() {}
+
+    public func createShare(for budget: Budget) throws {}
 }
 
-public final class AccountSharingService {
+public final class BudgetSharingService {
     private let repository: AccountRepository
-    private let shareProvider: AccountShareProvider
+    private let shareProvider: BudgetShareProvider
 
-    public init(repository: AccountRepository, shareProvider: AccountShareProvider = NoOpAccountShareProvider()) {
+    public init(repository: AccountRepository, shareProvider: BudgetShareProvider = NoOpBudgetShareProvider.shared) {
         self.repository = repository
         self.shareProvider = shareProvider
     }
 
     @discardableResult
-    public func shareAccount(accountID: UUID, participantsSelection: [String]) throws -> Account {
-        if try repository.sharedAccount(id: accountID) != nil {
-            throw AccountSharingError.reverseMigrationNotSupported
-        }
-        guard let privateAccount = try repository.privateAccount(id: accountID) else {
-            throw AccountSharingError.accountNotFound
-        }
-        guard privateAccount.storageScope == .privateScope else {
-            throw AccountSharingError.accountAlreadyShared
+    public func shareBudget(participantsSelection: [String]) throws -> Budget {
+        _ = participantsSelection
+
+        if try repository.sharedBudget() != nil {
+            throw BudgetSharingError.reverseMigrationNotSupported
         }
 
-        let dependents = try repository.privateDependents(accountID: accountID)
-        let sharedAccount = Account(
-            id: privateAccount.id,
-            name: privateAccount.name,
-            role: privateAccount.role,
-            type: privateAccount.type,
-            ownerParticipantID: privateAccount.ownerParticipantID,
-            accessMode: participantsSelection.isEmpty ? .sharedWithAll : .sharedWithSome,
-            sharedWithParticipantIDs: participantsSelection,
-            storageScope: .sharedScope
+        guard let snapshot = try repository.localBudgetSnapshot() else {
+            throw BudgetSharingError.budgetNotFound
+        }
+
+        guard snapshot.budget.sharingState == .local else {
+            throw BudgetSharingError.budgetAlreadyShared
+        }
+
+        let sharedBudget = Budget(
+            id: snapshot.budget.id,
+            name: snapshot.budget.name,
+            ownerParticipantID: snapshot.budget.ownerParticipantID,
+            sharingState: .shared
         )
 
-        let sharedPlannedItems = try dependents.plannedItems.map { item -> PlannedItem in
-            guard let monthKey = YearMonth(rawValue: item.monthKey) else { throw AccountSharingError.invalidMonthKey }
+        let sharedAccounts = snapshot.accounts.map { account in
+            Account(
+                id: account.id,
+                budgetID: sharedBudget.id,
+                name: account.name,
+                role: account.role,
+                type: account.type,
+                ownerParticipantID: account.ownerParticipantID,
+                accessMode: account.accessMode,
+                sharedWithParticipantIDs: account.sharedWithParticipantIDs,
+                storageScope: .sharedScope
+            )
+        }
+
+        let sharedPlannedItems = try snapshot.plannedItems.map { item -> PlannedItem in
+            guard let monthKey = YearMonth(rawValue: item.monthKey) else {
+                throw BudgetSharingError.invalidMonthKey
+            }
             return PlannedItem(
                 id: item.id,
-                accountID: sharedAccount.id,
+                budgetID: sharedBudget.id,
+                accountID: item.accountID,
                 monthKey: monthKey,
                 type: item.type,
                 label: item.label,
@@ -65,20 +84,28 @@ public final class AccountSharingService {
             )
         }
 
-        let sharedTransactions = try dependents.transactions.map { transaction -> Transaction in
-            guard let monthKey = YearMonth(rawValue: transaction.monthKey) else { throw AccountSharingError.invalidMonthKey }
+        let sharedTransactions = try snapshot.transactions.map { transaction -> Transaction in
+            guard let monthKey = YearMonth(rawValue: transaction.monthKey) else {
+                throw BudgetSharingError.invalidMonthKey
+            }
             return Transaction(
                 id: transaction.id,
-                accountID: sharedAccount.id,
+                budgetID: sharedBudget.id,
+                accountID: transaction.accountID,
                 monthKey: monthKey,
                 amount: transaction.amount,
                 note: transaction.note
             )
         }
 
-        try repository.deletePrivate(accountID: accountID)
-        try repository.insertShared(account: sharedAccount, plannedItems: sharedPlannedItems, transactions: sharedTransactions)
-        try shareProvider.createShare(for: sharedAccount)
-        return sharedAccount
+        try repository.insertShared(
+            budget: sharedBudget,
+            accounts: sharedAccounts,
+            plannedItems: sharedPlannedItems,
+            transactions: sharedTransactions
+        )
+        try repository.deleteLocalBudget(id: snapshot.budget.id)
+        try shareProvider.createShare(for: sharedBudget)
+        return sharedBudget
     }
 }

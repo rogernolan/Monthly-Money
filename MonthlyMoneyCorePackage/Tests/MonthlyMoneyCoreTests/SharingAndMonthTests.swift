@@ -15,57 +15,84 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(transaction.budgetID, budget.id)
     }
 
-    func testNewAccountsDefaultToOwnerOnlyAndPrivate() throws {
+    func testNewAccountsAttachToActiveLocalBudget() throws {
         let repository = makeRepository()
         let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
-        XCTAssertEqual(account.accessMode, .ownerOnly)
-        XCTAssertEqual(account.storageScope, .privateScope)
+        XCTAssertEqual(account.budgetID, try repository.activeBudget()?.id)
+        XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
     }
 
-    func testShareAccountMovesRecordsToSharedAndPreservesTotals() throws {
-        let repository = makeRepository()
+    func testShareBudgetMigratesWholeBudgetAndPreservesTotals() throws {
+        let privateStore = InMemoryAccountDataStore(scope: .privateScope)
+        let sharedStore = InMemoryAccountDataStore(scope: .sharedScope)
+        let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
         let account = try repository.createAccount(name: "Bills", role: .regular, type: .current, ownerParticipantID: "owner")
         let month = YearMonth(year: 2026, month: 2)
         try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200), in: .privateScope)
         try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .credit, label: "Salary", amount: 2500), in: .privateScope)
+        try repository.createTransaction(Transaction(accountID: account.id, monthKey: month, amount: 100, note: "Stub"), in: .privateScope)
 
-        let before = try repository.plannedItems(for: month, scope: .myView)
+        let before = try repository.plannedItems(for: month)
         let beforeTotals = MonthCalculationEngine.calculate(items: before, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
 
-        let service = AccountSharingService(repository: repository)
-        _ = try service.shareAccount(accountID: account.id, participantsSelection: ["p2"])
+        let service = BudgetSharingService(repository: repository)
+        let sharedBudget = try service.shareBudget(participantsSelection: ["p2"])
 
-        XCTAssertNil(try repository.privateAccount(id: account.id))
-        XCTAssertNotNil(try repository.sharedAccount(id: account.id))
-        XCTAssertTrue(try repository.privateDependents(accountID: account.id).plannedItems.isEmpty)
+        XCTAssertEqual(sharedBudget.sharingState, .shared)
+        XCTAssertEqual(try repository.activeBudget()?.id, sharedBudget.id)
+        XCTAssertTrue(try privateStore.fetchBudgets().isEmpty)
+        XCTAssertTrue(try privateStore.fetchAccounts().isEmpty)
+        XCTAssertTrue(try privateStore.fetchPlannedItems(accountIDs: [account.id], monthKey: nil).isEmpty)
+        XCTAssertTrue(try privateStore.fetchTransactions(accountIDs: [account.id]).isEmpty)
+        XCTAssertEqual(try sharedStore.fetchBudgets().map(\.id), [sharedBudget.id])
+        XCTAssertEqual(try sharedStore.fetchAccounts().map(\.id), [account.id])
+        XCTAssertEqual(try sharedStore.fetchPlannedItems(accountIDs: [account.id], monthKey: month).count, 2)
+        XCTAssertEqual(try sharedStore.fetchTransactions(accountIDs: [account.id]).count, 1)
 
-        let after = try repository.plannedItems(for: month, scope: .myView)
+        let after = try repository.plannedItems(for: month)
         let afterTotals = MonthCalculationEngine.calculate(items: after, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
         XCTAssertEqual(beforeTotals, afterTotals)
     }
 
-    func testViewScopes() throws {
-        let repository = makeRepository()
-        let privateOnly = try repository.createAccount(name: "Private", role: .regular, type: .current, ownerParticipantID: "owner")
-        let toShare = try repository.createAccount(name: "Share", role: .regular, type: .current, ownerParticipantID: "owner")
-        try AccountSharingService(repository: repository).shareAccount(accountID: toShare.id, participantsSelection: [])
+    func testActiveBudgetScope() throws {
+        let privateStore = InMemoryAccountDataStore(scope: .privateScope)
+        let sharedStore = InMemoryAccountDataStore(scope: .sharedScope)
 
-        let sharedIDs = try repository.accountIDs(for: .sharedView)
-        XCTAssertTrue(sharedIDs.contains(toShare.id))
-        XCTAssertFalse(sharedIDs.contains(privateOnly.id))
+        let localBudget = Budget(name: "Local", ownerParticipantID: "owner", sharingState: .local)
+        let sharedBudget = Budget(name: "Shared", ownerParticipantID: "owner", sharingState: .shared)
+        try privateStore.upsertBudget(localBudget)
+        try sharedStore.upsertBudget(sharedBudget)
 
-        let myIDs = try repository.accountIDs(for: .myView)
-        XCTAssertTrue(myIDs.contains(privateOnly.id))
-        XCTAssertTrue(myIDs.contains(toShare.id))
+        let localAccount = Account(budgetID: localBudget.id, name: "Current", role: .regular, type: .current)
+        let sharedAccount = Account(budgetID: sharedBudget.id, name: "Joint", role: .regular, type: .current)
+        try privateStore.upsertAccount(localAccount)
+        try sharedStore.upsertAccount(sharedAccount)
+
+        let month = YearMonth(year: 2026, month: 2)
+        try privateStore.upsertPlannedItems([
+            PlannedItem(budgetID: localBudget.id, accountID: localAccount.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200)
+        ])
+        try sharedStore.upsertPlannedItems([
+            PlannedItem(budgetID: sharedBudget.id, accountID: sharedAccount.id, monthKey: month, type: .fixedDebit, label: "Shared Rent", amount: 800)
+        ])
+
+        let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
+
+        XCTAssertEqual(try repository.activeBudget()?.id, localBudget.id)
+        XCTAssertEqual(try repository.accounts().map(\.id), [localAccount.id])
+        XCTAssertEqual(try repository.plannedItems(for: month).map(\.accountID), [localAccount.id])
     }
 
-    func testSharedScopeCannotReferencePrivateAccount() throws {
+    func testShareBudgetRejectsAlreadySharedBudget() throws {
         let repository = makeRepository()
-        let privateAccount = try repository.createAccount(name: "Private", role: .regular, type: .current, ownerParticipantID: "owner")
-        let month = YearMonth(year: 2026, month: 3)
-        XCTAssertThrowsError(
-            try repository.createPlannedItem(PlannedItem(accountID: privateAccount.id, monthKey: month, type: .fixedDebit, label: "Bad", amount: 10), in: .sharedScope)
-        )
+        _ = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+
+        let service = BudgetSharingService(repository: repository)
+        _ = try service.shareBudget(participantsSelection: [])
+
+        XCTAssertThrowsError(try service.shareBudget(participantsSelection: [])) { error in
+            XCTAssertEqual(error as? BudgetSharingError, .reverseMigrationNotSupported)
+        }
     }
 
     func testMonthCalculationDeterministicBudgetAndSuggestedLiving() {
@@ -133,8 +160,8 @@ final class SharingAndMonthTests: XCTestCase {
         try repository.createPlannedItem(nextItem, in: .privateScope)
         try repository.deletePlannedItem(id: currentItem.id)
 
-        let currentItems = try repository.plannedItems(for: current, scope: .myView)
-        let nextItems = try repository.plannedItems(for: next, scope: .myView)
+        let currentItems = try repository.plannedItems(for: current)
+        let nextItems = try repository.plannedItems(for: next)
 
         XCTAssertFalse(currentItems.contains(where: { $0.id == currentItem.id }))
         XCTAssertTrue(nextItems.contains(where: { $0.id == nextItem.id }))

@@ -15,6 +15,7 @@ struct MonthlyMoneyApp: App {
         }
 
         let schema = Schema([
+            Budget.self,
             Account.self,
             PlannedItem.self,
             Transaction.self

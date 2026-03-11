@@ -14,6 +14,11 @@ enum RepositoryError: Error, Equatable {
 protocol AccountDataStore {
     var scope: StorageScope { get }
 
+    func fetchBudgets() throws -> [Budget]
+    func fetchBudget(id: UUID) throws -> Budget?
+    func upsertBudget(_ budget: Budget) throws
+    func deleteBudget(id: UUID) throws
+
     func fetchAccounts() throws -> [Account]
     func fetchAccount(id: UUID) throws -> Account?
     func upsertAccount(_ account: Account) throws
@@ -35,12 +40,29 @@ protocol AccountDataStore {
 final class InMemoryAccountDataStore: AccountDataStore {
     let scope: StorageScope
 
+    private var budgetsByID: [UUID: Budget] = [:]
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
 
     init(scope: StorageScope) {
         self.scope = scope
+    }
+
+    func fetchBudgets() throws -> [Budget] {
+        Array(budgetsByID.values).map(cloneBudget)
+    }
+
+    func fetchBudget(id: UUID) throws -> Budget? {
+        budgetsByID[id].map(cloneBudget)
+    }
+
+    func upsertBudget(_ budget: Budget) throws {
+        budgetsByID[budget.id] = cloneBudget(budget)
+    }
+
+    func deleteBudget(id: UUID) throws {
+        budgetsByID[id] = nil
     }
 
     func fetchAccounts() throws -> [Account] {
@@ -108,6 +130,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
     private func cloneAccount(_ account: Account) -> Account {
         Account(
             id: account.id,
+            budgetID: account.budgetID,
             name: account.name,
             role: account.role,
             type: account.type,
@@ -124,6 +147,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
         }
         return PlannedItem(
             id: item.id,
+            budgetID: item.budgetID,
             accountID: item.accountID,
             monthKey: monthKey,
             type: item.type,
@@ -142,10 +166,20 @@ final class InMemoryAccountDataStore: AccountDataStore {
         }
         return Transaction(
             id: transaction.id,
+            budgetID: transaction.budgetID,
             accountID: transaction.accountID,
             monthKey: monthKey,
             amount: transaction.amount,
             note: transaction.note
+        )
+    }
+
+    private func cloneBudget(_ budget: Budget) -> Budget {
+        Budget(
+            id: budget.id,
+            name: budget.name,
+            ownerParticipantID: budget.ownerParticipantID,
+            sharingState: budget.sharingState
         )
     }
 }
@@ -159,6 +193,36 @@ final class SwiftDataAccountDataStore: AccountDataStore {
         self.scope = scope
         self.modelContainer = modelContainer
         self.modelContext = ModelContext(modelContainer)
+    }
+
+    func fetchBudgets() throws -> [Budget] {
+        try modelContext.fetch(FetchDescriptor<Budget>())
+    }
+
+    func fetchBudget(id: UUID) throws -> Budget? {
+        let descriptor = FetchDescriptor<Budget>(predicate: #Predicate { $0.id == id })
+        return try modelContext.fetch(descriptor).first
+    }
+
+    func upsertBudget(_ budget: Budget) throws {
+        let budgetID = budget.id
+        let descriptor = FetchDescriptor<Budget>(predicate: #Predicate { $0.id == budgetID })
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.name = budget.name
+            existing.ownerParticipantID = budget.ownerParticipantID
+            existing.sharingState = budget.sharingState
+        } else {
+            modelContext.insert(budget)
+        }
+        try modelContext.save()
+    }
+
+    func deleteBudget(id: UUID) throws {
+        let descriptor = FetchDescriptor<Budget>(predicate: #Predicate { $0.id == id })
+        if let budget = try modelContext.fetch(descriptor).first {
+            modelContext.delete(budget)
+            try modelContext.save()
+        }
     }
 
     func fetchAccounts() throws -> [Account] {
@@ -212,6 +276,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             let itemID = item.id
             let descriptor = FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })
             if let existing = try modelContext.fetch(descriptor).first {
+                existing.budgetID = item.budgetID
                 existing.accountID = item.accountID
                 existing.monthKey = item.monthKey
                 existing.type = item.type
@@ -275,17 +340,33 @@ final class AccountRepository {
         self.sharedStore = sharedStore
     }
 
+    @discardableResult
+    func createBudget(name: String, ownerParticipantID: String, sharingState: BudgetSharingState = .local) throws -> Budget {
+        let budget = Budget(name: name, ownerParticipantID: ownerParticipantID, sharingState: sharingState)
+        try store(for: sharingState).upsertBudget(budget)
+        return budget
+    }
+
+    func activeBudget() throws -> Budget? {
+        if let local = try privateStore.fetchBudgets().first(where: { $0.sharingState == .local }) {
+            return local
+        }
+        return try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+    }
+
     func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {
-        let account = Account(name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)
-        try privateStore.upsertAccount(account)
+        let budget = try ensureLocalBudget(ownerParticipantID: ownerParticipantID)
+        let account = Account(budgetID: budget.id, name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)
+        try store(for: budget.sharingState).upsertAccount(account)
         return account
     }
 
     func createPlannedItem(_ item: PlannedItem, in scope: StorageScope) throws {
         let store = store(for: scope)
-        guard try store.fetchAccount(id: item.accountID) != nil else {
+        guard let account = try store.fetchAccount(id: item.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
         }
+        item.budgetID = account.budgetID
         try store.upsertPlannedItems([item])
     }
 
@@ -297,12 +378,14 @@ final class AccountRepository {
     }
 
     func savePlannedItem(_ item: PlannedItem) throws {
-        if try privateStore.fetchAccount(id: item.accountID) != nil {
+        if let account = try privateStore.fetchAccount(id: item.accountID) {
+            item.budgetID = account.budgetID
             try privateStore.upsertPlannedItems([item])
             try sharedStore.deletePlannedItem(id: item.id)
             return
         }
-        if try sharedStore.fetchAccount(id: item.accountID) != nil {
+        if let account = try sharedStore.fetchAccount(id: item.accountID) {
+            item.budgetID = account.budgetID
             try sharedStore.upsertPlannedItems([item])
             try privateStore.deletePlannedItem(id: item.id)
             return
@@ -317,57 +400,61 @@ final class AccountRepository {
 
     func createTransaction(_ transaction: Transaction, in scope: StorageScope) throws {
         let store = store(for: scope)
-        guard try store.fetchAccount(id: transaction.accountID) != nil else {
+        guard let account = try store.fetchAccount(id: transaction.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
         }
+        transaction.budgetID = account.budgetID
         try store.upsertTransactions([transaction])
+    }
+
+    func accounts() throws -> [Account] {
+        guard let budget = try activeBudget() else { return [] }
+        return try store(for: budget.sharingState).fetchAccounts().filter { $0.budgetID == budget.id }
     }
 
     func accounts(for scope: ViewScope) throws -> [Account] {
         switch scope {
         case .myView:
-            return deduplicatedAccounts(try privateStore.fetchAccounts() + sharedStore.fetchAccounts())
+            return try accounts()
         case .sharedView:
-            return try sharedStore.fetchAccounts()
+            guard let budget = try activeBudget(), budget.sharingState == .shared else { return [] }
+            return try accounts().filter { $0.budgetID == budget.id }
         }
     }
 
     func accountIDs(for scope: ViewScope) throws -> Set<UUID> {
-        switch scope {
-        case .myView:
-            let privateIDs = try privateStore.fetchAccounts().map(\.id)
-            let sharedIDs = try sharedStore.fetchAccounts().map(\.id)
-            return Set(privateIDs).union(sharedIDs)
-        case .sharedView:
-            return Set(try sharedStore.fetchAccounts().map(\.id))
-        }
+        Set(try accounts(for: scope).map(\.id))
     }
 
     func plannedItems(for month: YearMonth? = nil, scope: ViewScope) throws -> [PlannedItem] {
-        let accountIDs = Set(try accounts(for: scope).map(\ .id))
-        guard !accountIDs.isEmpty else { return [] }
-
         switch scope {
         case .myView:
-            return deduplicatedPlannedItems(
-                try privateStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
-                + sharedStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
-            )
+            return try plannedItems(for: month)
         case .sharedView:
+            guard let budget = try activeBudget(), budget.sharingState == .shared else { return [] }
+            let accountIDs = Set(try accounts().map(\.id))
+            guard !accountIDs.isEmpty else { return [] }
             return try sharedStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
+                .filter { $0.budgetID == budget.id }
         }
     }
 
+    func plannedItems(for month: YearMonth? = nil) throws -> [PlannedItem] {
+        guard let budget = try activeBudget() else { return [] }
+        let accountIDs = Set(try accounts().map(\.id))
+        guard !accountIDs.isEmpty else { return [] }
+        return try store(for: budget.sharingState).fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
+            .filter { $0.budgetID == budget.id }
+    }
+
     func transactions(scope: ViewScope) throws -> [Transaction] {
-        let accountIDs = Set(try accounts(for: scope).map(\ .id))
+        let accountIDs = Set(try accounts(for: scope).map(\.id))
         guard !accountIDs.isEmpty else { return [] }
 
         switch scope {
         case .myView:
-            return deduplicatedTransactions(
-                try privateStore.fetchTransactions(accountIDs: accountIDs)
-                + sharedStore.fetchTransactions(accountIDs: accountIDs)
-            )
+            guard let budget = try activeBudget() else { return [] }
+            return try store(for: budget.sharingState).fetchTransactions(accountIDs: accountIDs)
         case .sharedView:
             return try sharedStore.fetchTransactions(accountIDs: accountIDs)
         }
@@ -381,6 +468,14 @@ final class AccountRepository {
         try sharedStore.fetchAccount(id: id)
     }
 
+    func localBudget() throws -> Budget? {
+        try privateStore.fetchBudgets().first(where: { $0.sharingState == .local })
+    }
+
+    func sharedBudget() throws -> Budget? {
+        try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+    }
+
     func privateDependents(accountID: UUID) throws -> (plannedItems: [PlannedItem], transactions: [Transaction]) {
         let accountIDs: Set<UUID> = [accountID]
         return (
@@ -389,8 +484,28 @@ final class AccountRepository {
         )
     }
 
+    func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction])? {
+        guard let budget = try localBudget() else { return nil }
+        let accounts = try privateStore.fetchAccounts().filter { $0.budgetID == budget.id }
+        let accountIDs = Set(accounts.map(\.id))
+        let plannedItems = try privateStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: nil)
+            .filter { $0.budgetID == budget.id }
+        let transactions = try privateStore.fetchTransactions(accountIDs: accountIDs)
+            .filter { $0.budgetID == budget.id }
+        return (budget, accounts, plannedItems, transactions)
+    }
+
     func insertShared(account: Account, plannedItems: [PlannedItem], transactions: [Transaction]) throws {
         try sharedStore.upsertAccount(account)
+        try sharedStore.upsertPlannedItems(plannedItems)
+        try sharedStore.upsertTransactions(transactions)
+    }
+
+    func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction]) throws {
+        try sharedStore.upsertBudget(budget)
+        for account in accounts {
+            try sharedStore.upsertAccount(account)
+        }
         try sharedStore.upsertPlannedItems(plannedItems)
         try sharedStore.upsertTransactions(transactions)
     }
@@ -401,6 +516,16 @@ final class AccountRepository {
         try privateStore.deleteAccount(id: accountID)
     }
 
+    func deleteLocalBudget(id: UUID) throws {
+        let accounts = try privateStore.fetchAccounts().filter { $0.budgetID == id }
+        for account in accounts {
+            try privateStore.deletePlannedItems(accountID: account.id)
+            try privateStore.deleteTransactions(accountID: account.id)
+            try privateStore.deleteAccount(id: account.id)
+        }
+        try privateStore.deleteBudget(id: id)
+    }
+
     private func store(for scope: StorageScope) -> AccountDataStore {
         switch scope {
         case .privateScope:
@@ -408,6 +533,17 @@ final class AccountRepository {
         case .sharedScope:
             return sharedStore
         }
+    }
+
+    private func store(for sharingState: BudgetSharingState) -> AccountDataStore {
+        sharingState == .local ? privateStore : sharedStore
+    }
+
+    private func ensureLocalBudget(ownerParticipantID: String) throws -> Budget {
+        if let budget = try activeBudget(), budget.sharingState == .local {
+            return budget
+        }
+        return try createBudget(name: "Budget", ownerParticipantID: ownerParticipantID, sharingState: .local)
     }
 
     private func deduplicatedAccounts(_ values: [Account]) -> [Account] {
