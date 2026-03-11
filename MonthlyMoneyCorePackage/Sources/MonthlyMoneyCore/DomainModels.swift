@@ -16,17 +16,6 @@ public enum AccountType: String, Codable, CaseIterable {
     case other
 }
 
-public enum AccountAccessMode: String, Codable, CaseIterable {
-    case ownerOnly
-    case sharedWithAll
-    case sharedWithSome
-}
-
-public enum StorageScope: String, Codable, CaseIterable {
-    case privateScope
-    case sharedScope
-}
-
 public enum BudgetSharingState: String, Codable, CaseIterable {
     case local
     case shared
@@ -96,9 +85,6 @@ public final class Account {
     public var role: AccountRole
     public var type: AccountType
     public var ownerParticipantID: String
-    public var accessMode: AccountAccessMode
-    public var sharedWithParticipantIDs: [String]
-    public var storageScope: StorageScope
 
     public init(
         id: UUID = UUID(),
@@ -106,10 +92,7 @@ public final class Account {
         name: String,
         role: AccountRole,
         type: AccountType,
-        ownerParticipantID: String = "",
-        accessMode: AccountAccessMode = .ownerOnly,
-        sharedWithParticipantIDs: [String] = [],
-        storageScope: StorageScope = .privateScope
+        ownerParticipantID: String = ""
     ) {
         self.id = id
         self.budgetID = budgetID
@@ -117,9 +100,6 @@ public final class Account {
         self.role = role
         self.type = type
         self.ownerParticipantID = ownerParticipantID
-        self.accessMode = accessMode
-        self.sharedWithParticipantIDs = sharedWithParticipantIDs
-        self.storageScope = storageScope
     }
 }
 

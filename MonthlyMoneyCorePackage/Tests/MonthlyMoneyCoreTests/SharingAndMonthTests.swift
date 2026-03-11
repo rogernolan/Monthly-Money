@@ -23,14 +23,14 @@ final class SharingAndMonthTests: XCTestCase {
     }
 
     func testShareBudgetMigratesWholeBudgetAndPreservesTotals() throws {
-        let privateStore = InMemoryAccountDataStore(scope: .privateScope)
-        let sharedStore = InMemoryAccountDataStore(scope: .sharedScope)
+        let privateStore = InMemoryAccountDataStore()
+        let sharedStore = InMemoryAccountDataStore()
         let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
         let account = try repository.createAccount(name: "Bills", role: .regular, type: .current, ownerParticipantID: "owner")
         let month = YearMonth(year: 2026, month: 2)
-        try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200), in: .privateScope)
-        try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .credit, label: "Salary", amount: 2500), in: .privateScope)
-        try repository.createTransaction(Transaction(accountID: account.id, monthKey: month, amount: 100, note: "Stub"), in: .privateScope)
+        try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200))
+        try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .credit, label: "Salary", amount: 2500))
+        try repository.createTransaction(Transaction(accountID: account.id, monthKey: month, amount: 100, note: "Stub"))
 
         let before = try repository.plannedItems(for: month)
         let beforeTotals = MonthCalculationEngine.calculate(items: before, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
@@ -55,8 +55,8 @@ final class SharingAndMonthTests: XCTestCase {
     }
 
     func testActiveBudgetScope() throws {
-        let privateStore = InMemoryAccountDataStore(scope: .privateScope)
-        let sharedStore = InMemoryAccountDataStore(scope: .sharedScope)
+        let privateStore = InMemoryAccountDataStore()
+        let sharedStore = InMemoryAccountDataStore()
 
         let localBudget = Budget(name: "Local", ownerParticipantID: "owner", sharingState: .local)
         let sharedBudget = Budget(name: "Shared", ownerParticipantID: "owner", sharingState: .shared)
@@ -156,8 +156,8 @@ final class SharingAndMonthTests: XCTestCase {
             isPaid: false
         )
 
-        try repository.createPlannedItem(currentItem, in: .privateScope)
-        try repository.createPlannedItem(nextItem, in: .privateScope)
+        try repository.createPlannedItem(currentItem)
+        try repository.createPlannedItem(nextItem)
         try repository.deletePlannedItem(id: currentItem.id)
 
         let currentItems = try repository.plannedItems(for: current)
@@ -169,8 +169,8 @@ final class SharingAndMonthTests: XCTestCase {
 
     private func makeRepository() -> AccountRepository {
         AccountRepository(
-            privateStore: InMemoryAccountDataStore(scope: .privateScope),
-            sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+            privateStore: InMemoryAccountDataStore(),
+            sharedStore: InMemoryAccountDataStore()
         )
     }
 }

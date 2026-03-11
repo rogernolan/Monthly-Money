@@ -8,8 +8,8 @@ struct MonthlyMoneyApp: App {
     init() {
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
             repository = AccountRepository(
-                privateStore: InMemoryAccountDataStore(scope: .privateScope),
-                sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+                privateStore: InMemoryAccountDataStore(),
+                sharedStore: InMemoryAccountDataStore()
             )
             return
         }
@@ -33,8 +33,8 @@ struct MonthlyMoneyApp: App {
                 configurations: [ModelConfiguration("SharedStore", schema: schema, isStoredInMemoryOnly: false)]
             )
             repository = AccountRepository(
-                privateStore: SwiftDataAccountDataStore(scope: .privateScope, modelContainer: privateContainer),
-                sharedStore: SwiftDataAccountDataStore(scope: .sharedScope, modelContainer: sharedContainer)
+                privateStore: SwiftDataAccountDataStore(modelContainer: privateContainer),
+                sharedStore: SwiftDataAccountDataStore(modelContainer: sharedContainer)
             )
         } catch {
             fatalError("Could not create ModelContainer: \(error)")

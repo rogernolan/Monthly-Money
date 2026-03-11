@@ -16,17 +16,6 @@ enum AccountType: String, Codable, CaseIterable {
     case other
 }
 
-enum AccountAccessMode: String, Codable, CaseIterable {
-    case ownerOnly
-    case sharedWithAll
-    case sharedWithSome
-}
-
-enum StorageScope: String, Codable, CaseIterable {
-    case privateScope
-    case sharedScope
-}
-
 enum BudgetSharingState: String, Codable, CaseIterable {
     case local
     case shared
@@ -100,9 +89,6 @@ final class Account {
     var role: AccountRole
     var type: AccountType
     var ownerParticipantID: String
-    var accessMode: AccountAccessMode
-    private var sharedWithParticipantIDsStorage: String
-    var storageScope: StorageScope
 
     init(
         id: UUID = UUID(),
@@ -110,10 +96,7 @@ final class Account {
         name: String,
         role: AccountRole,
         type: AccountType,
-        ownerParticipantID: String = "",
-        accessMode: AccountAccessMode = .ownerOnly,
-        sharedWithParticipantIDs: [String] = [],
-        storageScope: StorageScope = .privateScope
+        ownerParticipantID: String = ""
     ) {
         self.id = id
         self.budgetID = budgetID
@@ -121,23 +104,6 @@ final class Account {
         self.role = role
         self.type = type
         self.ownerParticipantID = ownerParticipantID
-        self.accessMode = accessMode
-        self.sharedWithParticipantIDsStorage = Self.encodeParticipantIDs(sharedWithParticipantIDs)
-        self.storageScope = storageScope
-    }
-
-    var sharedWithParticipantIDs: [String] {
-        get { Self.decodeParticipantIDs(sharedWithParticipantIDsStorage) }
-        set { sharedWithParticipantIDsStorage = Self.encodeParticipantIDs(newValue) }
-    }
-
-    private static func encodeParticipantIDs(_ values: [String]) -> String {
-        values.joined(separator: "|")
-    }
-
-    private static func decodeParticipantIDs(_ storage: String) -> [String] {
-        guard !storage.isEmpty else { return [] }
-        return storage.split(separator: "|").map(String.init)
     }
 }
 

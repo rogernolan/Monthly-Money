@@ -256,7 +256,6 @@ final class AppState: ObservableObject {
         do {
             let accounts = try repository.accounts()
             guard let account = accounts.first else { return nil }
-            let scope: StorageScope = account.storageScope == .sharedScope ? .sharedScope : .privateScope
 
             let item = PlannedItem(
                 accountID: account.id,
@@ -269,7 +268,7 @@ final class AppState: ObservableObject {
                 isPaid: false,
                 notes: notes
             )
-            try repository.createPlannedItem(item, in: scope)
+            try repository.createPlannedItem(item)
             try refresh()
             return item
         } catch {
@@ -398,7 +397,7 @@ final class AppState: ObservableObject {
                 isPaid: false,
                 notes: source.notes
             )
-            try repository.createPlannedItem(copy, in: .privateScope)
+            try repository.createPlannedItem(copy)
         }
     }
 
@@ -504,8 +503,7 @@ final class AppState: ObservableObject {
                     dueDay: item.dueDay,
                     isPaid: item.isPaid,
                     notes: item.notes
-                ),
-                in: .privateScope
+                )
             )
         }
 
@@ -518,8 +516,7 @@ final class AppState: ObservableObject {
                     label: item.label,
                     amount: item.amount,
                     isPaid: item.isPaid
-                ),
-                in: .privateScope
+                )
             )
         }
 
@@ -534,8 +531,7 @@ final class AppState: ObservableObject {
                     dueDay: item.dueDay,
                     isPaid: item.isPaid,
                     notes: item.notes
-                ),
-                in: .privateScope
+                )
             )
         }
     }

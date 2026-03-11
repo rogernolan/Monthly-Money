@@ -100,8 +100,8 @@ final class MonthlyMoneyTests: XCTestCase {
 
     private func makeRepository() throws -> AccountRepository {
         return AccountRepository(
-            privateStore: InMemoryAccountDataStore(scope: .privateScope),
-            sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+            privateStore: InMemoryAccountDataStore(),
+            sharedStore: InMemoryAccountDataStore()
         )
     }
 }

@@ -1,19 +1,12 @@
 import Foundation
 import SwiftData
 
-enum ViewScope {
-    case myView
-    case sharedView
-}
-
 enum RepositoryError: Error, Equatable {
     case accountNotFound
     case invalidCrossScopeReference
 }
 
 protocol AccountDataStore {
-    var scope: StorageScope { get }
-
     func fetchBudgets() throws -> [Budget]
     func fetchBudget(id: UUID) throws -> Budget?
     func upsertBudget(_ budget: Budget) throws
@@ -38,16 +31,12 @@ protocol AccountDataStore {
 }
 
 final class InMemoryAccountDataStore: AccountDataStore {
-    let scope: StorageScope
-
     private var budgetsByID: [UUID: Budget] = [:]
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
 
-    init(scope: StorageScope) {
-        self.scope = scope
-    }
+    init() {}
 
     func fetchBudgets() throws -> [Budget] {
         Array(budgetsByID.values)
@@ -129,12 +118,10 @@ final class InMemoryAccountDataStore: AccountDataStore {
 }
 
 final class SwiftDataAccountDataStore: AccountDataStore {
-    let scope: StorageScope
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
 
-    init(scope: StorageScope, modelContainer: ModelContainer) {
-        self.scope = scope
+    init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         self.modelContext = ModelContext(modelContainer)
     }
@@ -305,9 +292,8 @@ final class AccountRepository {
         return account
     }
 
-    func createPlannedItem(_ item: PlannedItem, in scope: StorageScope) throws {
-        let store = store(for: scope)
-        guard let account = try store.fetchAccount(id: item.accountID) else {
+    func createPlannedItem(_ item: PlannedItem) throws {
+        guard let (store, account) = try storeAndAccount(for: item.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
         }
         item.budgetID = account.budgetID
@@ -342,9 +328,8 @@ final class AccountRepository {
         try sharedStore.deletePlannedItem(id: id)
     }
 
-    func createTransaction(_ transaction: Transaction, in scope: StorageScope) throws {
-        let store = store(for: scope)
-        guard let account = try store.fetchAccount(id: transaction.accountID) else {
+    func createTransaction(_ transaction: Transaction) throws {
+        guard let (store, account) = try storeAndAccount(for: transaction.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
         }
         transaction.budgetID = account.budgetID
@@ -356,33 +341,6 @@ final class AccountRepository {
         return try store(for: budget.sharingState).fetchAccounts().filter { $0.budgetID == budget.id }
     }
 
-    func accounts(for scope: ViewScope) throws -> [Account] {
-        switch scope {
-        case .myView:
-            return try accounts()
-        case .sharedView:
-            guard let budget = try activeBudget(), budget.sharingState == .shared else { return [] }
-            return try accounts().filter { $0.budgetID == budget.id }
-        }
-    }
-
-    func accountIDs(for scope: ViewScope) throws -> Set<UUID> {
-        Set(try accounts(for: scope).map(\.id))
-    }
-
-    func plannedItems(for month: YearMonth? = nil, scope: ViewScope) throws -> [PlannedItem] {
-        switch scope {
-        case .myView:
-            return try plannedItems(for: month)
-        case .sharedView:
-            guard let budget = try activeBudget(), budget.sharingState == .shared else { return [] }
-            let accountIDs = Set(try accounts().map(\.id))
-            guard !accountIDs.isEmpty else { return [] }
-            return try sharedStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
-                .filter { $0.budgetID == budget.id }
-        }
-    }
-
     func plannedItems(for month: YearMonth? = nil) throws -> [PlannedItem] {
         guard let budget = try activeBudget() else { return [] }
         let accountIDs = Set(try accounts().map(\.id))
@@ -391,41 +349,12 @@ final class AccountRepository {
             .filter { $0.budgetID == budget.id }
     }
 
-    func transactions(scope: ViewScope) throws -> [Transaction] {
-        let accountIDs = Set(try accounts(for: scope).map(\.id))
-        guard !accountIDs.isEmpty else { return [] }
-
-        switch scope {
-        case .myView:
-            guard let budget = try activeBudget() else { return [] }
-            return try store(for: budget.sharingState).fetchTransactions(accountIDs: accountIDs)
-        case .sharedView:
-            return try sharedStore.fetchTransactions(accountIDs: accountIDs)
-        }
-    }
-
-    func privateAccount(id: UUID) throws -> Account? {
-        try privateStore.fetchAccount(id: id)
-    }
-
-    func sharedAccount(id: UUID) throws -> Account? {
-        try sharedStore.fetchAccount(id: id)
-    }
-
     func localBudget() throws -> Budget? {
         try privateStore.fetchBudgets().first(where: { $0.sharingState == .local })
     }
 
     func sharedBudget() throws -> Budget? {
         try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
-    }
-
-    func privateDependents(accountID: UUID) throws -> (plannedItems: [PlannedItem], transactions: [Transaction]) {
-        let accountIDs: Set<UUID> = [accountID]
-        return (
-            try privateStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: nil),
-            try privateStore.fetchTransactions(accountIDs: accountIDs)
-        )
     }
 
     func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction])? {
@@ -439,12 +368,6 @@ final class AccountRepository {
         return (budget, accounts, plannedItems, transactions)
     }
 
-    func insertShared(account: Account, plannedItems: [PlannedItem], transactions: [Transaction]) throws {
-        try sharedStore.upsertAccount(account)
-        try sharedStore.upsertPlannedItems(plannedItems)
-        try sharedStore.upsertTransactions(transactions)
-    }
-
     func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction]) throws {
         try sharedStore.upsertBudget(budget)
         for account in accounts {
@@ -452,12 +375,6 @@ final class AccountRepository {
         }
         try sharedStore.upsertPlannedItems(plannedItems)
         try sharedStore.upsertTransactions(transactions)
-    }
-
-    func deletePrivate(accountID: UUID) throws {
-        try privateStore.deletePlannedItems(accountID: accountID)
-        try privateStore.deleteTransactions(accountID: accountID)
-        try privateStore.deleteAccount(id: accountID)
     }
 
     func deleteLocalBudget(id: UUID) throws {
@@ -470,17 +387,18 @@ final class AccountRepository {
         try privateStore.deleteBudget(id: id)
     }
 
-    private func store(for scope: StorageScope) -> AccountDataStore {
-        switch scope {
-        case .privateScope:
-            return privateStore
-        case .sharedScope:
-            return sharedStore
-        }
-    }
-
     private func store(for sharingState: BudgetSharingState) -> AccountDataStore {
         sharingState == .local ? privateStore : sharedStore
+    }
+
+    private func storeAndAccount(for accountID: UUID) throws -> (AccountDataStore, Account)? {
+        if let account = try privateStore.fetchAccount(id: accountID) {
+            return (privateStore, account)
+        }
+        if let account = try sharedStore.fetchAccount(id: accountID) {
+            return (sharedStore, account)
+        }
+        return nil
     }
 
     private func ensureLocalBudget(ownerParticipantID: String) throws -> Budget {
@@ -488,38 +406,5 @@ final class AccountRepository {
             return budget
         }
         return try createBudget(name: "Budget", ownerParticipantID: ownerParticipantID, sharingState: .local)
-    }
-
-    private func deduplicatedAccounts(_ values: [Account]) -> [Account] {
-        var seen: Set<UUID> = []
-        var result: [Account] = []
-        result.reserveCapacity(values.count)
-        for value in values where !seen.contains(value.id) {
-            seen.insert(value.id)
-            result.append(value)
-        }
-        return result
-    }
-
-    private func deduplicatedPlannedItems(_ values: [PlannedItem]) -> [PlannedItem] {
-        var seen: Set<UUID> = []
-        var result: [PlannedItem] = []
-        result.reserveCapacity(values.count)
-        for value in values where !seen.contains(value.id) {
-            seen.insert(value.id)
-            result.append(value)
-        }
-        return result
-    }
-
-    private func deduplicatedTransactions(_ values: [Transaction]) -> [Transaction] {
-        var seen: Set<UUID> = []
-        var result: [Transaction] = []
-        result.reserveCapacity(values.count)
-        for value in values where !seen.contains(value.id) {
-            seen.insert(value.id)
-            result.append(value)
-        }
-        return result
     }
 }

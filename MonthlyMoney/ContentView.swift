@@ -57,8 +57,8 @@ struct ContentView: View {
 #Preview {
     ContentView(
         repository: AccountRepository(
-            privateStore: InMemoryAccountDataStore(scope: .privateScope),
-            sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
+            privateStore: InMemoryAccountDataStore(),
+            sharedStore: InMemoryAccountDataStore()
         )
     )
 }

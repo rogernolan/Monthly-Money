@@ -48,10 +48,7 @@ struct BudgetSharingService {
                 name: account.name,
                 role: account.role,
                 type: account.type,
-                ownerParticipantID: account.ownerParticipantID,
-                accessMode: account.accessMode,
-                sharedWithParticipantIDs: account.sharedWithParticipantIDs,
-                storageScope: .sharedScope
+                ownerParticipantID: account.ownerParticipantID
             )
         }
 
