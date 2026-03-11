@@ -2,6 +2,19 @@ import XCTest
 @testable import MonthlyMoneyCore
 
 final class SharingAndMonthTests: XCTestCase {
+    func testLocalBudgetDefaults() {
+        let budget = Budget(name: "Home", ownerParticipantID: "owner")
+        let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
+        let month = YearMonth(year: 2026, month: 2)
+        let item = PlannedItem(budgetID: budget.id, accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200)
+        let transaction = Transaction(budgetID: budget.id, accountID: account.id, monthKey: month, amount: 10)
+
+        XCTAssertEqual(budget.sharingState, .local)
+        XCTAssertEqual(account.budgetID, budget.id)
+        XCTAssertEqual(item.budgetID, budget.id)
+        XCTAssertEqual(transaction.budgetID, budget.id)
+    }
+
     func testNewAccountsDefaultToOwnerOnlyAndPrivate() throws {
         let repository = makeRepository()
         let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")

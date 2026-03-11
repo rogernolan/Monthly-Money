@@ -27,6 +27,11 @@ enum StorageScope: String, Codable, CaseIterable {
     case sharedScope
 }
 
+enum BudgetSharingState: String, Codable, CaseIterable {
+    case local
+    case shared
+}
+
 enum PlannedItemType: String, Codable, CaseIterable {
     case fixedDebit
     case credit
@@ -68,8 +73,29 @@ struct YearMonth: Codable, Hashable, Comparable, CustomStringConvertible {
 }
 
 @Model
+final class Budget {
+    @Attribute(.unique) var id: UUID
+    var name: String
+    var ownerParticipantID: String
+    var sharingState: BudgetSharingState
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        ownerParticipantID: String,
+        sharingState: BudgetSharingState = .local
+    ) {
+        self.id = id
+        self.name = name
+        self.ownerParticipantID = ownerParticipantID
+        self.sharingState = sharingState
+    }
+}
+
+@Model
 final class Account {
     @Attribute(.unique) var id: UUID
+    var budgetID: UUID
     var name: String
     var role: AccountRole
     var type: AccountType
@@ -80,15 +106,17 @@ final class Account {
 
     init(
         id: UUID = UUID(),
+        budgetID: UUID = UUID(),
         name: String,
         role: AccountRole,
         type: AccountType,
-        ownerParticipantID: String,
+        ownerParticipantID: String = "",
         accessMode: AccountAccessMode = .ownerOnly,
         sharedWithParticipantIDs: [String] = [],
         storageScope: StorageScope = .privateScope
     ) {
         self.id = id
+        self.budgetID = budgetID
         self.name = name
         self.role = role
         self.type = type
@@ -116,6 +144,7 @@ final class Account {
 @Model
 final class PlannedItem {
     @Attribute(.unique) var id: UUID
+    var budgetID: UUID
     var accountID: UUID
     var monthKey: String
     var type: PlannedItemType
@@ -128,6 +157,7 @@ final class PlannedItem {
 
     init(
         id: UUID = UUID(),
+        budgetID: UUID = UUID(),
         accountID: UUID,
         monthKey: YearMonth,
         type: PlannedItemType,
@@ -139,6 +169,7 @@ final class PlannedItem {
         notes: String = ""
     ) {
         self.id = id
+        self.budgetID = budgetID
         self.accountID = accountID
         self.monthKey = monthKey.rawValue
         self.type = type
@@ -158,6 +189,7 @@ final class PlannedItem {
 @Model
 final class Transaction {
     @Attribute(.unique) var id: UUID
+    var budgetID: UUID
     var accountID: UUID
     var monthKey: String
     var amount: Decimal
@@ -165,12 +197,14 @@ final class Transaction {
 
     init(
         id: UUID = UUID(),
+        budgetID: UUID = UUID(),
         accountID: UUID,
         monthKey: YearMonth,
         amount: Decimal,
         note: String = ""
     ) {
         self.id = id
+        self.budgetID = budgetID
         self.accountID = accountID
         self.monthKey = monthKey.rawValue
         self.amount = amount
