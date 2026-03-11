@@ -7,27 +7,15 @@ enum BudgetSharingError: Error, Equatable {
     case invalidMonthKey
 }
 
-protocol BudgetShareProvider: AnyObject {
-    func createShare(for budget: Budget) throws
-}
+typealias BudgetShareHandler = (Budget) throws -> Void
 
-final class NoOpBudgetShareProvider: BudgetShareProvider {
-    static let shared = NoOpBudgetShareProvider()
-
-    private init() {}
-
-    func createShare(for budget: Budget) throws {
-        // CKShare wiring hook. Intentionally left as no-op for v1 scaffolding.
-    }
-}
-
-final class BudgetSharingService {
+struct BudgetSharingService {
     private let repository: AccountRepository
-    private let shareProvider: BudgetShareProvider
+    private let shareHandler: BudgetShareHandler
 
-    init(repository: AccountRepository, shareProvider: BudgetShareProvider = NoOpBudgetShareProvider.shared) {
+    init(repository: AccountRepository, shareHandler: @escaping BudgetShareHandler = { _ in }) {
         self.repository = repository
-        self.shareProvider = shareProvider
+        self.shareHandler = shareHandler
     }
 
     @discardableResult
@@ -107,7 +95,7 @@ final class BudgetSharingService {
             transactions: sharedTransactions
         )
         try repository.deleteLocalBudget(id: snapshot.budget.id)
-        try shareProvider.createShare(for: sharedBudget)
+        try shareHandler(sharedBudget)
         return sharedBudget
     }
 }

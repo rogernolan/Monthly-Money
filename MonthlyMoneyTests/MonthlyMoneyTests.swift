@@ -1,5 +1,4 @@
 import XCTest
-import SwiftData
 @testable import MonthlyMoney
 
 @MainActor
@@ -12,162 +11,15 @@ final class MonthlyMoneyTests: XCTestCase {
         print("TEST END: \(name) @ \(Date())")
     }
 
-    func testNewAccountsDefaultToOwnerOnlyAndPrivate() throws {
+    func testBootstrapCreatesLocalBudgetAndLoadsCurrentMonth() async throws {
         let repository = try makeRepository()
+        let state = AppState(repository: repository)
 
-        let accountID = try repository.createAccount(
-            name: "Checking",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-        let account = try XCTUnwrap(repository.privateAccount(id: accountID))
-        XCTAssertEqual(account.accessMode, .ownerOnly)
-        XCTAssertEqual(account.storageScope, .privateScope)
+        await state.bootstrapIfNeeded()
 
-        let myViewIDs = try repository.accountIDs(for: .myView)
-        XCTAssertEqual(myViewIDs, [accountID])
-    }
-
-    func testShareAccountMovesAccountAndDependentsToSharedStoreAndPreservesTotals() throws {
-        let repository = try makeRepository()
-        let accountID = try repository.createAccount(
-            name: "Bills",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-
-        let month = YearMonth(year: 2026, month: 2)
-        try repository.createPlannedItem(
-            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200, isPaid: false),
-            in: .privateScope
-        )
-        try repository.createPlannedItem(
-            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Salary", amount: 2200, isPaid: false),
-            in: .privateScope
-        )
-        try repository.createPlannedItem(
-            PlannedItem(accountID: accountID, monthKey: month, type: .transfer, label: "Living transfer", amount: 300, isPaid: false),
-            in: .privateScope
-        )
-
-        let beforeItems = try repository.plannedItems(for: month, scope: .myView)
-        let beforeTotals = MonthCalculationEngine.calculate(
-            items: beforeItems,
-            openingBalance: 1000,
-            livingBuffer: 200,
-            weeklyEstimate: 150,
-            weekendEstimate: 25,
-            minSuggestedLiving: 100,
-            yearMonth: month
-        )
-
-        let service = AccountSharingService(repository: repository)
-        let sharedAccount = try service.shareAccount(accountID: accountID, participantsSelection: ["p2"])
-
-        XCTAssertEqual(sharedAccount.storageScope, .sharedScope)
-        XCTAssertEqual(sharedAccount.accessMode, .sharedWithSome)
-        XCTAssertEqual(sharedAccount.sharedWithParticipantIDs, ["p2"])
-
-        XCTAssertNil(try repository.privateAccount(id: accountID))
-        XCTAssertNil(try repository.sharedAccount(id: accountID))
-        XCTAssertNotNil(try repository.sharedAccount(id: sharedAccount.id))
-
-        let privateDependents = try repository.privateDependents(accountID: accountID)
-        XCTAssertTrue(privateDependents.plannedItems.isEmpty)
-        XCTAssertTrue(privateDependents.transactions.isEmpty)
-
-        let afterItems = try repository.plannedItems(for: month, scope: .myView)
-        let afterTotals = MonthCalculationEngine.calculate(
-            items: afterItems,
-            openingBalance: 1000,
-            livingBuffer: 200,
-            weeklyEstimate: 150,
-            weekendEstimate: 25,
-            minSuggestedLiving: 100,
-            yearMonth: month
-        )
-
-        XCTAssertEqual(beforeTotals, afterTotals)
-    }
-
-    func testSharedViewExcludesPrivateAccounts() throws {
-        let repository = try makeRepository()
-
-        let privateOnlyID = try repository.createAccount(
-            name: "Private",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-        let toShareID = try repository.createAccount(
-            name: "Shared",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-
-        let service = AccountSharingService(repository: repository)
-        let sharedAccount = try service.shareAccount(accountID: toShareID, participantsSelection: [])
-
-        let sharedIDs = try repository.accountIDs(for: .sharedView)
-
-        XCTAssertEqual(sharedIDs, [sharedAccount.id])
-        XCTAssertFalse(sharedIDs.contains(privateOnlyID))
-    }
-
-    func testMyViewIncludesPrivateAndSharedAccounts() throws {
-        print("STEP 1: makeRepository")
-        let repository = try makeRepository()
-
-        print("STEP 2: create private account")
-        let privateOnlyID = try repository.createAccount(
-            name: "Private",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-        print("STEP 2 done: \(privateOnlyID)")
-        print("STEP 3: create account to share")
-        let toShareID = try repository.createAccount(
-            name: "Shared",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-        print("STEP 3 done: \(toShareID)")
-
-        print("STEP 4: share account")
-        let service = AccountSharingService(repository: repository)
-        let sharedAccount = try service.shareAccount(accountID: toShareID, participantsSelection: ["p2"])
-        print("STEP 4 done")
-
-        print("STEP 5: fetch my view accounts")
-        let myViewIDs = try repository.accountIDs(for: .myView)
-        print("STEP 5 done: count=\(myViewIDs.count)")
-
-        XCTAssertEqual(myViewIDs, [privateOnlyID, sharedAccount.id])
-    }
-
-    func testSharedScopeCannotReferencePrivateAccount() throws {
-        let repository = try makeRepository()
-        let privateAccountID = try repository.createAccount(
-            name: "Private",
-            role: .regular,
-            type: .current,
-            ownerParticipantID: "owner"
-        ).id
-
-        let month = YearMonth(year: 2026, month: 3)
-        XCTAssertThrowsError(
-            try repository.createPlannedItem(
-                PlannedItem(accountID: privateAccountID, monthKey: month, type: .fixedDebit, label: "Bad", amount: 10),
-                in: .sharedScope
-            )
-        ) { error in
-            XCTAssertEqual(error as? RepositoryError, .invalidCrossScopeReference)
-        }
+        XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
+        XCTAssertFalse(state.monthItems.isEmpty)
+        XCTAssertEqual(state.primaryBankName, "Nationwide")
     }
 
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
@@ -221,20 +73,35 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(totals.projectedBalance, 1300)
     }
 
-    private func makeRepository() throws -> AccountRepository {
-        let schema = Schema([Account.self, PlannedItem.self, Transaction.self])
-        let privateContainer = try ModelContainer(
-            for: schema,
-            configurations: [ModelConfiguration("TestPrivateStore", schema: schema, isStoredInMemoryOnly: true)]
-        )
-        let sharedContainer = try ModelContainer(
-            for: schema,
-            configurations: [ModelConfiguration("TestSharedStore", schema: schema, isStoredInMemoryOnly: true)]
-        )
+    func testMonthItemEditorDraftRequiresNameAndPositiveAmountToSave() {
+        var draft = MonthItemEditorDraft(newType: .fixedDebit, dueDay: 11)
 
+        XCTAssertFalse(draft.canSave)
+
+        draft.label = "Gas bill"
+        XCTAssertFalse(draft.canSave)
+
+        draft.amountText = "0"
+        XCTAssertFalse(draft.canSave)
+
+        draft.amountText = "42.50"
+        XCTAssertTrue(draft.canSave)
+    }
+
+    func testMonthItemEditorDraftNormalisesNegativeAmountToDebit() {
+        var draft = MonthItemEditorDraft(newType: .credit, dueDay: 25)
+
+        draft.amountText = "-1200"
+        draft.normalizeAmountInput(locale: Locale(identifier: "en_GB"))
+
+        XCTAssertEqual(draft.entryKind, .debit)
+        XCTAssertEqual(draft.amountText, "1200")
+    }
+
+    private func makeRepository() throws -> AccountRepository {
         return AccountRepository(
-            privateStore: SwiftDataAccountDataStore(scope: .privateScope, modelContainer: privateContainer),
-            sharedStore: SwiftDataAccountDataStore(scope: .sharedScope, modelContainer: sharedContainer)
+            privateStore: InMemoryAccountDataStore(scope: .privateScope),
+            sharedStore: InMemoryAccountDataStore(scope: .sharedScope)
         )
     }
 }

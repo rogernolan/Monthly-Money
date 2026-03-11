@@ -50,15 +50,15 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func fetchBudgets() throws -> [Budget] {
-        Array(budgetsByID.values).map(cloneBudget)
+        Array(budgetsByID.values)
     }
 
     func fetchBudget(id: UUID) throws -> Budget? {
-        budgetsByID[id].map(cloneBudget)
+        budgetsByID[id]
     }
 
     func upsertBudget(_ budget: Budget) throws {
-        budgetsByID[budget.id] = cloneBudget(budget)
+        budgetsByID[budget.id] = budget
     }
 
     func deleteBudget(id: UUID) throws {
@@ -66,15 +66,15 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func fetchAccounts() throws -> [Account] {
-        Array(accountsByID.values).map(cloneAccount)
+        Array(accountsByID.values)
     }
 
     func fetchAccount(id: UUID) throws -> Account? {
-        accountsByID[id].map(cloneAccount)
+        accountsByID[id]
     }
 
     func upsertAccount(_ account: Account) throws {
-        accountsByID[account.id] = cloneAccount(account)
+        accountsByID[account.id] = account
     }
 
     func deleteAccount(id: UUID) throws {
@@ -82,22 +82,22 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func fetchPlannedItems() throws -> [PlannedItem] {
-        Array(plannedItemsByID.values).map(clonePlannedItem)
+        Array(plannedItemsByID.values)
     }
 
     func fetchPlannedItem(id: UUID) throws -> PlannedItem? {
-        plannedItemsByID[id].map(clonePlannedItem)
+        plannedItemsByID[id]
     }
 
     func fetchPlannedItems(accountIDs: Set<UUID>, monthKey: YearMonth?) throws -> [PlannedItem] {
         Array(plannedItemsByID.values).filter { item in
             accountIDs.contains(item.accountID) && (monthKey == nil || item.monthKey == monthKey?.rawValue)
-        }.map(clonePlannedItem)
+        }
     }
 
     func upsertPlannedItems(_ items: [PlannedItem]) throws {
         for item in items {
-            plannedItemsByID[item.id] = clonePlannedItem(item)
+            plannedItemsByID[item.id] = item
         }
     }
 
@@ -110,77 +110,21 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func fetchTransactions() throws -> [Transaction] {
-        Array(transactionsByID.values).map(cloneTransaction)
+        Array(transactionsByID.values)
     }
 
     func fetchTransactions(accountIDs: Set<UUID>) throws -> [Transaction] {
-        Array(transactionsByID.values).filter { accountIDs.contains($0.accountID) }.map(cloneTransaction)
+        Array(transactionsByID.values).filter { accountIDs.contains($0.accountID) }
     }
 
     func upsertTransactions(_ transactions: [Transaction]) throws {
         for transaction in transactions {
-            transactionsByID[transaction.id] = cloneTransaction(transaction)
+            transactionsByID[transaction.id] = transaction
         }
     }
 
     func deleteTransactions(accountID: UUID) throws {
         transactionsByID = transactionsByID.filter { $0.value.accountID != accountID }
-    }
-
-    private func cloneAccount(_ account: Account) -> Account {
-        Account(
-            id: account.id,
-            budgetID: account.budgetID,
-            name: account.name,
-            role: account.role,
-            type: account.type,
-            ownerParticipantID: account.ownerParticipantID,
-            accessMode: account.accessMode,
-            sharedWithParticipantIDs: account.sharedWithParticipantIDs,
-            storageScope: account.storageScope
-        )
-    }
-
-    private func clonePlannedItem(_ item: PlannedItem) -> PlannedItem {
-        guard let monthKey = YearMonth(rawValue: item.monthKey) else {
-            preconditionFailure("Invalid monthKey in in-memory store: \(item.monthKey)")
-        }
-        return PlannedItem(
-            id: item.id,
-            budgetID: item.budgetID,
-            accountID: item.accountID,
-            monthKey: monthKey,
-            type: item.type,
-            label: item.label,
-            amount: item.amount,
-            dueDay: item.dueDay,
-            dueText: item.dueText,
-            isPaid: item.isPaid,
-            notes: item.notes
-        )
-    }
-
-    private func cloneTransaction(_ transaction: Transaction) -> Transaction {
-        guard let monthKey = YearMonth(rawValue: transaction.monthKey) else {
-            preconditionFailure("Invalid monthKey in in-memory store: \(transaction.monthKey)")
-        }
-        return Transaction(
-            id: transaction.id,
-            budgetID: transaction.budgetID,
-            accountID: transaction.accountID,
-            monthKey: monthKey,
-            amount: transaction.amount,
-            note: transaction.note
-        )
-    }
-
-    private func cloneBudget(_ budget: Budget) -> Budget {
-        Budget(
-            id: budget.id,
-            name: budget.name,
-            ownerParticipantID: budget.ownerParticipantID,
-            sharingState: budget.sharingState
-        )
     }
 }
 

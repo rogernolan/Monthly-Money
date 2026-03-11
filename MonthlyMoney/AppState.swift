@@ -5,7 +5,6 @@ import Combine
 @MainActor
 final class AppState: ObservableObject {
     @Published var selectedMonth: YearMonth
-    @Published var viewScope: ViewScope = .myView
 
     @Published var openingBalances: [String: Decimal] = [:]
     @Published var primaryBankBalances: [String: Decimal] = [:]
@@ -38,7 +37,7 @@ final class AppState: ObservableObject {
 
     func bootstrapIfNeeded() async {
         do {
-            if try repository.accounts(for: .myView).isEmpty {
+            if try repository.accounts().isEmpty {
                 let account = try repository.createAccount(
                     name: "Nationwide",
                     role: .regular,
@@ -48,7 +47,7 @@ final class AppState: ObservableObject {
                 primaryBankBalances[selectedMonth.rawValue] = 397
                 try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
-            } else if let account = try repository.accounts(for: .myView).first {
+            } else if let account = try repository.accounts().first {
                 try ensureCurrentMonthHasSeedData(accountID: account.id)
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             }
@@ -59,8 +58,8 @@ final class AppState: ObservableObject {
     }
 
     func refresh() throws {
-        monthItems = try repository.plannedItems(for: selectedMonth, scope: viewScope)
-        if let firstAccount = try repository.accounts(for: viewScope).first {
+        monthItems = try repository.plannedItems(for: selectedMonth)
+        if let firstAccount = try repository.accounts().first {
             primaryBankName = firstAccount.name
         } else {
             primaryBankName = "Primary bank"
@@ -220,7 +219,7 @@ final class AppState: ObservableObject {
         }
 
         do {
-            let accounts = try repository.accounts(for: .myView)
+            let accounts = try repository.accounts()
             guard let account = accounts.first else { return }
             let item = PlannedItem(
                 accountID: account.id,
@@ -255,8 +254,9 @@ final class AppState: ObservableObject {
     @discardableResult
     func createEntry(type: PlannedItemType, label: String = "", amount: Decimal = 0, dueDay: Int?, notes: String = "") -> PlannedItem? {
         do {
-            let accounts = try repository.accounts(for: viewScope)
+            let accounts = try repository.accounts()
             guard let account = accounts.first else { return nil }
+            let scope: StorageScope = account.storageScope == .sharedScope ? .sharedScope : .privateScope
 
             let item = PlannedItem(
                 accountID: account.id,
@@ -269,7 +269,7 @@ final class AppState: ObservableObject {
                 isPaid: false,
                 notes: notes
             )
-            try repository.createPlannedItem(item, in: account.storageScope)
+            try repository.createPlannedItem(item, in: scope)
             try refresh()
             return item
         } catch {
@@ -326,7 +326,7 @@ final class AppState: ObservableObject {
         if month == selectedMonth {
             items = monthItems
         } else {
-            items = (try? repository.plannedItems(for: month, scope: viewScope)) ?? []
+            items = (try? repository.plannedItems(for: month)) ?? []
         }
         return balanceBasis - MonthCalculationEngine.netOutgoingsDue(from: items)
     }
@@ -353,12 +353,12 @@ final class AppState: ObservableObject {
 
     private func ensureCurrentMonthHasSeedData(accountID: UUID) throws {
         let current = currentYearMonth
-        let currentItems = try repository.plannedItems(for: current, scope: .myView)
+        let currentItems = try repository.plannedItems(for: current)
             .filter { $0.accountID == accountID }
         guard currentItems.isEmpty else { return }
 
         let previous = previousMonth(of: current)
-        let previousItems = try repository.plannedItems(for: previous, scope: .myView)
+        let previousItems = try repository.plannedItems(for: previous)
             .filter { $0.accountID == accountID }
 
         if previousItems.isEmpty {
@@ -374,11 +374,11 @@ final class AppState: ObservableObject {
         let current = currentYearMonth
         let next = nextMonth(of: current)
 
-        let nextItems = try repository.plannedItems(for: next, scope: .myView)
+        let nextItems = try repository.plannedItems(for: next)
             .filter { $0.accountID == accountID }
         guard nextItems.isEmpty else { return }
 
-        let currentItems = try repository.plannedItems(for: current, scope: .myView)
+        let currentItems = try repository.plannedItems(for: current)
             .filter { $0.accountID == accountID }
         guard !currentItems.isEmpty else { return }
 
