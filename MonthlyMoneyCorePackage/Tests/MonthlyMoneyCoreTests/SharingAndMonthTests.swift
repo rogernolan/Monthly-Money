@@ -91,6 +91,42 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(totals.projectedBalance, 1300)
     }
 
+    func testDeletingCurrentMonthItemDoesNotDeleteMatchingItemInNextMonth() throws {
+        let repository = makeRepository()
+        let account = try repository.createAccount(name: "Bills", role: .regular, type: .current, ownerParticipantID: "owner")
+        let current = YearMonth(year: 2026, month: 3)
+        let next = YearMonth(year: 2026, month: 4)
+
+        let currentItem = PlannedItem(
+            accountID: account.id,
+            monthKey: current,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false
+        )
+        let nextItem = PlannedItem(
+            accountID: account.id,
+            monthKey: next,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false
+        )
+
+        try repository.createPlannedItem(currentItem, in: .privateScope)
+        try repository.createPlannedItem(nextItem, in: .privateScope)
+        try repository.deletePlannedItem(id: currentItem.id)
+
+        let currentItems = try repository.plannedItems(for: current, scope: .myView)
+        let nextItems = try repository.plannedItems(for: next, scope: .myView)
+
+        XCTAssertFalse(currentItems.contains(where: { $0.id == currentItem.id }))
+        XCTAssertTrue(nextItems.contains(where: { $0.id == nextItem.id }))
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(scope: .privateScope),

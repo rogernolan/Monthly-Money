@@ -19,6 +19,7 @@ public protocol AccountDataStore {
 
     func fetchPlannedItems(accountIDs: Set<UUID>, monthKey: YearMonth?) throws -> [PlannedItem]
     func upsertPlannedItems(_ items: [PlannedItem]) throws
+    func deletePlannedItem(id: UUID) throws
     func deletePlannedItems(accountID: UUID) throws
 
     func fetchTransactions(accountIDs: Set<UUID>) throws -> [Transaction]
@@ -50,6 +51,10 @@ public final class InMemoryAccountDataStore: AccountDataStore {
 
     public func upsertPlannedItems(_ items: [PlannedItem]) throws {
         for item in items { plannedItemsByID[item.id] = item }
+    }
+
+    public func deletePlannedItem(id: UUID) throws {
+        plannedItemsByID[id] = nil
     }
 
     public func deletePlannedItems(accountID: UUID) throws {
@@ -90,6 +95,11 @@ public final class AccountRepository {
             throw RepositoryError.invalidCrossScopeReference
         }
         try store.upsertPlannedItems([item])
+    }
+
+    public func deletePlannedItem(id: UUID) throws {
+        try privateStore.deletePlannedItem(id: id)
+        try sharedStore.deletePlannedItem(id: id)
     }
 
     public func accounts(for scope: ViewScope) throws -> [Account] {
