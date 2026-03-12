@@ -19,6 +19,7 @@ final class MonthlyMoneyTests: XCTestCase {
 
         XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
         XCTAssertFalse(state.monthItems.isEmpty)
+        XCTAssertTrue(state.canNavigateToNextMonth)
         XCTAssertEqual(state.primaryBankName, "Nationwide")
     }
 

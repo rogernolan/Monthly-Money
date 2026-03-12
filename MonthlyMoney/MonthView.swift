@@ -100,6 +100,19 @@ struct MonthView: View {
                 }
             }
             .pickerStyle(.segmented)
+
+            if state.canPopulateSelectedMonthFromPrevious {
+                Button {
+                    state.populateSelectedMonthFromPrevious()
+                } label: {
+                    Text("Populate \(selectedMonthName) from \(previousMonthName)?")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+            }
         }
     }
 
@@ -130,6 +143,8 @@ struct MonthView: View {
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
+            .disabled(!state.canNavigateToNextMonth)
+            .opacity(state.canNavigateToNextMonth ? 1 : 0.35)
             .accessibilityLabel("Next month")
         }
     }
@@ -152,6 +167,31 @@ struct MonthView: View {
             year: calendar.component(.year, from: now),
             month: calendar.component(.month, from: now)
         )
+    }
+
+    private var previousMonthName: String {
+        monthName(for: previousMonth(of: state.selectedMonth))
+    }
+
+    private func previousMonth(of month: YearMonth) -> YearMonth {
+        var year = month.year
+        var value = month.month - 1
+        if value < 1 {
+            value = 12
+            year -= 1
+        }
+        return YearMonth(year: year, month: value)
+    }
+
+    private func monthName(for month: YearMonth) -> String {
+        var components = DateComponents()
+        components.year = month.year
+        components.month = month.month
+        components.day = 1
+        let date = Calendar.current.date(from: components) ?? Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "LLLL"
+        return formatter.string(from: date)
     }
 
     private var todayDay: Int {

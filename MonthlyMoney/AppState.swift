@@ -101,6 +101,14 @@ final class AppState: ObservableObject {
         selectedMonth < currentYearMonth
     }
 
+    var canNavigateToNextMonth: Bool {
+        !monthItems.isEmpty
+    }
+
+    var canPopulateSelectedMonthFromPrevious: Bool {
+        !isSelectedMonthInPast && monthItems.isEmpty
+    }
+
     var fundsTotal: Decimal {
         var result = primaryBankBalance
         if includeCash { result += cashBalance }
@@ -278,6 +286,7 @@ final class AppState: ObservableObject {
     }
 
     func shiftMonth(by delta: Int) {
+        guard delta <= 0 || canNavigateToNextMonth else { return }
         var year = selectedMonth.year
         var month = selectedMonth.month + delta
         while month < 1 { month += 12; year -= 1 }
@@ -287,6 +296,19 @@ final class AppState: ObservableObject {
             try refresh()
         } catch {
             print("Refresh failed: \(error)")
+        }
+    }
+
+    func populateSelectedMonthFromPrevious() {
+        guard canPopulateSelectedMonthFromPrevious else { return }
+
+        do {
+            let sourceItems = try repository.plannedItems(for: previousMonth(of: selectedMonth))
+            guard !sourceItems.isEmpty else { return }
+            try copyItems(sourceItems, to: selectedMonth)
+            try refresh()
+        } catch {
+            print("Populate month failed: \(error)")
         }
     }
 
