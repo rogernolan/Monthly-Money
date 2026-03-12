@@ -106,7 +106,7 @@ struct DailyView: View {
             title: DailyPresentationContent.budgetTitle,
             tone: .plain
         ) {
-            DailyCurrencyField(value: $state.dailyBudgetAmount)
+            EditableMoneyChipValue(value: $state.dailyBudgetAmount, fontSize: 28)
         }
     }
 
@@ -126,7 +126,7 @@ struct DailyView: View {
             tone: DailyChipToneResolver.tone(for: .currentBalance, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance)
         ) {
             if state.usesSeparateAccountForDailyBudget {
-                DailyCurrencyField(value: $state.dailyBudgetSeparateAccountBalance)
+                EditableMoneyChipValue(value: $state.dailyBudgetSeparateAccountBalance, fontSize: 28)
             } else {
                 Text(AppState.currency(state.dailyBudgetCurrentBalance))
                     .font(.system(size: 28, weight: .semibold))
@@ -229,54 +229,5 @@ struct DailyView: View {
                 .green
             )
         }
-    }
-}
-
-private struct DailyCurrencyField: View {
-    @Binding var value: Decimal
-    @State private var draft = ""
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        TextField("0", text: Binding(
-            get: {
-                if !isFocused {
-                    return AppState.currency(value)
-                }
-                if draft.isEmpty {
-                    return NSDecimalNumber(decimal: value).stringValue
-                }
-                return draft
-            },
-            set: {
-                draft = $0
-                value = Decimal(string: sanitizedNumericString(from: $0), locale: Locale.current) ?? 0
-            }
-        ))
-        .focused($isFocused)
-        .keyboardType(.decimalPad)
-        .multilineTextAlignment(.trailing)
-        .font(.system(size: 28, weight: .semibold))
-        .onAppear {
-            draft = NSDecimalNumber(decimal: value).stringValue
-        }
-        .onChange(of: isFocused) { _, focused in
-            if focused {
-                draft = NSDecimalNumber(decimal: value).stringValue
-            }
-            if !focused {
-                draft = ""
-            }
-        }
-    }
-
-    private func sanitizedNumericString(from input: String) -> String {
-        let decimalSeparator = Locale.current.decimalSeparator ?? "."
-        let groupingSeparator = Locale.current.groupingSeparator ?? ","
-        let filtered = input
-            .replacingOccurrences(of: Locale.current.currencySymbol ?? "", with: "")
-            .replacingOccurrences(of: groupingSeparator, with: "")
-            .filter { $0.isNumber || String($0) == decimalSeparator || $0 == "-" }
-        return filtered.isEmpty ? "0" : filtered
     }
 }

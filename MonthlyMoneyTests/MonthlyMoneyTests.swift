@@ -148,6 +148,21 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testEditableMoneyChipLayoutShowsDismissButtonOnlyWhileFocused() {
+        XCTAssertEqual(
+            EditableMoneyChipLayout.editing,
+            EditableMoneyChipLayout(isEditing: true)
+        )
+        XCTAssertEqual(
+            EditableMoneyChipLayout.resting,
+            EditableMoneyChipLayout(isEditing: false)
+        )
+        XCTAssertTrue(EditableMoneyChipLayout.editing.showsDismissButton)
+        XCTAssertFalse(EditableMoneyChipLayout.resting.showsDismissButton)
+        XCTAssertEqual(EditableMoneyChipLayout.editing.trailingAccessoryWidth, 34)
+        XCTAssertEqual(EditableMoneyChipLayout.resting.trailingAccessoryWidth, 0)
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,

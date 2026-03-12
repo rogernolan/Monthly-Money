@@ -317,8 +317,7 @@ struct MonthView: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
 
             if let editableValue {
-                EditableCurrencyField(value: editableValue)
-                    .font(.system(size: 25.5, weight: .semibold))
+                EditableMoneyChipValue(value: editableValue, fontSize: 25.5)
             } else {
                 Text(AppState.currency(value))
                     .font(.system(size: 25.5, weight: .semibold))
@@ -572,53 +571,4 @@ private struct NewMonthItemSeed: Identifiable, Hashable {
     let id = UUID()
     let type: PlannedItemType
     let dueDay: Int?
-}
-
-private struct EditableCurrencyField: View {
-    @Binding var value: Decimal
-    @State private var isEditing = false
-    @State private var draft: String = ""
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Group {
-            if isEditing {
-                TextField("0", text: Binding(
-                    get: { draft },
-                    set: {
-                        draft = $0
-                        value = Decimal(string: $0, locale: Locale.current) ?? 0
-                    }
-                ))
-                .focused($isFocused)
-                .multilineTextAlignment(.trailing)
-                .keyboardType(.decimalPad)
-                .toolbar {
-                    ToolbarItemGroup(placement: .keyboard) {
-                        Spacer()
-                        Button("Done") {
-                            isFocused = false
-                            isEditing = false
-                        }
-                    }
-                }
-            } else {
-                Text(AppState.currency(value))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        draft = NSDecimalNumber(decimal: value).stringValue
-                        isEditing = true
-                        DispatchQueue.main.async {
-                            isFocused = true
-                        }
-                    }
-            }
-        }
-        .onChange(of: isFocused) { _, focused in
-            if !focused {
-                isEditing = false
-            }
-        }
-    }
 }
