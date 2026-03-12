@@ -34,6 +34,7 @@
 		C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560D62F505D270021D18F /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		C80560E22F506B2D0021D18F /* SPEC.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = SPEC.md; sourceTree = "<group>"; };
+		C895F1FC2F58773C007AD83E /* HANDOFF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = HANDOFF.md; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -97,6 +98,7 @@
 			children = (
 				C80560D62F505D270021D18F /* AGENTS.md */,
 				C80560E22F506B2D0021D18F /* SPEC.md */,
+				C895F1FC2F58773C007AD83E /* HANDOFF.md */,
 				C80560A92F505D1E0021D18F /* MonthlyMoney */,
 				C80560BB2F505D200021D18F /* MonthlyMoneyTests */,
 				C80560C52F505D200021D18F /* MonthlyMoneyUITests */,
@@ -485,6 +487,7 @@
 		C80560D12F505D200021D18F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 975JU2ENN7;
@@ -493,20 +496,20 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoneyTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonthlyMoney.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonthlyMoney";
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonthlyMoney.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonthlyMoney";
 			};
 			name = Debug;
 		};
 		C80560D22F505D200021D18F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 975JU2ENN7;
@@ -515,14 +518,13 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoneyTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonthlyMoney.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonthlyMoney";
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MonthlyMoney.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/MonthlyMoney";
 			};
 			name = Release;
 		};

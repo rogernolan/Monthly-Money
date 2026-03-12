@@ -39,7 +39,7 @@ struct SettingsView: View {
     private func decimalField(_ value: Binding<Decimal>) -> some View {
         TextField("0", text: Binding(
             get: { NSDecimalNumber(decimal: value.wrappedValue).stringValue },
-            set: { value.wrappedValue = Decimal(string: $0) ?? 0 }
+            set: { value.wrappedValue = Decimal(string: $0, locale: Locale.current) ?? 0 }
         ))
         .keyboardType(.decimalPad)
         .multilineTextAlignment(.trailing)
