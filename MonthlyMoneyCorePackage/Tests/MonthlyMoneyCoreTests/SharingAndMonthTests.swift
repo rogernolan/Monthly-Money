@@ -167,6 +167,31 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertTrue(nextItems.contains(where: { $0.id == nextItem.id }))
     }
 
+    func testAutomaticMonthCopySkipsItemsMarkedNotToAutoCopy() {
+        let items = [
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Rent",
+                amount: 1200
+            ),
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "One-off",
+                amount: 75,
+                copiesToNextMonthAutomatically: false
+            )
+        ]
+
+        XCTAssertEqual(
+            PlannedItem.automaticallyCopiedItems(from: items).map(\.label),
+            ["Rent"]
+        )
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(),

@@ -39,6 +39,18 @@ enum MonthItemRowContent {
         }
         return "\(day)\(suffix)"
     }
+
+    static func showsOverdueHighlight(
+        for item: PlannedItem,
+        isSelectedMonthInPast: Bool,
+        isSelectedMonthInFuture: Bool,
+        todayDay: Int
+    ) -> Bool {
+        guard item.amount != 0 else { return false }
+        guard !item.isPaid, !isSelectedMonthInPast, !isSelectedMonthInFuture else { return false }
+        guard let dueDay = item.dueDay else { return false }
+        return dueDay < todayDay
+    }
 }
 
 private extension VerticalAlignment {
@@ -425,10 +437,12 @@ struct MonthView: View {
     }
 
     private func isOverdue(_ item: PlannedItem) -> Bool {
-        guard !item.isPaid, !state.isSelectedMonthInPast, !state.isSelectedMonthInFuture else { return false }
-        guard let dueDay = item.dueDay else { return false }
-        let today = Calendar.current.component(.day, from: Date())
-        return dueDay < today
+        MonthItemRowContent.showsOverdueHighlight(
+            for: item,
+            isSelectedMonthInPast: state.isSelectedMonthInPast,
+            isSelectedMonthInFuture: state.isSelectedMonthInFuture,
+            todayDay: Calendar.current.component(.day, from: Date())
+        )
     }
 
     private func styleFor(_ value: Decimal) -> (top: Color, bottom: Color, border: Color) {
@@ -495,6 +509,9 @@ private struct MonthItemEditorView: View {
                     }
                 }
                 .disabled(!isEditable)
+
+                Toggle("Copy to next month automatically", isOn: $draft.copiesToNextMonthAutomatically)
+                    .disabled(!isEditable)
             }
 
             Section("Notes") {
@@ -532,6 +549,7 @@ private struct MonthItemEditorView: View {
                 dueDay: draft.dueSelection.value,
                 dueText: nil,
                 type: draft.resolvedType(existingItemType: item.type),
+                copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
             dismiss()
@@ -542,6 +560,7 @@ private struct MonthItemEditorView: View {
             label: draft.label,
             amount: draft.amount,
             dueDay: draft.dueSelection.value,
+            copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
             notes: draft.notes
         ) != nil {
             dismiss()

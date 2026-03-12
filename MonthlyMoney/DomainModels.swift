@@ -117,6 +117,7 @@ final class PlannedItem {
     var dueDay: Int?
     var dueText: String?
     var isPaid: Bool
+    var copiesToNextMonthAutomatically: Bool
     var notes: String
 
     init(
@@ -130,6 +131,7 @@ final class PlannedItem {
         dueDay: Int? = nil,
         dueText: String? = nil,
         isPaid: Bool = false,
+        copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
     ) {
         self.id = id
@@ -142,11 +144,45 @@ final class PlannedItem {
         self.dueDay = dueDay
         self.dueText = dueText
         self.isPaid = isPaid
+        self.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         self.notes = notes
+    }
+
+    convenience init(
+        id: UUID = UUID(),
+        budgetID: UUID = UUID(),
+        accountID: UUID,
+        monthKey: YearMonth,
+        type: PlannedItemType,
+        label: String,
+        amount: Decimal,
+        dueDay: Int? = nil,
+        dueText: String? = nil,
+        isPaid: Bool = false,
+        notes: String = ""
+    ) {
+        self.init(
+            id: id,
+            budgetID: budgetID,
+            accountID: accountID,
+            monthKey: monthKey,
+            type: type,
+            label: label,
+            amount: amount,
+            dueDay: dueDay,
+            dueText: dueText,
+            isPaid: isPaid,
+            copiesToNextMonthAutomatically: true,
+            notes: notes
+        )
     }
 
     var resolvedMonthKey: YearMonth? {
         YearMonth(rawValue: monthKey)
+    }
+
+    static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
+        items.filter(\.copiesToNextMonthAutomatically)
     }
 }
 

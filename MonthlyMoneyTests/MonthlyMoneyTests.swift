@@ -99,6 +99,18 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(draft.amountText, "1200")
     }
 
+    func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200
+        )
+
+        XCTAssertTrue(item.copiesToNextMonthAutomatically)
+    }
+
     func testMonthItemRowMetadataLinesShowDayThenNotes() {
         let item = PlannedItem(
             accountID: UUID(),
@@ -132,6 +144,53 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(MonthItemRowContent.metadataLines(for: item), ["Floating"])
+    }
+
+    func testMonthItemRowDoesNotHighlightOverdueForZeroAmount() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Placeholder",
+            amount: 0,
+            dueDay: 1,
+            dueText: nil,
+            isPaid: false
+        )
+
+        XCTAssertFalse(
+            MonthItemRowContent.showsOverdueHighlight(
+                for: item,
+                isSelectedMonthInPast: false,
+                isSelectedMonthInFuture: false,
+                todayDay: 12
+            )
+        )
+    }
+
+    func testAutomaticMonthCopySkipsItemsMarkedNotToAutoCopy() {
+        let items = [
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Rent",
+                amount: 1200
+            ),
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "One-off",
+                amount: 75,
+                copiesToNextMonthAutomatically: false
+            )
+        ]
+
+        XCTAssertEqual(
+            PlannedItem.automaticallyCopiedItems(from: items).map(\.label),
+            ["Rent"]
+        )
     }
 
     private func makeRepository() throws -> AccountRepository {

@@ -183,6 +183,7 @@ final class AppState: ObservableObject {
             dueDay: item.dueDay,
             dueText: item.dueText,
             isPaid: false,
+            copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes
         )
         do {
@@ -203,6 +204,7 @@ final class AppState: ObservableObject {
             dueDay: item.dueDay,
             dueText: item.dueText,
             isPaid: false,
+            copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes
         )
         do {
@@ -244,12 +246,22 @@ final class AppState: ObservableObject {
         }
     }
 
-    func update(item: PlannedItem, label: String, amount: Decimal, dueDay: Int?, dueText: String?, type: PlannedItemType, notes: String) {
+    func update(
+        item: PlannedItem,
+        label: String,
+        amount: Decimal,
+        dueDay: Int?,
+        dueText: String?,
+        type: PlannedItemType,
+        copiesToNextMonthAutomatically: Bool,
+        notes: String
+    ) {
         item.label = label
         item.amount = amount
         item.dueDay = dueDay
         item.dueText = dueText
         item.type = type
+        item.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         item.notes = notes
         do {
             try repository.savePlannedItem(item)
@@ -260,7 +272,14 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
-    func createEntry(type: PlannedItemType, label: String = "", amount: Decimal = 0, dueDay: Int?, notes: String = "") -> PlannedItem? {
+    func createEntry(
+        type: PlannedItemType,
+        label: String = "",
+        amount: Decimal = 0,
+        dueDay: Int?,
+        copiesToNextMonthAutomatically: Bool = true,
+        notes: String = ""
+    ) -> PlannedItem? {
         do {
             let accounts = try repository.accounts()
             guard let account = accounts.first else { return nil }
@@ -274,6 +293,7 @@ final class AppState: ObservableObject {
                 dueDay: dueDay,
                 dueText: nil,
                 isPaid: false,
+                copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
                 notes: notes
             )
             try repository.createPlannedItem(item)
@@ -407,7 +427,7 @@ final class AppState: ObservableObject {
     }
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
-        for source in sourceItems {
+        for source in PlannedItem.automaticallyCopiedItems(from: sourceItems) {
             let copy = PlannedItem(
                 accountID: source.accountID,
                 monthKey: month,
@@ -417,6 +437,7 @@ final class AppState: ObservableObject {
                 dueDay: source.dueDay,
                 dueText: source.dueText,
                 isPaid: false,
+                copiesToNextMonthAutomatically: source.copiesToNextMonthAutomatically,
                 notes: source.notes
             )
             try repository.createPlannedItem(copy)

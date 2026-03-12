@@ -67,6 +67,7 @@ struct BudgetSharingService {
                 dueDay: item.dueDay,
                 dueText: item.dueText,
                 isPaid: item.isPaid,
+                copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
                 notes: item.notes
             )
         }
