@@ -3,46 +3,29 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
 
-    @State private var templatesText: String = "Rent\nSalary\nLiving expenses"
-
     var body: some View {
         Form {
-            Section("Category templates") {
-                TextEditor(text: $templatesText)
-                    .frame(minHeight: 120)
-            }
+            Toggle(
+                "Use separate account for daily budget",
+                isOn: Binding(
+                    get: { state.usesSeparateAccountForDailyBudget },
+                    set: { state.usesSeparateAccountForDailyBudget = $0 }
+                )
+            )
 
-            Section("Defaults") {
-                LabeledContent("Min suggested living") {
-                    decimalField($state.minSuggestedLiving)
+            Picker(
+                "Payday",
+                selection: Binding(
+                    get: { state.dailyBudgetPaydayDay },
+                    set: { state.dailyBudgetPaydayDay = $0 }
+                )
+            ) {
+                ForEach(1...31, id: \.self) { day in
+                    Text("\(day)")
+                        .tag(day)
                 }
-                LabeledContent("Buffer") {
-                    decimalField($state.livingBuffer)
-                }
-            }
-
-            Section("Export / Import") {
-                Button("Export CSV") {}
-                Button("Export XLSX") {}
-                Button("Import CSV") {}
-                Button("Import XLSX") {}
-            }
-
-            Section("Sync") {
-                Text("iCloud sync: Phase 2")
-                    .foregroundStyle(.secondary)
             }
         }
         .navigationTitle("Settings")
-    }
-
-    private func decimalField(_ value: Binding<Decimal>) -> some View {
-        TextField("0", text: Binding(
-            get: { NSDecimalNumber(decimal: value.wrappedValue).stringValue },
-            set: { value.wrappedValue = Decimal(string: $0, locale: Locale.current) ?? 0 }
-        ))
-        .keyboardType(.decimalPad)
-        .multilineTextAlignment(.trailing)
-        .frame(width: 120)
     }
 }

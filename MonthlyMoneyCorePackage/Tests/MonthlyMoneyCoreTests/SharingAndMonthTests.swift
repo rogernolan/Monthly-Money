@@ -10,6 +10,9 @@ final class SharingAndMonthTests: XCTestCase {
         let transaction = Transaction(budgetID: budget.id, accountID: account.id, monthKey: month, amount: 10)
 
         XCTAssertEqual(budget.sharingState, .local)
+        XCTAssertFalse(budget.usesSeparateAccountForDailyBudget)
+        XCTAssertEqual(budget.dailyBudgetAmount, 0)
+        XCTAssertEqual(budget.dailyBudgetPaydayDay, 1)
         XCTAssertEqual(account.budgetID, budget.id)
         XCTAssertEqual(item.budgetID, budget.id)
         XCTAssertEqual(transaction.budgetID, budget.id)

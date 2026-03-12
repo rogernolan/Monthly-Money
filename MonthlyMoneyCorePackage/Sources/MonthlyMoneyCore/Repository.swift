@@ -90,6 +90,10 @@ public final class AccountRepository {
         return budget
     }
 
+    public func saveBudget(_ budget: Budget) throws {
+        try store(for: budget.sharingState).upsertBudget(budget)
+    }
+
     public func activeBudget() throws -> Budget? {
         if let local = try privateStore.fetchBudgets().first(where: { $0.sharingState == .local }) {
             return local

@@ -61,17 +61,26 @@ public final class Budget {
     public var name: String
     public var ownerParticipantID: String
     public var sharingState: BudgetSharingState
+    public var usesSeparateAccountForDailyBudget: Bool
+    public var dailyBudgetAmount: Decimal
+    public var dailyBudgetPaydayDay: Int
 
     public init(
         id: UUID = UUID(),
         name: String,
         ownerParticipantID: String,
-        sharingState: BudgetSharingState = .local
+        sharingState: BudgetSharingState = .local,
+        usesSeparateAccountForDailyBudget: Bool = false,
+        dailyBudgetAmount: Decimal = 0,
+        dailyBudgetPaydayDay: Int = 1
     ) {
         self.id = id
         self.name = name
         self.ownerParticipantID = ownerParticipantID
         self.sharingState = sharingState
+        self.usesSeparateAccountForDailyBudget = usesSeparateAccountForDailyBudget
+        self.dailyBudgetAmount = dailyBudgetAmount
+        self.dailyBudgetPaydayDay = dailyBudgetPaydayDay
     }
 }
 

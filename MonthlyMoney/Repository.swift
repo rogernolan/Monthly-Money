@@ -142,6 +142,9 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.name = budget.name
             existing.ownerParticipantID = budget.ownerParticipantID
             existing.sharingState = budget.sharingState
+            existing.usesSeparateAccountForDailyBudget = budget.usesSeparateAccountForDailyBudget
+            existing.dailyBudgetAmount = budget.dailyBudgetAmount
+            existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
         } else {
             modelContext.insert(budget)
         }
@@ -276,6 +279,10 @@ final class AccountRepository {
         let budget = Budget(name: name, ownerParticipantID: ownerParticipantID, sharingState: sharingState)
         try store(for: sharingState).upsertBudget(budget)
         return budget
+    }
+
+    func saveBudget(_ budget: Budget) throws {
+        try store(for: budget.sharingState).upsertBudget(budget)
     }
 
     func activeBudget() throws -> Budget? {

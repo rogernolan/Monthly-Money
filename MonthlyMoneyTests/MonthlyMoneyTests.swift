@@ -18,9 +18,134 @@ final class MonthlyMoneyTests: XCTestCase {
         await state.bootstrapIfNeeded()
 
         XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
+        XCTAssertEqual(try repository.activeBudget()?.usesSeparateAccountForDailyBudget, false)
         XCTAssertFalse(state.monthItems.isEmpty)
         XCTAssertTrue(state.canNavigateToNextMonth)
         XCTAssertEqual(state.primaryBankName, "Nationwide")
+    }
+
+    func testDailyBudgetAccountSettingPersistsOnActiveBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        XCTAssertFalse(state.usesSeparateAccountForDailyBudget)
+
+        state.usesSeparateAccountForDailyBudget = true
+
+        XCTAssertTrue(state.usesSeparateAccountForDailyBudget)
+        XCTAssertEqual(try repository.activeBudget()?.usesSeparateAccountForDailyBudget, true)
+    }
+
+    func testDailyBudgetInputsPersistOnActiveBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertEqual(state.dailyBudgetAmount, 0)
+        XCTAssertEqual(state.dailyBudgetPaydayDay, 1)
+
+        state.dailyBudgetAmount = 1550
+        state.dailyBudgetPaydayDay = 28
+
+        XCTAssertEqual(state.dailyBudgetAmount, 1550)
+        XCTAssertEqual(state.dailyBudgetPaydayDay, 28)
+        XCTAssertEqual(try repository.activeBudget()?.dailyBudgetAmount, 1550)
+        XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
+    }
+
+    func testDailyCurrentBalanceUsesMonthProjectionWhenSeparateAccountDisabled() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertFalse(state.usesSeparateAccountForDailyBudget)
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, state.projectedBalanceFromCurrentBalance)
+    }
+
+    func testDailyCurrentBalanceUsesSeparateAccountBalanceWhenEnabled() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = 777
+
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, 777)
+    }
+
+    func testDailyBudgetCycleWrapsAcrossMonthBoundary() {
+        let calendar = Self.utcCalendar
+        let metrics = DailyBudgetCycleCalculator.metrics(
+            today: Self.date(year: 2026, month: 4, day: 2),
+            paydayDay: 1,
+            budget: 3000,
+            currentBalance: 2900,
+            calendar: calendar
+        )
+
+        XCTAssertEqual(
+            calendar.startOfDay(for: metrics.previousPayday),
+            calendar.startOfDay(for: Self.date(year: 2026, month: 4, day: 1))
+        )
+        XCTAssertEqual(
+            calendar.startOfDay(for: metrics.nextPayday),
+            calendar.startOfDay(for: Self.date(year: 2026, month: 5, day: 1))
+        )
+        XCTAssertEqual(metrics.cycleDays, 30)
+        XCTAssertEqual(metrics.elapsedDaysInCycle, 1)
+        XCTAssertEqual(metrics.remainingDaysToPayday, 29)
+    }
+
+    func testDailyBudgetCycleCalculatesChipValues() {
+        let metrics = DailyBudgetCycleCalculator.metrics(
+            today: Self.date(year: 2026, month: 3, day: 12),
+            paydayDay: 1,
+            budget: 3100,
+            currentBalance: 2500,
+            calendar: Self.utcCalendar
+        )
+
+        XCTAssertEqual(metrics.dailyBudget, 100)
+        XCTAssertEqual(metrics.expectedBalanceToday, 2000)
+        XCTAssertEqual(metrics.aheadBehind, 500)
+        XCTAssertEqual(metrics.currentDailyBudget, 125)
+    }
+
+    func testDailyChipToneResolverUsesWhiteBudgetCardsAndComparisonColours() {
+        let metrics = DailyBudgetCycleMetrics(
+            previousPayday: Self.date(year: 2026, month: 3, day: 1),
+            nextPayday: Self.date(year: 2026, month: 4, day: 1),
+            cycleDays: 31,
+            elapsedDaysInCycle: 11,
+            remainingDaysToPayday: 20,
+            dailyBudget: 100,
+            expectedBalanceToday: 2000,
+            aheadBehind: -50,
+            currentDailyBudget: 120
+        )
+
+        XCTAssertEqual(DailyChipToneResolver.tone(for: .budget, metrics: metrics, currentBalance: 500), .plain)
+        XCTAssertEqual(DailyChipToneResolver.tone(for: .dailyBudget, metrics: metrics, currentBalance: 500), .plain)
+        XCTAssertEqual(DailyChipToneResolver.tone(for: .aheadBehind, metrics: metrics, currentBalance: 500), .negative)
+        XCTAssertEqual(DailyChipToneResolver.tone(for: .currentDailyBudget, metrics: metrics, currentBalance: 500), .positive)
+    }
+
+    func testDailyPresentationHelpersExposeUpdatedTitlesAndPaydayLabel() {
+        XCTAssertEqual(
+            DailyPresentationContent.balanceTitle(usesSeparateAccount: true),
+            "Current balance"
+        )
+        XCTAssertEqual(
+            DailyPresentationContent.balanceTitle(usesSeparateAccount: false),
+            "Predicted remaining funds"
+        )
+        XCTAssertEqual(
+            DailyPresentationContent.daysUntilPaydayTitle(paydayDay: 17),
+            "Days until payday (17th)"
+        )
     }
 
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
@@ -198,5 +323,22 @@ final class MonthlyMoneyTests: XCTestCase {
             privateStore: InMemoryAccountDataStore(),
             sharedStore: InMemoryAccountDataStore()
         )
+    }
+
+    private static let utcCalendar: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
+    }()
+
+    private static func date(year: Int, month: Int, day: Int) -> Date {
+        utcCalendar.date(from: DateComponents(
+            calendar: utcCalendar,
+            timeZone: utcCalendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: 12
+        ))!
     }
 }

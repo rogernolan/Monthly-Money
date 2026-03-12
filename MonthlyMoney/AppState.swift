@@ -2,6 +2,94 @@ import Foundation
 import SwiftUI
 import Combine
 
+struct DailyBudgetCycleMetrics: Equatable {
+    let previousPayday: Date
+    let nextPayday: Date
+    let cycleDays: Int
+    let elapsedDaysInCycle: Int
+    let remainingDaysToPayday: Int
+    let dailyBudget: Decimal
+    let expectedBalanceToday: Decimal
+    let aheadBehind: Decimal
+    let currentDailyBudget: Decimal
+}
+
+enum DailyBudgetCycleCalculator {
+    static func metrics(
+        today: Date,
+        paydayDay: Int,
+        budget: Decimal,
+        currentBalance: Decimal,
+        calendar: Calendar
+    ) -> DailyBudgetCycleMetrics {
+        let normalizedToday = calendar.startOfDay(for: today)
+        let currentMonthPayday = paydayDate(
+            relativeTo: normalizedToday,
+            monthOffset: 0,
+            paydayDay: paydayDay,
+            calendar: calendar
+        )
+
+        let previousPayday: Date
+        let nextPayday: Date
+
+        if normalizedToday >= currentMonthPayday {
+            previousPayday = currentMonthPayday
+            nextPayday = paydayDate(
+                relativeTo: normalizedToday,
+                monthOffset: 1,
+                paydayDay: paydayDay,
+                calendar: calendar
+            )
+        } else {
+            previousPayday = paydayDate(
+                relativeTo: normalizedToday,
+                monthOffset: -1,
+                paydayDay: paydayDay,
+                calendar: calendar
+            )
+            nextPayday = currentMonthPayday
+        }
+
+        let cycleDays = calendar.dateComponents([.day], from: previousPayday, to: nextPayday).day ?? 1
+        let elapsedDays = calendar.dateComponents([.day], from: previousPayday, to: normalizedToday).day ?? 0
+        let remainingDays = max(calendar.dateComponents([.day], from: normalizedToday, to: nextPayday).day ?? 1, 1)
+        let dailyBudget = budget / Decimal(max(cycleDays, 1))
+        let expectedBalanceToday = budget - (dailyBudget * Decimal(elapsedDays))
+        let aheadBehind = currentBalance - expectedBalanceToday
+        let currentDailyBudget = currentBalance / Decimal(remainingDays)
+
+        return DailyBudgetCycleMetrics(
+            previousPayday: previousPayday,
+            nextPayday: nextPayday,
+            cycleDays: cycleDays,
+            elapsedDaysInCycle: elapsedDays,
+            remainingDaysToPayday: remainingDays,
+            dailyBudget: dailyBudget,
+            expectedBalanceToday: expectedBalanceToday,
+            aheadBehind: aheadBehind,
+            currentDailyBudget: currentDailyBudget
+        )
+    }
+
+    private static func paydayDate(
+        relativeTo date: Date,
+        monthOffset: Int,
+        paydayDay: Int,
+        calendar: Calendar
+    ) -> Date {
+        let shiftedMonth = calendar.date(byAdding: .month, value: monthOffset, to: date) ?? date
+        let monthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: shiftedMonth)) ?? shiftedMonth
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 31
+        let clampedDay = min(max(paydayDay, 1), daysInMonth)
+        return calendar.date(
+            byAdding: .day,
+            value: clampedDay - 1,
+            to: monthStart
+        ) ?? monthStart
+    }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var selectedMonth: YearMonth
@@ -20,6 +108,7 @@ final class AppState: ObservableObject {
     @Published var cashBalance: Decimal = 0
     @Published var fxBalance: Decimal = 0
     @Published var paydayDay: Int = 1
+    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0
 
     @Published var monthItems: [PlannedItem] = []
 
@@ -64,6 +153,63 @@ final class AppState: ObservableObject {
         } else {
             primaryBankName = "Primary bank"
         }
+        objectWillChange.send()
+    }
+
+    var usesSeparateAccountForDailyBudget: Bool {
+        get { (try? repository.activeBudget()?.usesSeparateAccountForDailyBudget) ?? false }
+        set {
+            do {
+                guard let budget = try repository.activeBudget() else { return }
+                budget.usesSeparateAccountForDailyBudget = newValue
+                try repository.saveBudget(budget)
+                objectWillChange.send()
+            } catch {
+                print("Update daily budget account setting failed: \(error)")
+            }
+        }
+    }
+
+    var dailyBudgetAmount: Decimal {
+        get { (try? repository.activeBudget()?.dailyBudgetAmount) ?? 0 }
+        set {
+            do {
+                guard let budget = try repository.activeBudget() else { return }
+                budget.dailyBudgetAmount = newValue
+                try repository.saveBudget(budget)
+                objectWillChange.send()
+            } catch {
+                print("Update daily budget amount failed: \(error)")
+            }
+        }
+    }
+
+    var dailyBudgetPaydayDay: Int {
+        get { (try? repository.activeBudget()?.dailyBudgetPaydayDay) ?? 1 }
+        set {
+            do {
+                guard let budget = try repository.activeBudget() else { return }
+                budget.dailyBudgetPaydayDay = min(max(newValue, 1), 31)
+                try repository.saveBudget(budget)
+                objectWillChange.send()
+            } catch {
+                print("Update daily budget payday failed: \(error)")
+            }
+        }
+    }
+
+    var dailyBudgetCurrentBalance: Decimal {
+        usesSeparateAccountForDailyBudget ? dailyBudgetSeparateAccountBalance : projectedBalanceFromCurrentBalance
+    }
+
+    var dailyCycleMetrics: DailyBudgetCycleMetrics {
+        DailyBudgetCycleCalculator.metrics(
+            today: Date(),
+            paydayDay: dailyBudgetPaydayDay,
+            budget: dailyBudgetAmount,
+            currentBalance: dailyBudgetCurrentBalance,
+            calendar: Calendar.current
+        )
     }
 
     var openingBalance: Decimal {
