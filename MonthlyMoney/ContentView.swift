@@ -25,20 +25,6 @@ struct ContentView: View {
             }
 
             NavigationStack {
-                SavingsView()
-            }
-            .tabItem {
-                Label("Savings", systemImage: "banknote")
-            }
-
-            NavigationStack {
-                SinkingFundsView()
-            }
-            .tabItem {
-                Label("Sinking Funds", systemImage: "circle.grid.2x2")
-            }
-
-            NavigationStack {
                 SettingsView()
             }
             .tabItem {

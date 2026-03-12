@@ -4,14 +4,12 @@ import SwiftData
 enum AccountRole: String, Codable, CaseIterable {
     case regular
     case variable
-    case savings
     case other
 }
 
 enum AccountType: String, Codable, CaseIterable {
     case current
     case credit
-    case savings
     case cash
     case other
 }

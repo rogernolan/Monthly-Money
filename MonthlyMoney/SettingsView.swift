@@ -3,7 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
 
-    @State private var templatesText: String = "Rent\nSalary\nLiving expenses\nSavings"
+    @State private var templatesText: String = "Rent\nSalary\nLiving expenses"
 
     var body: some View {
         Form {
