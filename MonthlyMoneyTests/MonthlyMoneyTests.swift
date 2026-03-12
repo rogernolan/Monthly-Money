@@ -99,6 +99,41 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(draft.amountText, "1200")
     }
 
+    func testMonthItemRowMetadataLinesShowDayThenNotes() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Gas bill",
+            amount: 42,
+            dueDay: 7,
+            dueText: nil,
+            isPaid: false,
+            notes: "Call to confirm meter reading"
+        )
+
+        XCTAssertEqual(
+            MonthItemRowContent.metadataLines(for: item),
+            ["7th", "Call to confirm meter reading"]
+        )
+    }
+
+    func testMonthItemRowMetadataLinesHideEmptyNotes() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .credit,
+            label: "Salary",
+            amount: 1000,
+            dueDay: nil,
+            dueText: "Floating",
+            isPaid: false,
+            notes: "   "
+        )
+
+        XCTAssertEqual(MonthItemRowContent.metadataLines(for: item), ["Floating"])
+    }
+
     private func makeRepository() throws -> AccountRepository {
         return AccountRepository(
             privateStore: InMemoryAccountDataStore(),

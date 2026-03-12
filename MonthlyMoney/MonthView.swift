@@ -8,10 +8,54 @@ private enum MonthItemFilter: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum MonthItemRowContent {
+    static func metadataLines(for item: PlannedItem) -> [String] {
+        var lines = [dueText(for: item)]
+        let trimmedNotes = item.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNotes.isEmpty {
+            lines.append(trimmedNotes)
+        }
+        return lines
+    }
+
+    static func dueText(for item: PlannedItem) -> String {
+        if let day = item.dueDay { return ordinal(day) }
+        if let dueText = item.dueText, !dueText.isEmpty { return dueText }
+        return "Floating"
+    }
+
+    static func ordinal(_ day: Int) -> String {
+        let remainder100 = day % 100
+        let suffix: String
+        if remainder100 >= 11 && remainder100 <= 13 {
+            suffix = "th"
+        } else {
+            switch day % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(day)\(suffix)"
+    }
+}
+
+private extension VerticalAlignment {
+    private enum MonthRowTitleAlignment: AlignmentID {
+        static func defaultValue(in dimensions: ViewDimensions) -> CGFloat {
+            dimensions[VerticalAlignment.center]
+        }
+    }
+
+    static let monthRowTitle = VerticalAlignment(MonthRowTitleAlignment.self)
+}
+
 struct MonthView: View {
     @EnvironmentObject private var state: AppState
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
+    @State private var activeEditorItem: PlannedItem?
 
     private var debits: [PlannedItem] {
         sorted(state.monthItems.filter { $0.type == .fixedDebit || $0.type == .transfer })
@@ -55,6 +99,10 @@ struct MonthView: View {
         }
         .navigationDestination(item: $activeNewEntry) { seed in
             MonthItemEditorView(newType: seed.type, dueDay: seed.dueDay)
+                .environmentObject(state)
+        }
+        .navigationDestination(item: $activeEditorItem) { item in
+            MonthItemEditorView(item: item)
                 .environmentObject(state)
         }
     }
@@ -300,46 +348,62 @@ struct MonthView: View {
             }
 
             ForEach(items) { item in
-                NavigationLink {
-                    MonthItemEditorView(item: item)
-                        .environmentObject(state)
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: item.type == .credit ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
-                            .font(.caption.bold())
-                            .foregroundStyle(item.type == .credit ? Color.green : Color.red)
+                HStack(alignment: .monthRowTitle, spacing: 8) {
+                    Image(systemName: item.type == .credit ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(item.type == .credit ? Color.green : Color.red)
+                        .alignmentGuide(.monthRowTitle) { dimensions in
+                            dimensions[VerticalAlignment.center]
+                        }
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .center, spacing: 8) {
+                            Text(item.label.isEmpty ? " " : item.label)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Text(AppState.currency(item.amount))
+                                .fontWeight(.semibold)
+
+                            Button {
+                                state.setPaid(item: item, paid: !item.isPaid)
+                            } label: {
+                                Image(systemName: item.isPaid ? "checkmark.square.fill" : "square")
+                                    .font(.title3)
+                                    .foregroundStyle(item.isPaid ? Color.accentColor : .secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(state.isSelectedMonthInPast)
+                            .opacity(state.isSelectedMonthInPast ? 0.6 : 1.0)
+                            .frame(width: 44)
+
+                            Image(systemName: "chevron.right")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                        }
+                        .alignmentGuide(.monthRowTitle) { dimensions in
+                            dimensions[VerticalAlignment.center]
+                        }
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(item.label.isEmpty ? " " : item.label)
-                            Text(dueText(item))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                            let metadataLines = MonthItemRowContent.metadataLines(for: item)
+                            ForEach(Array(metadataLines.enumerated()), id: \.offset) { _, line in
+                                Text(line)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-
-                        Spacer(minLength: 8)
-
-                        Text(AppState.currency(item.amount))
-                            .fontWeight(.semibold)
-
-                        Button {
-                            state.setPaid(item: item, paid: !item.isPaid)
-                        } label: {
-                            Image(systemName: item.isPaid ? "checkmark.square.fill" : "square")
-                                .font(.title3)
-                                .foregroundStyle(item.isPaid ? Color.accentColor : .secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(state.isSelectedMonthInPast)
-                        .opacity(state.isSelectedMonthInPast ? 0.6 : 1.0)
-                        .frame(width: 44)
                     }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(isOverdue(item) ? Color.red.opacity(0.12) : Color.clear)
-                    )
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    activeEditorItem = item
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(isOverdue(item) ? Color.red.opacity(0.12) : Color.clear)
+                )
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     Button(role: .destructive) {
                         state.delete(item: item)
@@ -358,28 +422,6 @@ struct MonthView: View {
             if leftDay != rightDay { return leftDay < rightDay }
             return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
         }
-    }
-
-    private func dueText(_ item: PlannedItem) -> String {
-        if let day = item.dueDay { return ordinal(day) }
-        if let dueText = item.dueText, !dueText.isEmpty { return dueText }
-        return "Floating"
-    }
-
-    private func ordinal(_ day: Int) -> String {
-        let remainder100 = day % 100
-        let suffix: String
-        if remainder100 >= 11 && remainder100 <= 13 {
-            suffix = "th"
-        } else {
-            switch day % 10 {
-            case 1: suffix = "st"
-            case 2: suffix = "nd"
-            case 3: suffix = "rd"
-            default: suffix = "th"
-            }
-        }
-        return "\(day)\(suffix)"
     }
 
     private func isOverdue(_ item: PlannedItem) -> Bool {
@@ -449,7 +491,7 @@ private struct MonthItemEditorView: View {
                 Picker("Day", selection: $draft.dueSelection) {
                     Text("Floating").tag(MonthDueSelection.floating)
                     ForEach(1...31, id: \.self) { day in
-                        Text(ordinal(day)).tag(MonthDueSelection.day(day))
+                        Text(MonthItemRowContent.ordinal(day)).tag(MonthDueSelection.day(day))
                     }
                 }
                 .disabled(!isEditable)
@@ -504,22 +546,6 @@ private struct MonthItemEditorView: View {
         ) != nil {
             dismiss()
         }
-    }
-
-    private func ordinal(_ day: Int) -> String {
-        let remainder100 = day % 100
-        let suffix: String
-        if remainder100 >= 11 && remainder100 <= 13 {
-            suffix = "th"
-        } else {
-            switch day % 10 {
-            case 1: suffix = "st"
-            case 2: suffix = "nd"
-            case 3: suffix = "rd"
-            default: suffix = "th"
-            }
-        }
-        return "\(day)\(suffix)"
     }
 }
 
