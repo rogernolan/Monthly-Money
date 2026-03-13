@@ -214,12 +214,18 @@ final class AppState: ObservableObject {
 
     var openingBalance: Decimal {
         get { effectiveOpeningBalance(for: selectedMonth) }
-        set { openingBalances[selectedMonth.rawValue] = newValue }
+        set {
+            guard canEdit(month: selectedMonth) else { return }
+            openingBalances[selectedMonth.rawValue] = newValue
+        }
     }
 
     var primaryBankBalance: Decimal {
         get { primaryBankBalances[selectedMonth.rawValue] ?? 0 }
-        set { primaryBankBalances[selectedMonth.rawValue] = newValue }
+        set {
+            guard canEdit(month: selectedMonth) else { return }
+            primaryBankBalances[selectedMonth.rawValue] = newValue
+        }
     }
 
     var monthTotals: MonthTotals {
@@ -301,6 +307,7 @@ final class AppState: ObservableObject {
     }
 
     func setPaid(item: PlannedItem, paid: Bool) {
+        guard canEdit(item: item) else { return }
         item.isPaid = paid
         do {
             try repository.savePlannedItem(item)
@@ -311,6 +318,7 @@ final class AppState: ObservableObject {
     }
 
     func delete(item: PlannedItem) {
+        guard canEdit(item: item) else { return }
         do {
             try repository.deletePlannedItem(id: item.id)
             try refresh()
@@ -320,6 +328,7 @@ final class AppState: ObservableObject {
     }
 
     func duplicate(item: PlannedItem) {
+        guard canEditSelectedMonth else { return }
         let copy = PlannedItem(
             accountID: item.accountID,
             monthKey: selectedMonth,
@@ -341,6 +350,7 @@ final class AppState: ObservableObject {
     }
 
     func copy(item: PlannedItem, to month: YearMonth) {
+        guard canEdit(month: month) else { return }
         let copy = PlannedItem(
             accountID: item.accountID,
             monthKey: month,
@@ -362,6 +372,7 @@ final class AppState: ObservableObject {
     }
 
     func setLivingExpensesToSuggested() {
+        guard canEditSelectedMonth else { return }
         let suggested = monthTotals.suggestedLiving
         if let living = monthItems.first(where: { $0.type == .transfer && $0.label.lowercased().contains("living") }) {
             living.amount = suggested
@@ -402,6 +413,7 @@ final class AppState: ObservableObject {
         copiesToNextMonthAutomatically: Bool,
         notes: String
     ) {
+        guard canEdit(item: item) else { return }
         item.label = label
         item.amount = amount
         item.dueDay = dueDay
@@ -426,6 +438,7 @@ final class AppState: ObservableObject {
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
     ) -> PlannedItem? {
+        guard canEditSelectedMonth else { return nil }
         do {
             let accounts = try repository.accounts()
             guard let account = accounts.first else { return nil }
@@ -492,6 +505,19 @@ final class AppState: ObservableObject {
             year: calendar.component(.year, from: now),
             month: calendar.component(.month, from: now)
         )
+    }
+
+    private var canEditSelectedMonth: Bool {
+        canEdit(month: selectedMonth)
+    }
+
+    private func canEdit(item: PlannedItem) -> Bool {
+        guard let month = item.resolvedMonthKey else { return false }
+        return canEdit(month: month)
+    }
+
+    private func canEdit(month: YearMonth) -> Bool {
+        month >= currentYearMonth
     }
 
     private func effectiveOpeningBalance(for month: YearMonth) -> Decimal {

@@ -53,6 +53,21 @@ enum MonthItemRowContent {
     }
 }
 
+enum MonthEditableCardRules {
+    static func allowsCurrentBalanceEditing(
+        isSelectedMonthInPast: Bool,
+        isSelectedMonthInFuture: Bool
+    ) -> Bool {
+        !isSelectedMonthInPast && !isSelectedMonthInFuture
+    }
+}
+
+enum MonthChipFocusID {
+    static func currentBalance(for month: YearMonth) -> String {
+        "month-current-balance-\(month.rawValue)"
+    }
+}
+
 private extension VerticalAlignment {
     private enum MonthRowTitleAlignment: AlignmentID {
         static func defaultValue(in dimensions: ViewDimensions) -> CGFloat {
@@ -118,6 +133,9 @@ struct MonthView: View {
             MonthItemEditorView(item: item)
                 .environmentObject(state)
         }
+        .onChange(of: state.selectedMonth) { _, _ in
+            focusedEditableChipID = nil
+        }
     }
 
     private var fixedHeader: some View {
@@ -128,13 +146,17 @@ struct MonthView: View {
                 amountCard(
                     title: state.isSelectedMonthInFuture ? "Opening balance" : "Current balance",
                     value: state.isSelectedMonthInFuture ? state.openingBalance : state.primaryBankBalance,
-                    editableValue: state.isSelectedMonthInFuture
-                        ? nil
-                        : Binding(
+                    editableValue: MonthEditableCardRules.allowsCurrentBalanceEditing(
+                        isSelectedMonthInPast: state.isSelectedMonthInPast,
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
+                    ) ? Binding(
                             get: { state.primaryBankBalance },
                             set: { state.primaryBankBalance = $0 }
-                        ),
-                    editableFocusID: state.isSelectedMonthInFuture ? nil : "month-current-balance"
+                        ) : nil,
+                    editableFocusID: MonthEditableCardRules.allowsCurrentBalanceEditing(
+                        isSelectedMonthInPast: state.isSelectedMonthInPast,
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
+                    ) ? MonthChipFocusID.currentBalance(for: state.selectedMonth) : nil
                 )
                 amountCard(
                     title: "Projected balance",
@@ -440,10 +462,12 @@ struct MonthView: View {
                         .fill(isOverdue(item) ? Color.red.opacity(0.12) : Color.clear)
                 )
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        state.delete(item: item)
-                    } label: {
-                        Label("Delete", systemImage: "trash")
+                    if !state.isSelectedMonthInPast {
+                        Button(role: .destructive) {
+                            state.delete(item: item)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
                     }
                 }
             }

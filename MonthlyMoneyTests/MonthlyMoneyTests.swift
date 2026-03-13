@@ -168,6 +168,94 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(EditableMoneyChipLayout.resting.showsEditBadge)
     }
 
+    func testMonthEditableCardRulesOnlyAllowCurrentMonthBalanceEditing() {
+        XCTAssertTrue(
+            MonthEditableCardRules.allowsCurrentBalanceEditing(
+                isSelectedMonthInPast: false,
+                isSelectedMonthInFuture: false
+            )
+        )
+        XCTAssertFalse(
+            MonthEditableCardRules.allowsCurrentBalanceEditing(
+                isSelectedMonthInPast: true,
+                isSelectedMonthInFuture: false
+            )
+        )
+        XCTAssertFalse(
+            MonthEditableCardRules.allowsCurrentBalanceEditing(
+                isSelectedMonthInPast: false,
+                isSelectedMonthInFuture: true
+            )
+        )
+    }
+
+    func testMonthChipFocusIDChangesPerMonth() {
+        let january = YearMonth(year: 2026, month: 1)
+        let february = YearMonth(year: 2026, month: 2)
+
+        XCTAssertEqual(
+            MonthChipFocusID.currentBalance(for: january),
+            "month-current-balance-2026-01"
+        )
+        XCTAssertNotEqual(
+            MonthChipFocusID.currentBalance(for: january),
+            MonthChipFocusID.currentBalance(for: february)
+        )
+    }
+
+    func testPastMonthMutationsAreIgnored() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let currentMonth = state.selectedMonth
+        let pastMonth = YearMonth(year: currentMonth.month == 1 ? currentMonth.year - 1 : currentMonth.year,
+                                  month: currentMonth.month == 1 ? 12 : currentMonth.month - 1)
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: pastMonth,
+            type: .fixedDebit,
+            label: "Frozen bill",
+            amount: 42,
+            dueDay: 4,
+            isPaid: false
+        )
+        try repository.createPlannedItem(item)
+
+        state.selectedMonth = pastMonth
+        try state.refresh()
+
+        state.primaryBankBalance = 999
+        state.setPaid(item: item, paid: true)
+        state.update(
+            item: item,
+            label: "Changed",
+            amount: 88,
+            dueDay: 5,
+            dueText: nil,
+            type: .credit,
+            copiesToNextMonthAutomatically: false,
+            notes: "Should not persist"
+        )
+        state.delete(item: item)
+        let created = state.createEntry(type: .fixedDebit, label: "Past add", amount: 11, dueDay: 7)
+
+        let reloaded = try XCTUnwrap(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
+        XCTAssertEqual(state.primaryBankBalance, 0)
+        XCTAssertFalse(reloaded.isPaid)
+        XCTAssertEqual(reloaded.label, "Frozen bill")
+        XCTAssertEqual(reloaded.amount, 42)
+        XCTAssertEqual(reloaded.type, .fixedDebit)
+        XCTAssertEqual(reloaded.notes, "")
+        XCTAssertNil(created)
+        XCTAssertEqual(
+            try repository.plannedItems(for: pastMonth).filter { $0.label == "Past add" }.count,
+            0
+        )
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,
