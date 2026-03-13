@@ -64,6 +64,7 @@ enum DailyPresentationContent {
 
 struct DailyView: View {
     @EnvironmentObject private var state: AppState
+    @FocusState private var focusedEditableChipID: String?
 
     var body: some View {
         ScrollView {
@@ -104,9 +105,15 @@ struct DailyView: View {
     private var budgetChip: some View {
         dailyChip(
             title: DailyPresentationContent.budgetTitle,
-            tone: .plain
+            tone: .plain,
+            editableFocusID: "daily-budget"
         ) {
-            EditableMoneyChipValue(value: $state.dailyBudgetAmount, fontSize: 28)
+            EditableMoneyChipValue(
+                value: $state.dailyBudgetAmount,
+                fontSize: 28,
+                focus: $focusedEditableChipID,
+                focusID: "daily-budget"
+            )
         }
     }
 
@@ -123,10 +130,16 @@ struct DailyView: View {
     private func currentBalanceChip(metrics: DailyBudgetCycleMetrics) -> some View {
         dailyChip(
             title: DailyPresentationContent.balanceTitle(usesSeparateAccount: state.usesSeparateAccountForDailyBudget),
-            tone: DailyChipToneResolver.tone(for: .currentBalance, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance)
+            tone: DailyChipToneResolver.tone(for: .currentBalance, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance),
+            editableFocusID: state.usesSeparateAccountForDailyBudget ? "daily-current-balance" : nil
         ) {
             if state.usesSeparateAccountForDailyBudget {
-                EditableMoneyChipValue(value: $state.dailyBudgetSeparateAccountBalance, fontSize: 28)
+                EditableMoneyChipValue(
+                    value: $state.dailyBudgetSeparateAccountBalance,
+                    fontSize: 28,
+                    focus: $focusedEditableChipID,
+                    focusID: "daily-current-balance"
+                )
             } else {
                 Text(AppState.currency(state.dailyBudgetCurrentBalance))
                     .font(.system(size: 28, weight: .semibold))
@@ -165,13 +178,15 @@ struct DailyView: View {
         }
     }
 
+    @ViewBuilder
     private func dailyChip<Content: View>(
         title: String,
         tone: DailyChipTone,
+        editableFocusID: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
         let style = style(for: tone)
-        return VStack(alignment: .trailing, spacing: 6) {
+        let chip = VStack(alignment: .trailing, spacing: 6) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -200,6 +215,21 @@ struct DailyView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(style.border.opacity(0.35), lineWidth: 1)
         )
+
+        if let editableFocusID {
+            chip
+                .overlay(alignment: .topLeading) {
+                    EditableMoneyChipBadge()
+                        .padding(.top, 6)
+                        .padding(.leading, 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedEditableChipID = editableFocusID
+                }
+        } else {
+            chip
+        }
     }
 
     private func style(for tone: DailyChipTone) -> (top: Color, bottom: Color, border: Color) {

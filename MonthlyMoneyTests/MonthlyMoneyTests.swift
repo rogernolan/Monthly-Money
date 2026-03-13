@@ -163,6 +163,11 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(EditableMoneyChipLayout.resting.trailingAccessoryWidth, 0)
     }
 
+    func testEditableMoneyChipLayoutShowsPersistentEditBadge() {
+        XCTAssertTrue(EditableMoneyChipLayout.editing.showsEditBadge)
+        XCTAssertTrue(EditableMoneyChipLayout.resting.showsEditBadge)
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,

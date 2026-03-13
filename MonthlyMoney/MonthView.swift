@@ -65,6 +65,7 @@ private extension VerticalAlignment {
 
 struct MonthView: View {
     @EnvironmentObject private var state: AppState
+    @FocusState private var focusedEditableChipID: String?
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
     @State private var activeEditorItem: PlannedItem?
@@ -132,7 +133,8 @@ struct MonthView: View {
                         : Binding(
                             get: { state.primaryBankBalance },
                             set: { state.primaryBankBalance = $0 }
-                        )
+                        ),
+                    editableFocusID: state.isSelectedMonthInFuture ? nil : "month-current-balance"
                 )
                 amountCard(
                     title: "Projected balance",
@@ -294,16 +296,18 @@ struct MonthView: View {
         .accessibilityLabel("New entry")
     }
 
+    @ViewBuilder
     private func amountCard(
         title: String,
         value: Decimal,
         secondaryText: String? = nil,
         editableValue: Binding<Decimal>? = nil,
+        editableFocusID: String? = nil,
         prefixIcon: String? = nil,
         prefixColor: Color? = nil
     ) -> some View {
         let style = styleFor(value)
-        return VStack(alignment: .trailing, spacing: 4) {
+        let card = VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
                 if let icon = prefixIcon {
                     Image(systemName: icon)
@@ -317,7 +321,12 @@ struct MonthView: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
 
             if let editableValue {
-                EditableMoneyChipValue(value: editableValue, fontSize: 25.5)
+                EditableMoneyChipValue(
+                    value: editableValue,
+                    fontSize: 25.5,
+                    focus: $focusedEditableChipID,
+                    focusID: editableFocusID ?? title
+                )
             } else {
                 Text(AppState.currency(value))
                     .font(.system(size: 25.5, weight: .semibold))
@@ -349,6 +358,21 @@ struct MonthView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(style.border.opacity(0.35), lineWidth: 1)
         )
+
+        if let editableFocusID {
+            card
+                .overlay(alignment: .topLeading) {
+                    EditableMoneyChipBadge()
+                        .padding(.top, 6)
+                        .padding(.leading, 6)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    focusedEditableChipID = editableFocusID
+                }
+        } else {
+            card
+        }
     }
 
     private func itemSection(title: String, items: [PlannedItem]) -> some View {

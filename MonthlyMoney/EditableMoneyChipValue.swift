@@ -3,10 +3,12 @@ import SwiftUI
 struct EditableMoneyChipLayout: Equatable {
     let showsDismissButton: Bool
     let trailingAccessoryWidth: CGFloat
+    let showsEditBadge: Bool
 
     init(isEditing: Bool) {
         showsDismissButton = isEditing
         trailingAccessoryWidth = isEditing ? 34 : 0
+        showsEditBadge = true
     }
 
     static let editing = EditableMoneyChipLayout(isEditing: true)
@@ -17,12 +19,17 @@ struct EditableMoneyChipValue: View {
     @Binding var value: Decimal
 
     let fontSize: CGFloat
+    let focus: FocusState<String?>.Binding
+    let focusID: String
 
     @State private var draft = ""
-    @FocusState private var isFocused: Bool
 
     private var layout: EditableMoneyChipLayout {
         EditableMoneyChipLayout(isEditing: isFocused)
+    }
+
+    private var isFocused: Bool {
+        focus.wrappedValue == focusID
     }
 
     private var buttonAnimation: Animation {
@@ -46,7 +53,7 @@ struct EditableMoneyChipValue: View {
                     ) ?? 0
                 }
             ))
-            .focused($isFocused)
+            .focused(focus, equals: focusID)
             .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
             .font(.system(size: fontSize, weight: .semibold))
@@ -54,7 +61,7 @@ struct EditableMoneyChipValue: View {
             .padding(.trailing, layout.trailingAccessoryWidth)
 
             Button {
-                isFocused = false
+                focus.wrappedValue = nil
             } label: {
                 Image(systemName: "checkmark")
                     .font(.system(size: 14, weight: .bold))
@@ -84,8 +91,8 @@ struct EditableMoneyChipValue: View {
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .animation(buttonAnimation, value: layout)
-        .onChange(of: isFocused) { _, focused in
-            if focused {
+        .onChange(of: focus.wrappedValue) { _, newValue in
+            if newValue == focusID {
                 draft = plainString(from: value)
             } else {
                 draft = ""
@@ -106,5 +113,19 @@ struct EditableMoneyChipValue: View {
             .replacingOccurrences(of: groupingSeparator, with: "")
             .filter { $0.isNumber || String($0) == decimalSeparator || $0 == "-" }
         return filtered.isEmpty ? "0" : filtered
+    }
+}
+
+struct EditableMoneyChipBadge: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(Color(uiColor: .systemGray5))
+            .frame(width: 20, height: 20)
+            .overlay {
+                Image(systemName: "pencil")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.secondary)
+            }
+            .allowsHitTesting(false)
     }
 }
