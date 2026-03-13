@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C80560D72F505D310021D18F /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = C80560D62F505D270021D18F /* AGENTS.md */; };
+		C89FC5122F645FE300BA9102 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = C89FC5112F645FE300BA9102 /* AppIcon.icon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,6 +34,7 @@
 		C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560D62F505D270021D18F /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		C895F1FC2F58773C007AD83E /* HANDOFF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = HANDOFF.md; sourceTree = "<group>"; };
+		C89FC5112F645FE300BA9102 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -100,6 +102,7 @@
 				C80560BB2F505D200021D18F /* MonthlyMoneyTests */,
 				C80560C52F505D200021D18F /* MonthlyMoneyUITests */,
 				C80560A82F505D1E0021D18F /* Products */,
+				C89FC5112F645FE300BA9102 /* AppIcon.icon */,
 			);
 			sourceTree = "<group>";
 		};
@@ -233,6 +236,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C89FC5122F645FE300BA9102 /* AppIcon.icon in Resources */,
 				C80560D72F505D310021D18F /* AGENTS.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
