@@ -41,7 +41,9 @@ public struct BudgetSharingService {
             sharingState: .shared,
             usesSeparateAccountForDailyBudget: snapshot.budget.usesSeparateAccountForDailyBudget,
             dailyBudgetAmount: snapshot.budget.dailyBudgetAmount,
-            dailyBudgetPaydayDay: snapshot.budget.dailyBudgetPaydayDay
+            dailyBudgetPaydayDay: snapshot.budget.dailyBudgetPaydayDay,
+            dailyBudgetSeparateAccountBalance: snapshot.budget.dailyBudgetSeparateAccountBalance,
+            monthBalancesPayload: snapshot.budget.monthBalancesPayload
         )
 
         let sharedAccounts = snapshot.accounts.map { account in

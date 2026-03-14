@@ -57,13 +57,15 @@ public struct YearMonth: Codable, Hashable, Comparable, CustomStringConvertible 
 
 @Model
 public final class Budget {
-    @Attribute(.unique) public var id: UUID
-    public var name: String
-    public var ownerParticipantID: String
-    public var sharingState: BudgetSharingState
-    public var usesSeparateAccountForDailyBudget: Bool
-    public var dailyBudgetAmount: Decimal
-    public var dailyBudgetPaydayDay: Int
+    public var id: UUID = UUID()
+    public var name: String = ""
+    public var ownerParticipantID: String = ""
+    public var sharingState: BudgetSharingState = BudgetSharingState.local
+    public var usesSeparateAccountForDailyBudget: Bool = false
+    public var dailyBudgetAmount: Decimal = 0
+    public var dailyBudgetPaydayDay: Int = 1
+    public var dailyBudgetSeparateAccountBalance: Decimal = 0
+    public var monthBalancesPayload: String = "{}"
 
     public init(
         id: UUID = UUID(),
@@ -72,7 +74,9 @@ public final class Budget {
         sharingState: BudgetSharingState = .local,
         usesSeparateAccountForDailyBudget: Bool = false,
         dailyBudgetAmount: Decimal = 0,
-        dailyBudgetPaydayDay: Int = 1
+        dailyBudgetPaydayDay: Int = 1,
+        dailyBudgetSeparateAccountBalance: Decimal = 0,
+        monthBalancesPayload: String = "{}"
     ) {
         self.id = id
         self.name = name
@@ -81,17 +85,19 @@ public final class Budget {
         self.usesSeparateAccountForDailyBudget = usesSeparateAccountForDailyBudget
         self.dailyBudgetAmount = dailyBudgetAmount
         self.dailyBudgetPaydayDay = dailyBudgetPaydayDay
+        self.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
+        self.monthBalancesPayload = monthBalancesPayload
     }
 }
 
 @Model
 public final class Account {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var name: String
-    public var role: AccountRole
-    public var type: AccountType
-    public var ownerParticipantID: String
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var name: String = ""
+    public var role: AccountRole = AccountRole.regular
+    public var type: AccountType = AccountType.current
+    public var ownerParticipantID: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -112,18 +118,18 @@ public final class Account {
 
 @Model
 public final class PlannedItem {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var accountID: UUID
-    public var monthKey: String
-    public var type: PlannedItemType
-    public var label: String
-    public var amount: Decimal
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var accountID: UUID = UUID()
+    public var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
+    public var type: PlannedItemType = PlannedItemType.fixedDebit
+    public var label: String = ""
+    public var amount: Decimal = 0
     public var dueDay: Int?
     public var dueText: String?
-    public var isPaid: Bool
-    public var copiesToNextMonthAutomatically: Bool
-    public var notes: String
+    public var isPaid: Bool = false
+    public var copiesToNextMonthAutomatically: Bool = true
+    public var notes: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -189,12 +195,12 @@ public final class PlannedItem {
 
 @Model
 public final class Transaction {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var accountID: UUID
-    public var monthKey: String
-    public var amount: Decimal
-    public var note: String
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var accountID: UUID = UUID()
+    public var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
+    public var amount: Decimal = 0
+    public var note: String = ""
 
     public init(
         id: UUID = UUID(),

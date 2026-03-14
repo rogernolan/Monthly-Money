@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import MonthlyMoney
 
 @MainActor
@@ -53,6 +54,33 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.dailyBudgetPaydayDay, 28)
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetAmount, 1550)
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
+    }
+
+    func testCurrentMonthBalancePersistsAcrossAppStateRecreation() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.primaryBankBalance = 1234
+
+        let reloaded = AppState(repository: repository)
+        try reloaded.refresh()
+
+        XCTAssertEqual(reloaded.primaryBankBalance, 1234)
+        XCTAssertFalse((try repository.activeBudget()?.monthBalancesPayload).map(\.isEmpty) ?? true)
+    }
+
+    func testDailySeparateAccountBalancePersistsAcrossAppStateRecreation() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = 888
+
+        let reloaded = AppState(repository: repository)
+
+        XCTAssertEqual(reloaded.dailyBudgetSeparateAccountBalance, 888)
     }
 
     func testDailyCurrentBalanceUsesMonthProjectionWhenSeparateAccountDisabled() async throws {
@@ -217,6 +245,65 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(
             MonthItemFilterRules.filteredItems(items, for: .pending).map(\.label).sorted(),
             ["Living", "Rent", "Salary"]
+        )
+    }
+
+    func testDefaultPersistencePlanUsesCloudBackedPrivateStoreAndLocalSharedStore() {
+        let plan = MonthlyMoneyPersistencePlan.defaultPlan()
+
+        XCTAssertEqual(plan.privateStore.syncMode, .cloudPrivate)
+        XCTAssertEqual(plan.sharedStore.syncMode, .localOnly)
+    }
+
+    func testBootstrapRulesWaitForCloudImportOnlyForEmptyCloudBackedPrivateStore() {
+        XCTAssertTrue(
+            AppBootstrapRules.shouldWaitForInitialCloudImport(
+                privateStoreSyncMode: .cloudPrivate,
+                accountCount: 0
+            )
+        )
+        XCTAssertFalse(
+            AppBootstrapRules.shouldWaitForInitialCloudImport(
+                privateStoreSyncMode: .cloudPrivate,
+                accountCount: 1
+            )
+        )
+        XCTAssertFalse(
+            AppBootstrapRules.shouldWaitForInitialCloudImport(
+                privateStoreSyncMode: .localOnly,
+                accountCount: 0
+            )
+        )
+    }
+
+    func testCloudRefreshPolicyOnlyPollsForActiveCloudBackedAppSessions() {
+        XCTAssertTrue(
+            CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: .cloudPrivate,
+                scenePhase: .active,
+                isRunningTests: false
+            )
+        )
+        XCTAssertFalse(
+            CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: .localOnly,
+                scenePhase: .active,
+                isRunningTests: false
+            )
+        )
+        XCTAssertFalse(
+            CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: .cloudPrivate,
+                scenePhase: .background,
+                isRunningTests: false
+            )
+        )
+        XCTAssertFalse(
+            CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: .cloudPrivate,
+                scenePhase: .active,
+                isRunningTests: true
+            )
         )
     }
 

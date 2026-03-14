@@ -145,6 +145,8 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.usesSeparateAccountForDailyBudget = budget.usesSeparateAccountForDailyBudget
             existing.dailyBudgetAmount = budget.dailyBudgetAmount
             existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
+            existing.dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
+            existing.monthBalancesPayload = budget.monthBalancesPayload
         } else {
             modelContext.insert(budget)
         }
@@ -268,10 +270,19 @@ final class SwiftDataAccountDataStore: AccountDataStore {
 final class AccountRepository {
     private let privateStore: AccountDataStore
     private let sharedStore: AccountDataStore
+    let privateStoreSyncMode: StoreSyncMode
+    let sharedStoreSyncMode: StoreSyncMode
 
-    init(privateStore: AccountDataStore, sharedStore: AccountDataStore) {
+    init(
+        privateStore: AccountDataStore,
+        sharedStore: AccountDataStore,
+        privateStoreSyncMode: StoreSyncMode = .localOnly,
+        sharedStoreSyncMode: StoreSyncMode = .localOnly
+    ) {
         self.privateStore = privateStore
         self.sharedStore = sharedStore
+        self.privateStoreSyncMode = privateStoreSyncMode
+        self.sharedStoreSyncMode = sharedStoreSyncMode
     }
 
     @discardableResult

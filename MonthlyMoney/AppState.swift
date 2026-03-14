@@ -2,6 +2,41 @@ import Foundation
 import SwiftUI
 import Combine
 
+private struct PersistedMonthBalances: Codable, Equatable {
+    var openingBalances: [String: String]
+    var primaryBankBalances: [String: String]
+
+    static let empty = PersistedMonthBalances(openingBalances: [:], primaryBankBalances: [:])
+}
+
+private enum PersistedMonthBalancesCodec {
+    static func decode(_ payload: String) -> PersistedMonthBalances {
+        guard let data = payload.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(PersistedMonthBalances.self, from: data) else {
+            return .empty
+        }
+        return decoded
+    }
+
+    static func encode(openingBalances: [String: Decimal], primaryBankBalances: [String: Decimal]) -> String {
+        let payload = PersistedMonthBalances(
+            openingBalances: openingBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue },
+            primaryBankBalances: primaryBankBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue }
+        )
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    static func decimalMap(from values: [String: String]) -> [String: Decimal] {
+        values.reduce(into: [:]) { result, entry in
+            result[entry.key] = Decimal(string: entry.value) ?? 0
+        }
+    }
+}
+
 struct DailyBudgetCycleMetrics: Equatable {
     let previousPayday: Date
     let nextPayday: Date
@@ -94,8 +129,12 @@ enum DailyBudgetCycleCalculator {
 final class AppState: ObservableObject {
     @Published var selectedMonth: YearMonth
 
-    @Published var openingBalances: [String: Decimal] = [:]
-    @Published var primaryBankBalances: [String: Decimal] = [:]
+    @Published var openingBalances: [String: Decimal] = [:] {
+        didSet { persistBudgetStateIfNeeded() }
+    }
+    @Published var primaryBankBalances: [String: Decimal] = [:] {
+        didSet { persistBudgetStateIfNeeded() }
+    }
     @Published var primaryBankName: String = "Primary bank"
 
     @Published var weeklyEstimate: Decimal = 350
@@ -108,11 +147,14 @@ final class AppState: ObservableObject {
     @Published var cashBalance: Decimal = 0
     @Published var fxBalance: Decimal = 0
     @Published var paydayDay: Int = 1
-    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0
+    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0 {
+        didSet { persistBudgetStateIfNeeded() }
+    }
 
     @Published var monthItems: [PlannedItem] = []
 
     private let repository: AccountRepository
+    private var isHydratingPersistedBudgetState = false
 
     init(repository: AccountRepository) {
         self.repository = repository
@@ -122,10 +164,17 @@ final class AppState: ObservableObject {
             year: calendar.component(.year, from: now),
             month: calendar.component(.month, from: now)
         )
+        do {
+            try loadPersistedBudgetState()
+        } catch {
+            print("Initial budget state load failed: \(error)")
+        }
     }
 
     func bootstrapIfNeeded() async {
         do {
+            try await waitForInitialCloudImportIfNeeded()
+
             if try repository.accounts().isEmpty {
                 let account = try repository.createAccount(
                     name: "Nationwide",
@@ -146,7 +195,25 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func waitForInitialCloudImportIfNeeded() async throws {
+        let initialAccountCount = try repository.accounts().count
+        guard AppBootstrapRules.shouldWaitForInitialCloudImport(
+            privateStoreSyncMode: repository.privateStoreSyncMode,
+            accountCount: initialAccountCount
+        ) else {
+            return
+        }
+
+        for _ in 0..<5 {
+            try await Task.sleep(for: .milliseconds(400))
+            if try repository.accounts().isEmpty == false {
+                return
+            }
+        }
+    }
+
     func refresh() throws {
+        try loadPersistedBudgetState()
         monthItems = try repository.plannedItems(for: selectedMonth)
         if let firstAccount = try repository.accounts().first {
             primaryBankName = firstAccount.name
@@ -168,6 +235,17 @@ final class AppState: ObservableObject {
                 print("Update daily budget account setting failed: \(error)")
             }
         }
+    }
+
+    var persistedMonthBalancePayload: String {
+        PersistedMonthBalancesCodec.encode(
+            openingBalances: openingBalances,
+            primaryBankBalances: primaryBankBalances
+        )
+    }
+
+    var privateStoreSyncMode: StoreSyncMode {
+        repository.privateStoreSyncMode
     }
 
     var dailyBudgetAmount: Decimal {
@@ -613,6 +691,36 @@ final class AppState: ObservableObject {
                 notes: source.notes
             )
             try repository.createPlannedItem(copy)
+        }
+    }
+
+    private func loadPersistedBudgetState() throws {
+        guard let budget = try repository.activeBudget() else {
+            isHydratingPersistedBudgetState = true
+            openingBalances = [:]
+            primaryBankBalances = [:]
+            dailyBudgetSeparateAccountBalance = 0
+            isHydratingPersistedBudgetState = false
+            return
+        }
+
+        let persisted = PersistedMonthBalancesCodec.decode(budget.monthBalancesPayload)
+        isHydratingPersistedBudgetState = true
+        openingBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.openingBalances)
+        primaryBankBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.primaryBankBalances)
+        dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
+        isHydratingPersistedBudgetState = false
+    }
+
+    private func persistBudgetStateIfNeeded() {
+        guard !isHydratingPersistedBudgetState else { return }
+        do {
+            guard let budget = try repository.activeBudget() else { return }
+            budget.monthBalancesPayload = persistedMonthBalancePayload
+            budget.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
+            try repository.saveBudget(budget)
+        } catch {
+            print("Persist budget state failed: \(error)")
         }
     }
 

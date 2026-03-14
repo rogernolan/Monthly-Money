@@ -25,13 +25,15 @@ struct MonthlyMoneyApp: App {
         do {
             repository = try Self.makePersistentRepository(schema: schema)
         } catch {
-            print("Warning: Could not create ModelContainer: \(error). Deleting local stores and retrying.")
+            Self.logModelContainerError("Could not create ModelContainer", error: error)
+            print("Warning: Deleting local stores and retrying.")
             Self.deletePersistentStores()
 
             do {
                 repository = try Self.makePersistentRepository(schema: schema)
             } catch {
-                print("Warning: Rebuilding SwiftData stores failed: \(error). Falling back to in-memory storage for this launch.")
+                Self.logModelContainerError("Rebuilding SwiftData stores failed", error: error)
+                print("Warning: Falling back to in-memory storage for this launch.")
                 repository = AccountRepository(
                     privateStore: InMemoryAccountDataStore(),
                     sharedStore: InMemoryAccountDataStore()
@@ -47,29 +49,34 @@ struct MonthlyMoneyApp: App {
     }
 
     private static func makePersistentRepository(schema: Schema) throws -> AccountRepository {
-        // CloudKit can be wired here when container identifiers are in place.
-        // v1 falls back to local persisted stores for both scopes.
+        let plan = MonthlyMoneyPersistencePlan.defaultPlan()
         let privateContainer = try ModelContainer(
             for: schema,
-            configurations: [ModelConfiguration("PrivateStore", schema: schema, url: persistentStoreURL(named: "PrivateStore"))]
+            configurations: [plan.privateStore.modelConfiguration(schema: schema)]
         )
         let sharedContainer = try ModelContainer(
             for: schema,
-            configurations: [ModelConfiguration("SharedStore", schema: schema, url: persistentStoreURL(named: "SharedStore"))]
+            configurations: [plan.sharedStore.modelConfiguration(schema: schema)]
         )
         return AccountRepository(
             privateStore: SwiftDataAccountDataStore(modelContainer: privateContainer),
-            sharedStore: SwiftDataAccountDataStore(modelContainer: sharedContainer)
+            sharedStore: SwiftDataAccountDataStore(modelContainer: sharedContainer),
+            privateStoreSyncMode: plan.privateStore.syncMode,
+            sharedStoreSyncMode: plan.sharedStore.syncMode
         )
     }
 
-    private static func persistentStoreURL(named name: String) -> URL {
+    static func persistentStoreDirectory() -> URL {
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? fileManager.temporaryDirectory
         let directory = appSupport.appendingPathComponent("MonthlyMoney", isDirectory: true)
         try? fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory.appendingPathComponent("\(name).store")
+        return directory
+    }
+
+    private static func persistentStoreURL(named name: String) -> URL {
+        persistentStoreDirectory().appendingPathComponent("\(name).store")
     }
 
     private static func deletePersistentStores() {
@@ -84,6 +91,17 @@ struct MonthlyMoneyApp: App {
                     print("Warning: Failed removing store file \(fileURL.lastPathComponent): \(error)")
                 }
             }
+        }
+    }
+
+    private static func logModelContainerError(_ message: String, error: Error) {
+        let nsError = error as NSError
+        print("Warning: \(message): \(error)")
+        if !nsError.userInfo.isEmpty {
+            print("Warning: ModelContainer NSError domain=\(nsError.domain) code=\(nsError.code) userInfo=\(nsError.userInfo)")
+        }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            print("Warning: Underlying error domain=\(underlying.domain) code=\(underlying.code) userInfo=\(underlying.userInfo)")
         }
     }
 }

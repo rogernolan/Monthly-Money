@@ -1,7 +1,16 @@
 import SwiftUI
 
+enum CloudRefreshPolicy {
+    static let pollInterval: Duration = .seconds(5)
+
+    static func shouldPoll(privateStoreSyncMode: StoreSyncMode, scenePhase: ScenePhase, isRunningTests: Bool) -> Bool {
+        privateStoreSyncMode == .cloudPrivate && scenePhase == .active && !isRunningTests
+    }
+}
+
 struct ContentView: View {
     @StateObject private var state: AppState
+    @Environment(\.scenePhase) private var scenePhase
     private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     init(repository: AccountRepository) {
@@ -35,6 +44,27 @@ struct ContentView: View {
         .task {
             if !isRunningTests {
                 await state.bootstrapIfNeeded()
+            }
+        }
+        .task(id: scenePhase) {
+            guard CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: state.privateStoreSyncMode,
+                scenePhase: scenePhase,
+                isRunningTests: isRunningTests
+            ) else {
+                return
+            }
+
+            try? state.refresh()
+
+            while CloudRefreshPolicy.shouldPoll(
+                privateStoreSyncMode: state.privateStoreSyncMode,
+                scenePhase: scenePhase,
+                isRunningTests: isRunningTests
+            ) {
+                try? await Task.sleep(for: CloudRefreshPolicy.pollInterval)
+                guard !Task.isCancelled else { return }
+                try? state.refresh()
             }
         }
     }
