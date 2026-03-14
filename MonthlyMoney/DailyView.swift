@@ -64,6 +64,7 @@ enum DailyPresentationContent {
 
 struct DailyView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState private var focusedEditableChipID: String?
 
     var body: some View {
@@ -110,9 +111,10 @@ struct DailyView: View {
         ) {
             EditableMoneyChipValue(
                 value: $state.dailyBudgetAmount,
-                fontSize: 28,
+                fontSize: ChipTypography.dailyValueFontSize(for: horizontalSizeClass),
                 focus: $focusedEditableChipID,
-                focusID: "daily-budget"
+                focusID: "daily-budget",
+                accessibilityIdentifier: "daily-chip-budget-value"
             )
         }
     }
@@ -123,7 +125,8 @@ struct DailyView: View {
             tone: .plain
         ) {
             Text(AppState.currency(metrics.dailyBudget))
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
+                .accessibilityIdentifier("daily-chip-average-budget-value")
         }
     }
 
@@ -136,14 +139,16 @@ struct DailyView: View {
             if state.usesSeparateAccountForDailyBudget {
                 EditableMoneyChipValue(
                     value: $state.dailyBudgetSeparateAccountBalance,
-                    fontSize: 28,
+                    fontSize: ChipTypography.dailyValueFontSize(for: horizontalSizeClass),
                     focus: $focusedEditableChipID,
-                    focusID: "daily-current-balance"
+                    focusID: "daily-current-balance",
+                    accessibilityIdentifier: "daily-chip-current-balance-value"
                 )
             } else {
                 Text(AppState.currency(state.dailyBudgetCurrentBalance))
-                    .font(.system(size: 28, weight: .semibold))
+                    .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
                     .frame(maxWidth: .infinity, alignment: .trailing)
+                    .accessibilityIdentifier("daily-chip-current-balance-value")
             }
         }
     }
@@ -154,7 +159,8 @@ struct DailyView: View {
             tone: DailyChipToneResolver.tone(for: .aheadBehind, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance)
         ) {
             Text(AppState.currency(metrics.aheadBehind))
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
+                .accessibilityIdentifier("daily-chip-ahead-behind-value")
         }
     }
 
@@ -164,7 +170,8 @@ struct DailyView: View {
             tone: DailyChipToneResolver.tone(for: .currentDailyBudget, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance)
         ) {
             Text(AppState.currency(metrics.currentDailyBudget))
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
+                .accessibilityIdentifier("daily-chip-current-daily-budget-value")
         }
     }
 
@@ -174,7 +181,8 @@ struct DailyView: View {
             tone: .plain
         ) {
             Text("\(metrics.remainingDaysToPayday)")
-                .font(.system(size: 28, weight: .semibold))
+                .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
+                .accessibilityIdentifier("daily-chip-days-until-payday-value")
         }
     }
 

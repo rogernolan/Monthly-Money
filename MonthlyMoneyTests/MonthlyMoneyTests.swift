@@ -226,6 +226,7 @@ final class MonthlyMoneyTests: XCTestCase {
 
         state.selectedMonth = pastMonth
         try state.refresh()
+        let originalPastMonthBalance = state.primaryBankBalance
 
         state.primaryBankBalance = 999
         state.setPaid(item: item, paid: true)
@@ -243,7 +244,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let created = state.createEntry(type: .fixedDebit, label: "Past add", amount: 11, dueDay: 7)
 
         let reloaded = try XCTUnwrap(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
-        XCTAssertEqual(state.primaryBankBalance, 0)
+        XCTAssertEqual(state.primaryBankBalance, originalPastMonthBalance)
         XCTAssertFalse(reloaded.isPaid)
         XCTAssertEqual(reloaded.label, "Frozen bill")
         XCTAssertEqual(reloaded.amount, 42)

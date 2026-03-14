@@ -23,12 +23,45 @@ final class MonthlyMoneyUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testIPadShowsMonthAndDailyChipValues() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
+        XCTAssertTrue(chipValue(in: app, id: "month-chip-current-balance-value").waitForExistence(timeout: 5))
+        XCTAssertTrue(chipValue(in: app, id: "month-chip-current-balance-value").isHittable)
+        XCTAssertTrue(chipValue(in: app, id: "month-chip-projected-balance-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "month-chip-outgoings-due-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "month-chip-credits-due-value").exists)
+
+        let dailyTab = tabItem(in: app, label: "Daily")
+        XCTAssertTrue(dailyTab.waitForExistence(timeout: 5))
+        dailyTab.tap()
+
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-budget-value").waitForExistence(timeout: 5))
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-budget-value").isHittable)
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-average-budget-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-current-balance-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-ahead-behind-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-current-daily-budget-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "daily-chip-days-until-payday-value").exists)
+    }
+
+    private func chipValue(in app: XCUIApplication, id: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: id).firstMatch
+    }
+
+    private func tabItem(in app: XCUIApplication, label: String) -> XCUIElement {
+        let candidates = [
+            app.tabBars.buttons[label].firstMatch,
+            app.tabBars.cells[label].firstMatch,
+            app.buttons[label].firstMatch,
+            app.cells[label].firstMatch,
+            app.otherElements[label].firstMatch
+        ]
+        for candidate in candidates where candidate.exists {
+            return candidate
+        }
+        return candidates.last!
     }
 
     @MainActor

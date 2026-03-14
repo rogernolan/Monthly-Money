@@ -21,6 +21,7 @@ struct EditableMoneyChipValue: View {
     let fontSize: CGFloat
     let focus: FocusState<String?>.Binding
     let focusID: String
+    let accessibilityIdentifier: String?
 
     @State private var draft = ""
 
@@ -59,6 +60,7 @@ struct EditableMoneyChipValue: View {
             .font(.system(size: fontSize, weight: .semibold))
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, layout.trailingAccessoryWidth)
+            .applyAccessibilityIdentifier(accessibilityIdentifier)
 
             Button {
                 focus.wrappedValue = nil
@@ -90,6 +92,7 @@ struct EditableMoneyChipValue: View {
             .accessibilityHidden(!layout.showsDismissButton)
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
+        .applyAccessibilityIdentifier(accessibilityIdentifier)
         .animation(buttonAnimation, value: layout)
         .onChange(of: focus.wrappedValue) { _, newValue in
             if newValue == focusID {
@@ -113,6 +116,17 @@ struct EditableMoneyChipValue: View {
             .replacingOccurrences(of: groupingSeparator, with: "")
             .filter { $0.isNumber || String($0) == decimalSeparator || $0 == "-" }
         return filtered.isEmpty ? "0" : filtered
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func applyAccessibilityIdentifier(_ id: String?) -> some View {
+        if let id {
+            accessibilityIdentifier(id)
+        } else {
+            self
+        }
     }
 }
 

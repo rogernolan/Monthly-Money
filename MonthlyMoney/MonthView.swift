@@ -80,6 +80,7 @@ private extension VerticalAlignment {
 
 struct MonthView: View {
     @EnvironmentObject private var state: AppState
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState private var focusedEditableChipID: String?
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
@@ -146,6 +147,7 @@ struct MonthView: View {
                 amountCard(
                     title: state.isSelectedMonthInFuture ? "Opening balance" : "Current balance",
                     value: state.isSelectedMonthInFuture ? state.openingBalance : state.primaryBankBalance,
+                    accessibilityValueID: "month-chip-current-balance-value",
                     editableValue: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
                         isSelectedMonthInFuture: state.isSelectedMonthInFuture
@@ -160,11 +162,13 @@ struct MonthView: View {
                 )
                 amountCard(
                     title: "Projected balance",
-                    value: state.projectedBalanceFromCurrentBalance
+                    value: state.projectedBalanceFromCurrentBalance,
+                    accessibilityValueID: "month-chip-projected-balance-value"
                 )
                 amountCard(
                     title: "Outgoings still due",
                     value: state.monthTotals.debitsDue,
+                    accessibilityValueID: "month-chip-outgoings-due-value",
                     secondaryText: "Total: " + AppState.currency(state.monthTotals.debitsTotalExLiving),
                     prefixIcon: "arrowtriangle.down.fill",
                     prefixColor: .red
@@ -172,6 +176,7 @@ struct MonthView: View {
                 amountCard(
                     title: "Credits still due",
                     value: state.monthTotals.creditsDue,
+                    accessibilityValueID: "month-chip-credits-due-value",
                     secondaryText: "Total: " + AppState.currency(state.monthTotals.creditsTotal),
                     prefixIcon: "arrowtriangle.up.fill",
                     prefixColor: .green
@@ -322,6 +327,7 @@ struct MonthView: View {
     private func amountCard(
         title: String,
         value: Decimal,
+        accessibilityValueID: String? = nil,
         secondaryText: String? = nil,
         editableValue: Binding<Decimal>? = nil,
         editableFocusID: String? = nil,
@@ -345,13 +351,15 @@ struct MonthView: View {
             if let editableValue {
                 EditableMoneyChipValue(
                     value: editableValue,
-                    fontSize: 25.5,
+                    fontSize: ChipTypography.monthValueFontSize(for: horizontalSizeClass),
                     focus: $focusedEditableChipID,
-                    focusID: editableFocusID ?? title
+                    focusID: editableFocusID ?? title,
+                    accessibilityIdentifier: accessibilityValueID
                 )
             } else {
                 Text(AppState.currency(value))
-                    .font(.system(size: 25.5, weight: .semibold))
+                    .font(.system(size: ChipTypography.monthValueFontSize(for: horizontalSizeClass), weight: .semibold))
+                    .accessibilityIdentifier(accessibilityValueID ?? "")
             }
 
             if let secondaryText {
