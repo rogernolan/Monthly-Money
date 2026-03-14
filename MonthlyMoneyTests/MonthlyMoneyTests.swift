@@ -203,6 +203,23 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testPendingMonthFilterIncludesUnpaidCreditsAndOutgoings() {
+        let month = YearMonth(year: 2026, month: 3)
+        let accountID = UUID()
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Salary", amount: 1000, isPaid: false),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Rent", amount: 700, isPaid: false),
+            PlannedItem(accountID: accountID, monthKey: month, type: .transfer, label: "Living", amount: 200, isPaid: false),
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Paid bonus", amount: 50, isPaid: true),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Paid bill", amount: 20, isPaid: true)
+        ]
+
+        XCTAssertEqual(
+            MonthItemFilterRules.filteredItems(items, for: .pending).map(\.label).sorted(),
+            ["Living", "Rent", "Salary"]
+        )
+    }
+
     func testPastMonthMutationsAreIgnored() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)

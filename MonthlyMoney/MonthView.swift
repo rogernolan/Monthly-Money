@@ -1,11 +1,27 @@
 import SwiftUI
 
-private enum MonthItemFilter: String, CaseIterable, Identifiable {
+enum MonthItemFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case debits = "Debits"
     case credits = "Credits"
+    case pending = "Pending"
 
     var id: String { rawValue }
+}
+
+enum MonthItemFilterRules {
+    static func filteredItems(_ items: [PlannedItem], for filter: MonthItemFilter) -> [PlannedItem] {
+        switch filter {
+        case .all:
+            return items
+        case .debits:
+            return items.filter { $0.type == .fixedDebit || $0.type == .transfer }
+        case .credits:
+            return items.filter { $0.type == .credit }
+        case .pending:
+            return items.filter { !$0.isPaid }
+        }
+    }
 }
 
 enum MonthItemRowContent {
@@ -87,22 +103,15 @@ struct MonthView: View {
     @State private var activeEditorItem: PlannedItem?
 
     private var debits: [PlannedItem] {
-        sorted(state.monthItems.filter { $0.type == .fixedDebit || $0.type == .transfer })
+        sorted(MonthItemFilterRules.filteredItems(state.monthItems, for: .debits))
     }
 
     private var credits: [PlannedItem] {
-        sorted(state.monthItems.filter { $0.type == .credit })
+        sorted(MonthItemFilterRules.filteredItems(state.monthItems, for: .credits))
     }
 
     private var filteredItems: [PlannedItem] {
-        switch filter {
-        case .all:
-            return sorted(debits + credits)
-        case .debits:
-            return debits
-        case .credits:
-            return credits
-        }
+        sorted(MonthItemFilterRules.filteredItems(state.monthItems, for: filter))
     }
 
     var body: some View {
@@ -291,7 +300,7 @@ struct MonthView: View {
         switch filter {
         case .credits:
             return .credit
-        case .all, .debits:
+        case .all, .debits, .pending:
             return .fixedDebit
         }
     }
