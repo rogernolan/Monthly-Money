@@ -61,6 +61,8 @@ public final class Budget {
     public var name: String = ""
     public var ownerParticipantID: String = ""
     public var sharingState: BudgetSharingState = BudgetSharingState.local
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
     public var usesSeparateAccountForDailyBudget: Bool = false
     public var dailyBudgetAmount: Decimal = 0
     public var dailyBudgetPaydayDay: Int = 1
@@ -72,6 +74,8 @@ public final class Budget {
         name: String,
         ownerParticipantID: String,
         sharingState: BudgetSharingState = .local,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
         usesSeparateAccountForDailyBudget: Bool = false,
         dailyBudgetAmount: Decimal = 0,
         dailyBudgetPaydayDay: Int = 1,
@@ -82,6 +86,8 @@ public final class Budget {
         self.name = name
         self.ownerParticipantID = ownerParticipantID
         self.sharingState = sharingState
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.usesSeparateAccountForDailyBudget = usesSeparateAccountForDailyBudget
         self.dailyBudgetAmount = dailyBudgetAmount
         self.dailyBudgetPaydayDay = dailyBudgetPaydayDay

@@ -85,26 +85,35 @@ public final class AccountRepository {
 
     @discardableResult
     public func createBudget(name: String, ownerParticipantID: String, sharingState: BudgetSharingState = .local) throws -> Budget {
-        let budget = Budget(name: name, ownerParticipantID: ownerParticipantID, sharingState: sharingState)
+        let now = Date()
+        let budget = Budget(
+            name: name,
+            ownerParticipantID: ownerParticipantID,
+            sharingState: sharingState,
+            createdAt: now,
+            updatedAt: now
+        )
         try store(for: sharingState).upsertBudget(budget)
         return budget
     }
 
     public func saveBudget(_ budget: Budget) throws {
+        budget.updatedAt = Date()
         try store(for: budget.sharingState).upsertBudget(budget)
     }
 
     public func activeBudget() throws -> Budget? {
-        if let local = try privateStore.fetchBudgets().first(where: { $0.sharingState == .local }) {
+        if let local = try preferredBudget(from: privateStore.fetchBudgets(), sharingState: .local) {
             return local
         }
-        return try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+        return try preferredBudget(from: sharedStore.fetchBudgets(), sharingState: .shared)
     }
 
     public func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {
         let budget = try ensureLocalBudget(ownerParticipantID: ownerParticipantID)
         let account = Account(budgetID: budget.id, name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)
         try store(for: budget.sharingState).upsertAccount(account)
+        try touchBudget(id: budget.id, in: store(for: budget.sharingState))
         return account
     }
 
@@ -114,6 +123,7 @@ public final class AccountRepository {
         }
         item.budgetID = account.budgetID
         try store.upsertPlannedItems([item])
+        try touchBudget(id: account.budgetID, in: store)
     }
 
     public func createTransaction(_ transaction: Transaction) throws {
@@ -122,6 +132,7 @@ public final class AccountRepository {
         }
         transaction.budgetID = account.budgetID
         try store.upsertTransactions([transaction])
+        try touchBudget(id: account.budgetID, in: store)
     }
 
     public func accounts() throws -> [Account] {
@@ -143,11 +154,26 @@ public final class AccountRepository {
     }
 
     public func localBudget() throws -> Budget? {
-        try privateStore.fetchBudgets().first(where: { $0.sharingState == .local })
+        try preferredBudget(from: privateStore.fetchBudgets(), sharingState: .local)
+    }
+
+    @discardableResult
+    public func reconcileDuplicateLocalBudgets() throws -> Int {
+        let localBudgets = try privateStore.fetchBudgets()
+            .filter { $0.sharingState == .local }
+            .sorted(by: Self.budgetSort)
+        guard let canonicalBudget = localBudgets.first else { return 0 }
+
+        var removed = 0
+        for duplicate in localBudgets.dropFirst() where duplicate.id != canonicalBudget.id {
+            try deleteLocalBudget(id: duplicate.id)
+            removed += 1
+        }
+        return removed
     }
 
     public func sharedBudget() throws -> Budget? {
-        try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+        try preferredBudget(from: sharedStore.fetchBudgets(), sharingState: .shared)
     }
 
     public func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction])? {
@@ -181,10 +207,33 @@ public final class AccountRepository {
     }
 
     private func ensureLocalBudget(ownerParticipantID: String) throws -> Budget {
-        if let budget = try activeBudget(), budget.sharingState == .local {
+        if let budget = try localBudget() {
             return budget
         }
         return try createBudget(name: "Budget", ownerParticipantID: ownerParticipantID, sharingState: .local)
+    }
+
+    private func preferredBudget(from budgets: [Budget], sharingState: BudgetSharingState) -> Budget? {
+        budgets
+            .filter { $0.sharingState == sharingState }
+            .sorted(by: Self.budgetSort)
+            .first
+    }
+
+    private static func budgetSort(lhs: Budget, rhs: Budget) -> Bool {
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt > rhs.updatedAt
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString > rhs.id.uuidString
+    }
+
+    private func touchBudget(id: UUID, in store: AccountDataStore) throws {
+        guard let budget = try store.fetchBudget(id: id) else { return }
+        budget.updatedAt = Date()
+        try store.upsertBudget(budget)
     }
 
     private func store(for sharingState: BudgetSharingState) -> AccountDataStore {

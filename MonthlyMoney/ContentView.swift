@@ -46,6 +46,27 @@ struct ContentView: View {
                 await state.bootstrapIfNeeded()
             }
         }
+        .alert(
+            "Open shared budget?",
+            isPresented: Binding(
+                get: { state.shouldShowSharedBudgetOverwriteAlert },
+                set: { isPresented in
+                    if !isPresented {
+                        state.cancelSharedBudgetOverwrite()
+                    }
+                }
+            ),
+            presenting: state.pendingSharedBudgetAdoption
+        ) { _ in
+            Button("Cancel", role: .cancel) {
+                state.cancelSharedBudgetOverwrite()
+            }
+            Button("Overwrite and Open Shared Budget", role: .destructive) {
+                state.confirmSharedBudgetOverwriteFromUI()
+            }
+        } message: { adoption in
+            Text("Opening \"\(adoption.budgetName)\" will overwrite your existing MonthlyMoney budget on this device. This cannot be undone.")
+        }
         .task(id: scenePhase) {
             guard CloudRefreshPolicy.shouldPoll(
                 privateStoreSyncMode: state.privateStoreSyncMode,

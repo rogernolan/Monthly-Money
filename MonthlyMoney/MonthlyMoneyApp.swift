@@ -50,20 +50,7 @@ struct MonthlyMoneyApp: App {
 
     private static func makePersistentRepository(schema: Schema) throws -> AccountRepository {
         let plan = MonthlyMoneyPersistencePlan.defaultPlan()
-        let privateContainer = try ModelContainer(
-            for: schema,
-            configurations: [plan.privateStore.modelConfiguration(schema: schema)]
-        )
-        let sharedContainer = try ModelContainer(
-            for: schema,
-            configurations: [plan.sharedStore.modelConfiguration(schema: schema)]
-        )
-        return AccountRepository(
-            privateStore: SwiftDataAccountDataStore(modelContainer: privateContainer),
-            sharedStore: SwiftDataAccountDataStore(modelContainer: sharedContainer),
-            privateStoreSyncMode: plan.privateStore.syncMode,
-            sharedStoreSyncMode: plan.sharedStore.syncMode
-        )
+        return try MonthlyMoneyPersistenceFactory.makeRepository(plan: plan, schema: schema)
     }
 
     static func persistentStoreDirectory() -> URL {

@@ -4,12 +4,19 @@ import SwiftData
 enum StoreSyncMode: Equatable {
     case localOnly
     case cloudPrivate
+    case cloudShared
+}
+
+enum StoreBackend: Equatable {
+    case swiftData
+    case coreData
 }
 
 struct MonthlyMoneyStorePlan: Equatable {
     let name: String
     let url: URL
     let syncMode: StoreSyncMode
+    let backend: StoreBackend
 
     func modelConfiguration(schema: Schema) -> ModelConfiguration {
         switch syncMode {
@@ -27,6 +34,13 @@ struct MonthlyMoneyStorePlan: Equatable {
                 url: url,
                 cloudKitDatabase: .automatic
             )
+        case .cloudShared:
+            return ModelConfiguration(
+                name,
+                schema: schema,
+                url: url,
+                cloudKitDatabase: .none
+            )
         }
     }
 }
@@ -40,12 +54,14 @@ struct MonthlyMoneyPersistencePlan: Equatable {
             privateStore: MonthlyMoneyStorePlan(
                 name: "PrivateStore",
                 url: baseDirectory.appendingPathComponent("PrivateStore.store"),
-                syncMode: .cloudPrivate
+                syncMode: .cloudPrivate,
+                backend: .coreData
             ),
             sharedStore: MonthlyMoneyStorePlan(
                 name: "SharedStore",
                 url: baseDirectory.appendingPathComponent("SharedStore.store"),
-                syncMode: .localOnly
+                syncMode: .cloudShared,
+                backend: .coreData
             )
         )
     }

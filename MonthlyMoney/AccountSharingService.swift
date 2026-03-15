@@ -39,6 +39,8 @@ struct BudgetSharingService {
             name: snapshot.budget.name,
             ownerParticipantID: snapshot.budget.ownerParticipantID,
             sharingState: .shared,
+            createdAt: snapshot.budget.createdAt,
+            updatedAt: snapshot.budget.updatedAt,
             usesSeparateAccountForDailyBudget: snapshot.budget.usesSeparateAccountForDailyBudget,
             dailyBudgetAmount: snapshot.budget.dailyBudgetAmount,
             dailyBudgetPaydayDay: snapshot.budget.dailyBudgetPaydayDay,

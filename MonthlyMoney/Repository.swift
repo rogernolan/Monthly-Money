@@ -6,7 +6,12 @@ enum RepositoryError: Error, Equatable {
     case invalidCrossScopeReference
 }
 
+@MainActor
 protocol AccountDataStore {
+    var implementationKind: DataStoreImplementationKind { get }
+
+    func awaitInitialCloudImport(timeout: Duration) async throws
+
     func fetchBudgets() throws -> [Budget]
     func fetchBudget(id: UUID) throws -> Budget?
     func upsertBudget(_ budget: Budget) throws
@@ -30,13 +35,31 @@ protocol AccountDataStore {
     func deleteTransactions(accountID: UUID) throws
 }
 
+extension AccountDataStore {
+    func awaitInitialCloudImport(timeout: Duration) async throws {
+        _ = timeout
+    }
+}
+
+enum DataStoreImplementationKind: Equatable {
+    case inMemory
+    case swiftData
+    case coreData
+}
+
+@MainActor
 final class InMemoryAccountDataStore: AccountDataStore {
+    let implementationKind: DataStoreImplementationKind = .inMemory
     private var budgetsByID: [UUID: Budget] = [:]
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
 
     init() {}
+
+    func awaitInitialCloudImport(timeout: Duration) async throws {
+        _ = timeout
+    }
 
     func fetchBudgets() throws -> [Budget] {
         Array(budgetsByID.values)
@@ -117,13 +140,19 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 }
 
+@MainActor
 final class SwiftDataAccountDataStore: AccountDataStore {
+    let implementationKind: DataStoreImplementationKind = .swiftData
     private let modelContainer: ModelContainer
     private let modelContext: ModelContext
 
     init(modelContainer: ModelContainer) {
         self.modelContainer = modelContainer
         self.modelContext = ModelContext(modelContainer)
+    }
+
+    func awaitInitialCloudImport(timeout: Duration) async throws {
+        _ = timeout
     }
 
     func fetchBudgets() throws -> [Budget] {
@@ -142,6 +171,8 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.name = budget.name
             existing.ownerParticipantID = budget.ownerParticipantID
             existing.sharingState = budget.sharingState
+            existing.createdAt = budget.createdAt
+            existing.updatedAt = budget.updatedAt
             existing.usesSeparateAccountForDailyBudget = budget.usesSeparateAccountForDailyBudget
             existing.dailyBudgetAmount = budget.dailyBudgetAmount
             existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
@@ -272,6 +303,8 @@ final class AccountRepository {
     private let sharedStore: AccountDataStore
     let privateStoreSyncMode: StoreSyncMode
     let sharedStoreSyncMode: StoreSyncMode
+    let privateStoreImplementationKind: DataStoreImplementationKind
+    let sharedStoreImplementationKind: DataStoreImplementationKind
 
     init(
         privateStore: AccountDataStore,
@@ -283,30 +316,64 @@ final class AccountRepository {
         self.sharedStore = sharedStore
         self.privateStoreSyncMode = privateStoreSyncMode
         self.sharedStoreSyncMode = sharedStoreSyncMode
+        self.privateStoreImplementationKind = privateStore.implementationKind
+        self.sharedStoreImplementationKind = sharedStore.implementationKind
     }
 
     @discardableResult
     func createBudget(name: String, ownerParticipantID: String, sharingState: BudgetSharingState = .local) throws -> Budget {
-        let budget = Budget(name: name, ownerParticipantID: ownerParticipantID, sharingState: sharingState)
+        let now = Date()
+        let budget = Budget(
+            name: name,
+            ownerParticipantID: ownerParticipantID,
+            sharingState: sharingState,
+            createdAt: now,
+            updatedAt: now
+        )
         try store(for: sharingState).upsertBudget(budget)
         return budget
     }
 
     func saveBudget(_ budget: Budget) throws {
+        budget.updatedAt = Date()
         try store(for: budget.sharingState).upsertBudget(budget)
     }
 
     func activeBudget() throws -> Budget? {
-        if let local = try privateStore.fetchBudgets().first(where: { $0.sharingState == .local }) {
+        if let local = try preferredBudget(
+            from: privateStore.fetchBudgets(),
+            sharingState: .local
+        ) {
             return local
         }
-        return try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+        return try preferredBudget(
+            from: sharedStore.fetchBudgets(),
+            sharingState: .shared
+        )
+    }
+
+    func awaitInitialPrivateCloudImport(timeout: Duration) async throws {
+        try await privateStore.awaitInitialCloudImport(timeout: timeout)
+    }
+
+    func debugBudgetInventory() throws -> String {
+        let local = try privateStore.fetchBudgets()
+            .filter { $0.sharingState == .local }
+            .sorted(by: Self.debugBudgetSort)
+            .map(Self.debugBudgetDescription)
+        let shared = try sharedStore.fetchBudgets()
+            .filter { $0.sharingState == .shared }
+            .sorted(by: Self.debugBudgetSort)
+            .map(Self.debugBudgetDescription)
+        let active = try activeBudget().map(Self.debugBudgetDescription) ?? "none"
+        return "active=\(active) local=[\(local.joined(separator: "; "))] shared=[\(shared.joined(separator: "; "))]"
     }
 
     func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {
         let budget = try ensureLocalBudget(ownerParticipantID: ownerParticipantID)
         let account = Account(budgetID: budget.id, name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)
         try store(for: budget.sharingState).upsertAccount(account)
+        try touchBudget(id: budget.id, in: store(for: budget.sharingState))
         return account
     }
 
@@ -316,6 +383,7 @@ final class AccountRepository {
         }
         item.budgetID = account.budgetID
         try store.upsertPlannedItems([item])
+        try touchBudget(id: account.budgetID, in: store)
     }
 
     func plannedItem(id: UUID) throws -> PlannedItem? {
@@ -330,20 +398,28 @@ final class AccountRepository {
             item.budgetID = account.budgetID
             try privateStore.upsertPlannedItems([item])
             try sharedStore.deletePlannedItem(id: item.id)
+            try touchBudget(id: account.budgetID, in: privateStore)
             return
         }
         if let account = try sharedStore.fetchAccount(id: item.accountID) {
             item.budgetID = account.budgetID
             try sharedStore.upsertPlannedItems([item])
             try privateStore.deletePlannedItem(id: item.id)
+            try touchBudget(id: account.budgetID, in: sharedStore)
             return
         }
         throw RepositoryError.invalidCrossScopeReference
     }
 
     func deletePlannedItem(id: UUID) throws {
-        try privateStore.deletePlannedItem(id: id)
-        try sharedStore.deletePlannedItem(id: id)
+        if let item = try privateStore.fetchPlannedItem(id: id) {
+            try privateStore.deletePlannedItem(id: id)
+            try touchBudget(id: item.budgetID, in: privateStore)
+        }
+        if let item = try sharedStore.fetchPlannedItem(id: id) {
+            try sharedStore.deletePlannedItem(id: id)
+            try touchBudget(id: item.budgetID, in: sharedStore)
+        }
     }
 
     func createTransaction(_ transaction: Transaction) throws {
@@ -352,6 +428,7 @@ final class AccountRepository {
         }
         transaction.budgetID = account.budgetID
         try store.upsertTransactions([transaction])
+        try touchBudget(id: account.budgetID, in: store)
     }
 
     func accounts() throws -> [Account] {
@@ -368,11 +445,26 @@ final class AccountRepository {
     }
 
     func localBudget() throws -> Budget? {
-        try privateStore.fetchBudgets().first(where: { $0.sharingState == .local })
+        try preferredBudget(from: privateStore.fetchBudgets(), sharingState: .local)
+    }
+
+    @discardableResult
+    func reconcileDuplicateLocalBudgets() throws -> Int {
+        let localBudgets = try privateStore.fetchBudgets()
+            .filter { $0.sharingState == .local }
+            .sorted(by: Self.debugBudgetSort)
+        guard let canonicalBudget = localBudgets.first else { return 0 }
+
+        var removed = 0
+        for duplicate in localBudgets.dropFirst() where duplicate.id != canonicalBudget.id {
+            try deleteLocalBudget(id: duplicate.id)
+            removed += 1
+        }
+        return removed
     }
 
     func sharedBudget() throws -> Budget? {
-        try sharedStore.fetchBudgets().first(where: { $0.sharingState == .shared })
+        try preferredBudget(from: sharedStore.fetchBudgets(), sharingState: .shared)
     }
 
     func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction])? {
@@ -420,9 +512,37 @@ final class AccountRepository {
     }
 
     private func ensureLocalBudget(ownerParticipantID: String) throws -> Budget {
-        if let budget = try activeBudget(), budget.sharingState == .local {
+        if let budget = try localBudget() {
             return budget
         }
         return try createBudget(name: "Budget", ownerParticipantID: ownerParticipantID, sharingState: .local)
+    }
+
+    private func preferredBudget(from budgets: [Budget], sharingState: BudgetSharingState) -> Budget? {
+        budgets
+            .filter { $0.sharingState == sharingState }
+            .sorted(by: Self.debugBudgetSort)
+            .first
+    }
+
+    private func touchBudget(id: UUID, in store: AccountDataStore) throws {
+        guard let budget = try store.fetchBudget(id: id) else { return }
+        budget.updatedAt = Date()
+        try store.upsertBudget(budget)
+    }
+
+    private static func debugBudgetSort(lhs: Budget, rhs: Budget) -> Bool {
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.updatedAt > rhs.updatedAt
+        }
+        if lhs.createdAt != rhs.createdAt {
+            return lhs.createdAt > rhs.createdAt
+        }
+        return lhs.id.uuidString > rhs.id.uuidString
+    }
+
+    private static func debugBudgetDescription(_ budget: Budget) -> String {
+        let shortID = budget.id.uuidString.prefix(8)
+        return "\(shortID){state=\(budget.sharingState.rawValue),updated=\(budget.updatedAt)}"
     }
 }

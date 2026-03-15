@@ -86,6 +86,173 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(try repository.plannedItems(for: month).map(\.accountID), [localAccount.id])
     }
 
+    func testActiveBudgetPrefersMostRecentlyUpdatedLocalBudget() throws {
+        let privateStore = InMemoryAccountDataStore()
+        let repository = AccountRepository(
+            privateStore: privateStore,
+            sharedStore: InMemoryAccountDataStore()
+        )
+        let older = Budget(
+            id: UUID(),
+            name: "Older",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        let newer = Budget(
+            id: UUID(),
+            name: "Newer",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 300)
+        )
+
+        try privateStore.upsertBudget(older)
+        try privateStore.upsertBudget(newer)
+
+        XCTAssertEqual(try repository.activeBudget()?.id, newer.id)
+        XCTAssertEqual(try repository.localBudget()?.id, newer.id)
+    }
+
+    func testCreatingPlannedItemTouchesOwningBudgetUpdatedAt() throws {
+        let privateStore = InMemoryAccountDataStore()
+        let repository = AccountRepository(
+            privateStore: privateStore,
+            sharedStore: InMemoryAccountDataStore()
+        )
+        let originalUpdatedAt = Date(timeIntervalSince1970: 100)
+        let budget = Budget(
+            id: UUID(),
+            name: "Budget",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            createdAt: Date(timeIntervalSince1970: 50),
+            updatedAt: originalUpdatedAt
+        )
+        let account = Account(
+            id: UUID(),
+            budgetID: budget.id,
+            name: "Main",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "owner"
+        )
+
+        try privateStore.upsertBudget(budget)
+        try privateStore.upsertAccount(account)
+        try repository.createPlannedItem(
+            PlannedItem(
+                accountID: account.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Rent",
+                amount: 1000
+            )
+        )
+
+        let savedBudget = try XCTUnwrap(privateStore.fetchBudget(id: budget.id))
+        XCTAssertGreaterThan(savedBudget.updatedAt, originalUpdatedAt)
+    }
+
+    func testReconcileDuplicateLocalBudgetsKeepsNewestAndDeletesOlderDependents() throws {
+        let privateStore = InMemoryAccountDataStore()
+        let repository = AccountRepository(
+            privateStore: privateStore,
+            sharedStore: InMemoryAccountDataStore()
+        )
+
+        let olderBudget = Budget(
+            id: UUID(),
+            name: "Older",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        let newerBudget = Budget(
+            id: UUID(),
+            name: "Newer",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            createdAt: Date(timeIntervalSince1970: 100),
+            updatedAt: Date(timeIntervalSince1970: 300)
+        )
+        let olderAccount = Account(
+            id: UUID(),
+            budgetID: olderBudget.id,
+            name: "Old Current",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "owner"
+        )
+        let newerAccount = Account(
+            id: UUID(),
+            budgetID: newerBudget.id,
+            name: "New Current",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "owner"
+        )
+
+        try privateStore.upsertBudget(olderBudget)
+        try privateStore.upsertBudget(newerBudget)
+        try privateStore.upsertAccount(olderAccount)
+        try privateStore.upsertAccount(newerAccount)
+        try privateStore.upsertPlannedItems([
+            PlannedItem(
+                id: UUID(),
+                budgetID: olderBudget.id,
+                accountID: olderAccount.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Old Rent",
+                amount: 100
+            ),
+            PlannedItem(
+                id: UUID(),
+                budgetID: newerBudget.id,
+                accountID: newerAccount.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "New Rent",
+                amount: 200
+            )
+        ])
+        try privateStore.upsertTransactions([
+            Transaction(
+                id: UUID(),
+                budgetID: olderBudget.id,
+                accountID: olderAccount.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                amount: 10
+            ),
+            Transaction(
+                id: UUID(),
+                budgetID: newerBudget.id,
+                accountID: newerAccount.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                amount: 20
+            )
+        ])
+
+        let removed = try repository.reconcileDuplicateLocalBudgets()
+
+        XCTAssertEqual(removed, 1)
+        XCTAssertEqual(try repository.localBudget()?.id, newerBudget.id)
+        XCTAssertEqual(try privateStore.fetchBudgets().map(\.id), [newerBudget.id])
+        XCTAssertEqual(try privateStore.fetchAccounts().map(\.id), [newerAccount.id])
+        XCTAssertEqual(
+            try privateStore.fetchPlannedItems(accountIDs: [newerAccount.id], monthKey: nil).map(\.label),
+            ["New Rent"]
+        )
+        XCTAssertEqual(
+            try privateStore.fetchTransactions(accountIDs: [newerAccount.id]).map(\.amount),
+            [20]
+        )
+    }
+
     func testShareBudgetRejectsAlreadySharedBudget() throws {
         let repository = makeRepository()
         _ = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")

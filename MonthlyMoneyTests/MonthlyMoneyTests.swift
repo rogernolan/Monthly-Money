@@ -1,9 +1,14 @@
+import CloudKit
+import CoreData
+import SwiftData
 import XCTest
 import SwiftUI
 @testable import MonthlyMoney
 
 @MainActor
 final class MonthlyMoneyTests: XCTestCase {
+    private static var retainedHostedTestObjects: [AnyObject] = []
+
     override func setUpWithError() throws {
         print("TEST START: \(name) @ \(Date())")
     }
@@ -248,11 +253,125 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
-    func testDefaultPersistencePlanUsesCloudBackedPrivateStoreAndLocalSharedStore() {
+    func testDefaultPersistencePlanUsesCloudBackedPrivateStoreAndSharedStore() {
         let plan = MonthlyMoneyPersistencePlan.defaultPlan()
 
         XCTAssertEqual(plan.privateStore.syncMode, .cloudPrivate)
-        XCTAssertEqual(plan.sharedStore.syncMode, .localOnly)
+        XCTAssertEqual(plan.sharedStore.syncMode, .cloudShared)
+    }
+
+    func testDefaultPersistencePlanUsesCoreDataPrivateAndSharedStores() {
+        let plan = MonthlyMoneyPersistencePlan.defaultPlan()
+
+        XCTAssertEqual(plan.privateStore.backend, .coreData)
+        XCTAssertEqual(plan.sharedStore.backend, .coreData)
+        XCTAssertEqual(plan.sharedStore.syncMode, .cloudShared)
+    }
+
+    func testCoreDataCloudKitProbeBuildsPrivateStoreDescription() {
+        let description = CoreDataCloudKitProbe.makeStoreDescription(
+            url: URL(fileURLWithPath: "/tmp/private.sqlite"),
+            scope: .privateDatabase,
+            containerIdentifier: "iCloud.com.hatbat.monthlymoney"
+        )
+
+        XCTAssertEqual(description.url?.path, "/tmp/private.sqlite")
+        XCTAssertEqual(description.cloudKitContainerOptions?.containerIdentifier, "iCloud.com.hatbat.monthlymoney")
+        XCTAssertEqual(description.cloudKitContainerOptions?.databaseScope, .private)
+        let options = description.value(forKey: "options") as? [String: Any]
+        XCTAssertEqual(options?[NSPersistentHistoryTrackingKey] as? Bool, true)
+        XCTAssertEqual(options?[NSPersistentStoreRemoteChangeNotificationPostOptionKey] as? Bool, true)
+    }
+
+    func testCoreDataCloudKitProbeBuildsSharedStoreDescription() {
+        let description = CoreDataCloudKitProbe.makeStoreDescription(
+            url: URL(fileURLWithPath: "/tmp/shared.sqlite"),
+            scope: .sharedDatabase,
+            containerIdentifier: "iCloud.com.hatbat.monthlymoney"
+        )
+
+        XCTAssertEqual(description.url?.path, "/tmp/shared.sqlite")
+        XCTAssertEqual(description.cloudKitContainerOptions?.containerIdentifier, "iCloud.com.hatbat.monthlymoney")
+        XCTAssertEqual(description.cloudKitContainerOptions?.databaseScope, .shared)
+        let options = description.value(forKey: "options") as? [String: Any]
+        XCTAssertEqual(options?[NSPersistentHistoryTrackingKey] as? Bool, true)
+        XCTAssertEqual(options?[NSPersistentStoreRemoteChangeNotificationPostOptionKey] as? Bool, true)
+    }
+
+    func testCoreDataAccountDataStoreRoundTripsBudgetAccountsItemsAndTransactions() throws {
+        let store = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(store)
+
+        let budget = Budget(
+            id: UUID(),
+            name: "Household",
+            ownerParticipantID: "owner",
+            sharingState: .local,
+            usesSeparateAccountForDailyBudget: true,
+            dailyBudgetAmount: 1500,
+            dailyBudgetPaydayDay: 25
+        )
+        try store.upsertBudget(budget)
+
+        let account = Account(
+            id: UUID(),
+            budgetID: budget.id,
+            name: "Joint",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "owner"
+        )
+        try store.upsertAccount(account)
+
+        let item = PlannedItem(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false,
+            copiesToNextMonthAutomatically: true,
+            notes: "Landlord"
+        )
+        try store.upsertPlannedItems([item])
+
+        let transaction = Transaction(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            amount: 1200,
+            note: "Rent payment"
+        )
+        try store.upsertTransactions([transaction])
+
+        let budgets = try store.fetchBudgets()
+        XCTAssertEqual(budgets.map(\.id), [budget.id])
+        XCTAssertEqual(budgets.first?.usesSeparateAccountForDailyBudget, true)
+        XCTAssertEqual(budgets.first?.dailyBudgetAmount, 1500)
+        XCTAssertEqual(budgets.first?.dailyBudgetPaydayDay, 25)
+        let accounts = try store.fetchAccounts()
+        XCTAssertEqual(accounts.map(\.id), [account.id])
+        let plannedItems = try store.fetchPlannedItems(accountIDs: [account.id], monthKey: YearMonth(year: 2026, month: 3))
+        XCTAssertEqual(
+            plannedItems.map(\.id),
+            [item.id]
+        )
+        let transactions = try store.fetchTransactions(accountIDs: [account.id])
+        XCTAssertEqual(
+            transactions.map(\.id),
+            [transaction.id]
+        )
+    }
+
+    func testCoreDataAccountDataStoreMergesRemoteChangesIntoViewContext() throws {
+        let store = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(store)
+
+        XCTAssertTrue(store.mergesRemoteChangesAutomatically)
     }
 
     func testBootstrapRulesWaitForCloudImportOnlyForEmptyCloudBackedPrivateStore() {
@@ -274,6 +393,218 @@ final class MonthlyMoneyTests: XCTestCase {
                 accountCount: 0
             )
         )
+    }
+
+    func testRepositoryDelegatesInitialPrivateCloudImportWaitToPrivateStore() async throws {
+        let privateStore = AwaitingAccountDataStoreSpy()
+        let repository = AccountRepository(
+            privateStore: privateStore,
+            sharedStore: InMemoryAccountDataStore(),
+            privateStoreSyncMode: .cloudPrivate
+        )
+
+        try await repository.awaitInitialPrivateCloudImport(timeout: .seconds(3))
+
+        XCTAssertTrue(privateStore.didAwaitInitialCloudImport)
+    }
+
+    func testPersistenceFactoryBuildsCoreDataPrivateAndSharedStores() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
+            plan: .defaultPlan(baseDirectory: directory),
+            schema: Self.makeSchema()
+        )
+        Self.retainHostedTestObject(repository)
+
+        XCTAssertEqual(repository.privateStoreImplementationKind, .coreData)
+        XCTAssertEqual(repository.sharedStoreImplementationKind, .coreData)
+        XCTAssertEqual(repository.sharedStoreSyncMode, .cloudShared)
+    }
+
+    func testSettingsSharingPresentationForLocalBudget() {
+        let presentation = SettingsSharingPresentation(status: .localOnly)
+
+        XCTAssertEqual(presentation.statusText, "Local only")
+        XCTAssertTrue(presentation.isShareButtonEnabled)
+        XCTAssertNil(presentation.note)
+    }
+
+    func testSettingsSharingPresentationForOwnerSharedBudget() {
+        let presentation = SettingsSharingPresentation(status: .sharedByYou)
+
+        XCTAssertEqual(presentation.statusText, "Shared by you")
+        XCTAssertFalse(presentation.isShareButtonEnabled)
+        XCTAssertEqual(presentation.note, "Unshare will come later.")
+    }
+
+    func testSettingsSharingPresentationForRecipientSharedBudget() {
+        let presentation = SettingsSharingPresentation(status: .sharedWithYou)
+
+        XCTAssertEqual(presentation.statusText, "Shared with you")
+        XCTAssertFalse(presentation.isShareButtonEnabled)
+        XCTAssertEqual(presentation.note, "Unshare will come later.")
+    }
+
+    func testAppStateSharingStatusReflectsActiveBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        XCTAssertEqual(state.sharingStatus, .localOnly)
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.sharingState = .shared
+        budget.ownerParticipantID = "owner"
+        try repository.saveBudget(budget)
+        XCTAssertEqual(state.sharingStatus, .sharedByYou)
+
+        budget.ownerParticipantID = "jane"
+        try repository.saveBudget(budget)
+        XCTAssertEqual(state.sharingStatus, .sharedWithYou)
+    }
+
+    func testBudgetSettingsAreEditableForLocalAndOwnerSharedBudgets() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        XCTAssertTrue(state.canEditBudgetSettings)
+
+        state.usesSeparateAccountForDailyBudget = true
+        XCTAssertTrue(state.usesSeparateAccountForDailyBudget)
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.sharingState = .shared
+        budget.ownerParticipantID = AppState.localOwnerParticipantID
+        try repository.saveBudget(budget)
+
+        XCTAssertTrue(state.canEditBudgetSettings)
+
+        state.usesSeparateAccountForDailyBudget = false
+        XCTAssertFalse(state.usesSeparateAccountForDailyBudget)
+    }
+
+    func testBudgetSettingsAreReadOnlyForParticipantSharedBudgets() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.sharingState = .shared
+        budget.ownerParticipantID = "jane"
+        budget.usesSeparateAccountForDailyBudget = true
+        try repository.saveBudget(budget)
+
+        XCTAssertFalse(state.canEditBudgetSettings)
+        XCTAssertTrue(state.usesSeparateAccountForDailyBudget)
+
+        state.usesSeparateAccountForDailyBudget = false
+
+        XCTAssertTrue(state.usesSeparateAccountForDailyBudget)
+        XCTAssertEqual(try repository.activeBudget()?.usesSeparateAccountForDailyBudget, true)
+    }
+
+    func testShareBudgetMarksInProgressAndEndsSharedByOwner() async throws {
+        let repository = try makeRepository()
+        let expectation = expectation(description: "share handler called while progress flag is set")
+        var observedState: AppState?
+        let state = AppState(
+            repository: repository,
+            shareBudgetAction: { repository in
+                let service = BudgetSharingService(repository: repository) { _ in
+                    XCTAssertTrue(observedState?.isSharingBudget ?? false)
+                    expectation.fulfill()
+                }
+                return try service.shareBudget(participantsSelection: [])
+            }
+        )
+        observedState = state
+
+        await state.bootstrapIfNeeded()
+        XCTAssertFalse(state.isSharingBudget)
+
+        await state.shareBudget()
+
+        await fulfillment(of: [expectation], timeout: 1)
+        XCTAssertFalse(state.isSharingBudget)
+        XCTAssertEqual(state.sharingStatus, .sharedByYou)
+        XCTAssertNotNil(try repository.sharedBudget())
+        XCTAssertNil(try repository.localBudget())
+    }
+
+    func testShareBudgetStoresErrorWhenAlreadyShared() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.sharingState = .shared
+        try repository.insertShared(
+            budget: budget,
+            accounts: try repository.accounts(),
+            plannedItems: try repository.plannedItems(for: state.selectedMonth),
+            transactions: []
+        )
+        try repository.deleteLocalBudget(id: budget.id)
+
+        await state.shareBudget()
+
+        XCTAssertFalse(state.isSharingBudget)
+        XCTAssertNotNil(state.sharingErrorMessage)
+    }
+
+    func testRefreshShowsPendingSharedBudgetOverwriteForRecipient() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        try insertIncomingSharedBudget(into: repository, month: state.selectedMonth)
+
+        try state.refresh()
+
+        XCTAssertTrue(state.shouldShowSharedBudgetOverwriteAlert)
+        XCTAssertEqual(state.pendingSharedBudgetAdoption?.budgetName, "Shared Household")
+    }
+
+    func testConfirmSharedBudgetOverwriteDeletesLocalBudgetAndAdoptsSharedBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        try insertIncomingSharedBudget(into: repository, month: state.selectedMonth)
+        try state.refresh()
+
+        XCTAssertTrue(state.shouldShowSharedBudgetOverwriteAlert)
+
+        try state.confirmSharedBudgetOverwrite()
+
+        XCTAssertNil(try repository.localBudget())
+        XCTAssertEqual(try repository.activeBudget()?.sharingState, .shared)
+        XCTAssertEqual(state.primaryBankName, "Shared Monzo")
+        XCTAssertFalse(state.shouldShowSharedBudgetOverwriteAlert)
+        XCTAssertEqual(state.monthItems.map(\.label), ["Shared Rent"])
+    }
+
+    func testCancelSharedBudgetOverwriteKeepsLocalBudgetActive() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let localBudgetID = try XCTUnwrap(try repository.localBudget()?.id)
+        try insertIncomingSharedBudget(into: repository, month: state.selectedMonth)
+        try state.refresh()
+
+        state.cancelSharedBudgetOverwrite()
+
+        XCTAssertEqual(try repository.localBudget()?.id, localBudgetID)
+        XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
+        XCTAssertFalse(state.shouldShowSharedBudgetOverwriteAlert)
+
+        try state.refresh()
+        XCTAssertFalse(state.shouldShowSharedBudgetOverwriteAlert)
     }
 
     func testCloudRefreshPolicyOnlyPollsForActiveCloudBackedAppSessions() {
@@ -538,11 +869,59 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    private func insertIncomingSharedBudget(into repository: AccountRepository, month: YearMonth) throws {
+        let budget = Budget(
+            id: UUID(),
+            name: "Shared Household",
+            ownerParticipantID: "jane",
+            sharingState: .shared
+        )
+        let account = Account(
+            id: UUID(),
+            budgetID: budget.id,
+            name: "Shared Monzo",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "jane"
+        )
+        let item = PlannedItem(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: month,
+            type: .fixedDebit,
+            label: "Shared Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false
+        )
+
+        try repository.insertShared(
+            budget: budget,
+            accounts: [account],
+            plannedItems: [item],
+            transactions: []
+        )
+    }
+
     private static let utcCalendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
         return calendar
     }()
+
+    private static func retainHostedTestObject(_ object: AnyObject) {
+        retainedHostedTestObjects.append(object)
+    }
+
+    private static func makeSchema() -> Schema {
+        Schema([
+            Budget.self,
+            Account.self,
+            PlannedItem.self,
+            Transaction.self
+        ])
+    }
 
     private static func date(year: Int, month: Int, day: Int) -> Date {
         utcCalendar.date(from: DateComponents(
@@ -554,4 +933,41 @@ final class MonthlyMoneyTests: XCTestCase {
             hour: 12
         ))!
     }
+}
+
+@MainActor
+private final class AwaitingAccountDataStoreSpy: AccountDataStore {
+    var implementationKind: DataStoreImplementationKind { .inMemory }
+    private let backingStore = InMemoryAccountDataStore()
+    private(set) var didAwaitInitialCloudImport = false
+
+    func awaitInitialCloudImport(timeout: Duration) async throws {
+        _ = timeout
+        didAwaitInitialCloudImport = true
+    }
+
+    func fetchBudgets() throws -> [Budget] { try backingStore.fetchBudgets() }
+    func fetchBudget(id: UUID) throws -> Budget? { try backingStore.fetchBudget(id: id) }
+    func upsertBudget(_ budget: Budget) throws { try backingStore.upsertBudget(budget) }
+    func deleteBudget(id: UUID) throws { try backingStore.deleteBudget(id: id) }
+    func fetchAccounts() throws -> [Account] { try backingStore.fetchAccounts() }
+    func fetchAccount(id: UUID) throws -> Account? { try backingStore.fetchAccount(id: id) }
+    func upsertAccount(_ account: Account) throws { try backingStore.upsertAccount(account) }
+    func deleteAccount(id: UUID) throws { try backingStore.deleteAccount(id: id) }
+    func fetchPlannedItems() throws -> [PlannedItem] { try backingStore.fetchPlannedItems() }
+    func fetchPlannedItem(id: UUID) throws -> PlannedItem? { try backingStore.fetchPlannedItem(id: id) }
+    func fetchPlannedItems(accountIDs: Set<UUID>, monthKey: YearMonth?) throws -> [PlannedItem] {
+        try backingStore.fetchPlannedItems(accountIDs: accountIDs, monthKey: monthKey)
+    }
+    func upsertPlannedItems(_ items: [PlannedItem]) throws { try backingStore.upsertPlannedItems(items) }
+    func deletePlannedItem(id: UUID) throws { try backingStore.deletePlannedItem(id: id) }
+    func deletePlannedItems(accountID: UUID) throws { try backingStore.deletePlannedItems(accountID: accountID) }
+    func fetchTransactions() throws -> [MonthlyMoney.Transaction] { try backingStore.fetchTransactions() }
+    func fetchTransactions(accountIDs: Set<UUID>) throws -> [MonthlyMoney.Transaction] {
+        try backingStore.fetchTransactions(accountIDs: accountIDs)
+    }
+    func upsertTransactions(_ transactions: [MonthlyMoney.Transaction]) throws {
+        try backingStore.upsertTransactions(transactions)
+    }
+    func deleteTransactions(accountID: UUID) throws { try backingStore.deleteTransactions(accountID: accountID) }
 }
