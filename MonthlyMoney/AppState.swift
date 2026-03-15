@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Combine
+import CloudKit
 
 enum SettingsSharingStatus: Equatable {
     case localOnly
@@ -36,7 +37,7 @@ struct SettingsSharingPresentation: Equatable {
     }
 }
 
-typealias ShareBudgetAction = (AccountRepository) throws -> Budget
+typealias ShareBudgetAction = (AccountRepository) async throws -> BudgetShareResult
 
 struct PendingSharedBudgetAdoption: Equatable {
     let budgetID: UUID
@@ -174,6 +175,7 @@ final class AppState: ObservableObject {
     @Published private(set) var isSharingBudget = false
     @Published private(set) var sharingErrorMessage: String?
     @Published private(set) var pendingSharedBudgetAdoption: PendingSharedBudgetAdoption?
+    @Published private(set) var pendingBudgetShareResult: BudgetShareResult?
 
     @Published var openingBalances: [String: Decimal] = [:] {
         didSet { persistBudgetStateIfNeeded() }
@@ -206,7 +208,8 @@ final class AppState: ObservableObject {
     init(
         repository: AccountRepository,
         shareBudgetAction: @escaping ShareBudgetAction = { repository in
-            try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
+            let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
+            return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
         }
     ) {
         self.repository = repository
@@ -326,13 +329,33 @@ final class AppState: ObservableObject {
         guard !isSharingBudget else { return }
         isSharingBudget = true
         sharingErrorMessage = nil
+        pendingBudgetShareResult = nil
         defer { isSharingBudget = false }
 
         do {
-            _ = try shareBudgetAction(repository)
+            pendingBudgetShareResult = try await shareBudgetAction(repository)
             try refresh()
         } catch {
             sharingErrorMessage = shareErrorMessage(for: error)
+        }
+    }
+
+    func clearPendingBudgetSharePresentation() {
+        pendingBudgetShareResult = nil
+    }
+
+    func sharingPresentationDidFail(message: String) {
+        pendingBudgetShareResult = nil
+        sharingErrorMessage = message
+    }
+
+    func acceptIncomingCloudKitShares(_ metadata: [CKShare.Metadata]) async {
+        guard !metadata.isEmpty else { return }
+        do {
+            try await repository.acceptIncomingSharedBudgetInvitations(metadata)
+            try refresh()
+        } catch {
+            sharingErrorMessage = "Failed to accept shared budget."
         }
     }
 

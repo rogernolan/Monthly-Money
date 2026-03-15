@@ -3,6 +3,7 @@ import CoreData
 import SwiftData
 import XCTest
 import SwiftUI
+import UIKit
 @testable import MonthlyMoney
 
 @MainActor
@@ -438,6 +439,17 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(repository.sharedStoreSyncMode, .cloudShared)
     }
 
+    func testCloudKitShareSceneConfigurationUsesShareSceneDelegate() {
+        let configuration = CloudKitShareSceneConfiguration.make(for: .windowApplication)
+
+        XCTAssertTrue(configuration.delegateClass == MonthlyMoneyCloudKitShareSceneDelegate.self)
+    }
+
+    func testCloudKitShareAcceptancePolicyOnlyProcessesWhenMetadataExists() {
+        XCTAssertFalse(CloudKitShareAcceptancePolicy.shouldProcess(pendingMetadataCount: 0))
+        XCTAssertTrue(CloudKitShareAcceptancePolicy.shouldProcess(pendingMetadataCount: 1))
+    }
+
     func testSettingsSharingPresentationForLocalBudget() {
         let presentation = SettingsSharingPresentation(status: .localOnly)
 
@@ -533,7 +545,11 @@ final class MonthlyMoneyTests: XCTestCase {
                     XCTAssertTrue(observedState?.isSharingBudget ?? false)
                     expectation.fulfill()
                 }
-                return try service.shareBudget(participantsSelection: [])
+                let sharedBudget = try service.shareBudget(participantsSelection: [])
+                return BudgetShareResult(
+                    sharedBudget: sharedBudget,
+                    shareSession: self.makeTestBudgetShareSession(budgetID: sharedBudget.id)
+                )
             }
         )
         observedState = state
@@ -548,6 +564,8 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.sharingStatus, .sharedByYou)
         XCTAssertNotNil(try repository.sharedBudget())
         XCTAssertNil(try repository.localBudget())
+        XCTAssertEqual(state.pendingBudgetShareResult?.sharedBudget.id, try repository.activeBudget()?.id)
+        XCTAssertEqual(state.pendingBudgetShareResult?.shareSession.budgetID, try repository.activeBudget()?.id)
     }
 
     func testShareBudgetStoresErrorWhenAlreadyShared() async throws {
@@ -569,6 +587,28 @@ final class MonthlyMoneyTests: XCTestCase {
 
         XCTAssertFalse(state.isSharingBudget)
         XCTAssertNotNil(state.sharingErrorMessage)
+    }
+
+    func testClearingBudgetSharePresentationRemovesPendingShareResult() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            shareBudgetAction: { repository in
+                let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
+                return BudgetShareResult(
+                    sharedBudget: sharedBudget,
+                    shareSession: self.makeTestBudgetShareSession(budgetID: sharedBudget.id)
+                )
+            }
+        )
+
+        await state.bootstrapIfNeeded()
+        await state.shareBudget()
+        XCTAssertNotNil(state.pendingBudgetShareResult)
+
+        state.clearPendingBudgetSharePresentation()
+
+        XCTAssertNil(state.pendingBudgetShareResult)
     }
 
     func testRefreshShowsPendingSharedBudgetOverwriteForRecipient() async throws {
@@ -947,6 +987,17 @@ final class MonthlyMoneyTests: XCTestCase {
             day: day,
             hour: 12
         ))!
+    }
+
+    private func makeTestBudgetShareSession(budgetID: UUID) -> BudgetShareSession {
+        let rootRecord = CKRecord(recordType: "Budget")
+        let share = CKShare(rootRecord: rootRecord)
+        share[CKShare.SystemFieldKey.title] = "MonthlyMoney" as CKRecordValue
+        return BudgetShareSession(
+            budgetID: budgetID,
+            share: share,
+            containerIdentifier: MonthlyMoneyPersistenceFactory.cloudKitContainerIdentifier
+        )
     }
 }
 

@@ -60,5 +60,23 @@ struct SettingsView: View {
             }
         }
         .navigationTitle("Settings")
+        .sheet(item: Binding(
+            get: { state.pendingBudgetShareResult },
+            set: { newValue in
+                if newValue == nil {
+                    state.clearPendingBudgetSharePresentation()
+                }
+            }
+        )) { shareResult in
+            BudgetCloudSharingController(
+                shareResult: shareResult,
+                onDismiss: {
+                    state.clearPendingBudgetSharePresentation()
+                },
+                onError: { message in
+                    state.sharingPresentationDidFail(message: message)
+                }
+            )
+        }
     }
 }

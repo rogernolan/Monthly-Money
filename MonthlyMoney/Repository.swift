@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CloudKit
 
 enum RepositoryError: Error, Equatable {
     case accountNotFound
@@ -11,6 +12,7 @@ protocol AccountDataStore {
     var implementationKind: DataStoreImplementationKind { get }
 
     func awaitInitialCloudImport(timeout: Duration) async throws
+    func acceptShareInvitations(_ metadata: [CKShare.Metadata]) async throws
 
     func fetchBudgets() throws -> [Budget]
     func fetchBudget(id: UUID) throws -> Budget?
@@ -38,6 +40,10 @@ protocol AccountDataStore {
 extension AccountDataStore {
     func awaitInitialCloudImport(timeout: Duration) async throws {
         _ = timeout
+    }
+
+    func acceptShareInvitations(_ metadata: [CKShare.Metadata]) async throws {
+        _ = metadata
     }
 }
 
@@ -354,6 +360,22 @@ final class AccountRepository {
 
     func awaitInitialPrivateCloudImport(timeout: Duration) async throws {
         try await privateStore.awaitInitialCloudImport(timeout: timeout)
+    }
+
+    func prepareShareSession(forSharedBudgetID budgetID: UUID) async throws -> BudgetShareSession {
+        guard let sharedStore = sharedStore as? CoreDataAccountDataStore else {
+            throw BudgetShareCoordinatorError.sharingUnavailable
+        }
+        return try await sharedStore.prepareShareSession(
+            for: budgetID,
+            containerIdentifier: MonthlyMoneyPersistenceFactory.cloudKitContainerIdentifier
+        )
+    }
+
+    func acceptIncomingSharedBudgetInvitations(_ metadata: [CKShare.Metadata]) async throws {
+        guard !metadata.isEmpty else { return }
+        try await sharedStore.acceptShareInvitations(metadata)
+        try await sharedStore.awaitInitialCloudImport(timeout: .seconds(10))
     }
 
     func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {

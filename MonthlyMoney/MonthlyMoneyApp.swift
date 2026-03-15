@@ -3,6 +3,7 @@ import SwiftData
 
 @main
 struct MonthlyMoneyApp: App {
+    @UIApplicationDelegateAdaptor(MonthlyMoneyAppDelegate.self) private var appDelegate
     let repository: AccountRepository
     private static let persistentStoreNames = ["PrivateStore", "SharedStore"]
 
@@ -25,14 +26,14 @@ struct MonthlyMoneyApp: App {
         do {
             repository = try Self.makePersistentRepository(schema: schema)
         } catch {
-            Self.logModelContainerError("Could not create ModelContainer", error: error)
+            Self.logPersistenceError("Could not create persistent stores", error: error)
             print("Warning: Deleting local stores and retrying.")
             Self.deletePersistentStores()
 
             do {
                 repository = try Self.makePersistentRepository(schema: schema)
             } catch {
-                Self.logModelContainerError("Rebuilding SwiftData stores failed", error: error)
+                Self.logPersistenceError("Rebuilding persistent stores failed", error: error)
                 print("Warning: Falling back to in-memory storage for this launch.")
                 repository = AccountRepository(
                     privateStore: InMemoryAccountDataStore(),
@@ -81,11 +82,11 @@ struct MonthlyMoneyApp: App {
         }
     }
 
-    private static func logModelContainerError(_ message: String, error: Error) {
+    private static func logPersistenceError(_ message: String, error: Error) {
         let nsError = error as NSError
         print("Warning: \(message): \(error)")
         if !nsError.userInfo.isEmpty {
-            print("Warning: ModelContainer NSError domain=\(nsError.domain) code=\(nsError.code) userInfo=\(nsError.userInfo)")
+            print("Warning: Persistence NSError domain=\(nsError.domain) code=\(nsError.code) userInfo=\(nsError.userInfo)")
         }
         if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
             print("Warning: Underlying error domain=\(underlying.domain) code=\(underlying.code) userInfo=\(underlying.userInfo)")

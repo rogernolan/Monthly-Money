@@ -8,8 +8,15 @@ enum CloudRefreshPolicy {
     }
 }
 
+enum CloudKitShareAcceptancePolicy {
+    static func shouldProcess(pendingMetadataCount: Int) -> Bool {
+        pendingMetadataCount > 0
+    }
+}
+
 struct ContentView: View {
     @StateObject private var state: AppState
+    @StateObject private var acceptedCloudKitShareInbox = AcceptedCloudKitShareInbox.shared
     @Environment(\.scenePhase) private var scenePhase
     private let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
@@ -87,6 +94,16 @@ struct ContentView: View {
                 guard !Task.isCancelled else { return }
                 try? state.refresh()
             }
+        }
+        .task(id: acceptedCloudKitShareInbox.pendingMetadata.count) {
+            guard CloudKitShareAcceptancePolicy.shouldProcess(
+                pendingMetadataCount: acceptedCloudKitShareInbox.pendingMetadata.count
+            ) else {
+                return
+            }
+
+            let metadata = acceptedCloudKitShareInbox.drainPendingMetadata()
+            await state.acceptIncomingCloudKitShares(metadata)
         }
     }
 }

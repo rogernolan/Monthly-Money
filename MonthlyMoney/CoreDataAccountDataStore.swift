@@ -1,3 +1,4 @@
+import CloudKit
 import CoreData
 import Foundation
 
@@ -123,6 +124,60 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try fetchFirst(entityName: CoreDataEntityName.budget, id: id)?.objectID
     }
 
+    func prepareShareSession(for budgetID: UUID, containerIdentifier: String) async throws -> BudgetShareSession {
+        guard let cloudContainer = persistentContainer as? NSPersistentCloudKitContainer else {
+            throw BudgetShareCoordinatorError.sharingUnavailable
+        }
+        guard let objectID = try managedBudgetObjectID(for: budgetID) else {
+            throw BudgetShareCoordinatorError.missingSharedBudgetRoot
+        }
+
+        if let existingShare = try existingShare(for: objectID, in: cloudContainer) {
+            return BudgetShareSession(
+                budgetID: budgetID,
+                share: existingShare,
+                containerIdentifier: containerIdentifier
+            )
+        }
+
+        let managedObject = try context.existingObject(with: objectID)
+        return try await withCheckedThrowingContinuation { continuation in
+            cloudContainer.share([managedObject], to: nil) { _, share, cloudKitContainer, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                guard let share, let cloudKitContainer else {
+                    continuation.resume(throwing: BudgetShareCoordinatorError.sharePreparationFailed)
+                    return
+                }
+                continuation.resume(returning: BudgetShareSession(
+                    budgetID: budgetID,
+                    share: share,
+                    containerIdentifier: cloudKitContainer.containerIdentifier ?? containerIdentifier
+                ))
+            }
+        }
+    }
+
+    func acceptShareInvitations(_ metadata: [CKShare.Metadata]) async throws {
+        guard let cloudContainer = persistentContainer as? NSPersistentCloudKitContainer,
+              let persistentStore = persistentContainer.persistentStoreCoordinator.persistentStores.first else {
+            throw BudgetShareCoordinatorError.sharingUnavailable
+        }
+        guard !metadata.isEmpty else { return }
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            cloudContainer.acceptShareInvitations(from: metadata, into: persistentStore) { _, error in
+                if let error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                continuation.resume(returning: ())
+            }
+        }
+    }
+
     func upsertBudget(_ budget: Budget) throws {
         let managedObject = try fetchFirst(entityName: CoreDataEntityName.budget, id: budget.id)
             ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.budget, into: context)
@@ -244,5 +299,13 @@ final class CoreDataAccountDataStore: AccountDataStore {
         request.fetchLimit = 1
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         return try context.fetch(request).first
+    }
+
+    private func existingShare(
+        for objectID: NSManagedObjectID,
+        in container: NSPersistentCloudKitContainer
+    ) throws -> CKShare? {
+        let shares = try container.fetchShares(matching: [objectID])
+        return shares[objectID]
     }
 }
