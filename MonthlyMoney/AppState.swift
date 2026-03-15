@@ -203,8 +203,6 @@ final class AppState: ObservableObject {
     private let shareBudgetAction: ShareBudgetAction
     private var isHydratingPersistedBudgetState = false
     private var dismissedSharedBudgetAdoptionIDs: Set<UUID> = []
-    private var lastLoggedBudgetInventory: String?
-
     init(
         repository: AccountRepository,
         shareBudgetAction: @escaping ShareBudgetAction = { repository in
@@ -229,10 +227,7 @@ final class AppState: ObservableObject {
     func bootstrapIfNeeded() async {
         do {
             try await waitForInitialCloudImportIfNeeded()
-            let removedDuplicateBudgets = try repository.reconcileDuplicateLocalBudgets()
-            if removedDuplicateBudgets > 0 {
-                print("[Sync] removed \(removedDuplicateBudgets) duplicate local budget(s)")
-            }
+            _ = try repository.reconcileDuplicateLocalBudgets()
 
             if try repository.accounts().isEmpty {
                 let account = try repository.createAccount(
@@ -275,7 +270,6 @@ final class AppState: ObservableObject {
             primaryBankName = "Primary bank"
         }
         try updatePendingSharedBudgetAdoption()
-        logBudgetInventoryIfChanged()
         objectWillChange.send()
     }
 
@@ -860,16 +854,6 @@ final class AppState: ObservableObject {
             budgetName: sharedBudget.name
         )
     }
-
-    private func logBudgetInventoryIfChanged() {
-        guard let summary = try? repository.debugBudgetInventory(),
-              summary != lastLoggedBudgetInventory else {
-            return
-        }
-        lastLoggedBudgetInventory = summary
-        print("[Sync] \(summary)")
-    }
-
     private func seedDefaultsFromSheet(accountID: UUID, month: YearMonth) throws {
         func money(_ value: String) -> Decimal {
             Decimal(string: value) ?? 0

@@ -5,17 +5,13 @@ import Foundation
 final class CoreDataAccountDataStore: AccountDataStore {
     let implementationKind: DataStoreImplementationKind = .coreData
     private let persistentContainer: NSPersistentContainer
-    private let storeLabel: String
-    private var cloudEventObservationTask: Task<Void, Never>?
     private var context: NSManagedObjectContext { persistentContainer.viewContext }
     var mergesRemoteChangesAutomatically: Bool { context.automaticallyMergesChangesFromParent }
 
-    init(persistentContainer: NSPersistentContainer, storeLabel: String) {
+    init(persistentContainer: NSPersistentContainer) {
         self.persistentContainer = persistentContainer
-        self.storeLabel = storeLabel
         self.context.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
         self.context.automaticallyMergesChangesFromParent = true
-        startCloudKitEventLoggingIfNeeded()
     }
 
     func awaitInitialCloudImport(timeout: Duration) async throws {
@@ -64,7 +60,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             throw loadError
         }
 
-        return CoreDataAccountDataStore(persistentContainer: container, storeLabel: "in-memory")
+        return CoreDataAccountDataStore(persistentContainer: container)
     }
 
     static func makePersistentCloudKitPrivate(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
@@ -88,7 +84,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             throw loadError
         }
 
-        return CoreDataAccountDataStore(persistentContainer: container, storeLabel: "private")
+        return CoreDataAccountDataStore(persistentContainer: container)
     }
 
     static func makePersistentCloudKitShared(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
@@ -112,11 +108,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             throw loadError
         }
 
-        return CoreDataAccountDataStore(persistentContainer: container, storeLabel: "shared")
-    }
-
-    deinit {
-        cloudEventObservationTask?.cancel()
+        return CoreDataAccountDataStore(persistentContainer: container)
     }
 
     func fetchBudgets() throws -> [Budget] {
@@ -248,33 +240,5 @@ final class CoreDataAccountDataStore: AccountDataStore {
         request.fetchLimit = 1
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         return try context.fetch(request).first
-    }
-
-    private func startCloudKitEventLoggingIfNeeded() {
-        guard let cloudContainer = persistentContainer as? NSPersistentCloudKitContainer else {
-            return
-        }
-
-        let storeNames = persistentContainer.persistentStoreDescriptions
-            .compactMap { $0.url?.lastPathComponent }
-            .joined(separator: ", ")
-        print("[CloudKit] \(storeLabel) store ready: \(storeNames)")
-
-        cloudEventObservationTask = Task { [storeLabel] in
-            let center = NotificationCenter.default
-            for await notification in center.notifications(
-                named: NSPersistentCloudKitContainer.eventChangedNotification,
-                object: cloudContainer
-            ) {
-                guard let event = notification.userInfo?[NSPersistentCloudKitContainer.eventNotificationUserInfoKey]
-                        as? NSPersistentCloudKitContainer.Event else {
-                    continue
-                }
-
-                let end = event.endDate?.description ?? "nil"
-                let errorDescription = event.error.map { String(describing: $0) } ?? "nil"
-                print("[CloudKit] \(storeLabel) event type=\(event.type) store=\(event.storeIdentifier) succeeded=\(event.succeeded) start=\(event.startDate) end=\(end) error=\(errorDescription)")
-            }
-        }
     }
 }

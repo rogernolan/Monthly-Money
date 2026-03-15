@@ -356,19 +356,6 @@ final class AccountRepository {
         try await privateStore.awaitInitialCloudImport(timeout: timeout)
     }
 
-    func debugBudgetInventory() throws -> String {
-        let local = try privateStore.fetchBudgets()
-            .filter { $0.sharingState == .local }
-            .sorted(by: Self.debugBudgetSort)
-            .map(Self.debugBudgetDescription)
-        let shared = try sharedStore.fetchBudgets()
-            .filter { $0.sharingState == .shared }
-            .sorted(by: Self.debugBudgetSort)
-            .map(Self.debugBudgetDescription)
-        let active = try activeBudget().map(Self.debugBudgetDescription) ?? "none"
-        return "active=\(active) local=[\(local.joined(separator: "; "))] shared=[\(shared.joined(separator: "; "))]"
-    }
-
     func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {
         let budget = try ensureLocalBudget(ownerParticipantID: ownerParticipantID)
         let account = Account(budgetID: budget.id, name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)
@@ -452,7 +439,7 @@ final class AccountRepository {
     func reconcileDuplicateLocalBudgets() throws -> Int {
         let localBudgets = try privateStore.fetchBudgets()
             .filter { $0.sharingState == .local }
-            .sorted(by: Self.debugBudgetSort)
+            .sorted(by: Self.budgetSort)
         guard let canonicalBudget = localBudgets.first else { return 0 }
 
         var removed = 0
@@ -521,7 +508,7 @@ final class AccountRepository {
     private func preferredBudget(from budgets: [Budget], sharingState: BudgetSharingState) -> Budget? {
         budgets
             .filter { $0.sharingState == sharingState }
-            .sorted(by: Self.debugBudgetSort)
+            .sorted(by: Self.budgetSort)
             .first
     }
 
@@ -531,7 +518,7 @@ final class AccountRepository {
         try store.upsertBudget(budget)
     }
 
-    private static func debugBudgetSort(lhs: Budget, rhs: Budget) -> Bool {
+    private static func budgetSort(lhs: Budget, rhs: Budget) -> Bool {
         if lhs.updatedAt != rhs.updatedAt {
             return lhs.updatedAt > rhs.updatedAt
         }
@@ -539,10 +526,5 @@ final class AccountRepository {
             return lhs.createdAt > rhs.createdAt
         }
         return lhs.id.uuidString > rhs.id.uuidString
-    }
-
-    private static func debugBudgetDescription(_ budget: Budget) -> String {
-        let shortID = budget.id.uuidString.prefix(8)
-        return "\(shortID){state=\(budget.sharingState.rawValue),updated=\(budget.updatedAt)}"
     }
 }
