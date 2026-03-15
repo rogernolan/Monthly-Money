@@ -374,6 +374,21 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(store.mergesRemoteChangesAutomatically)
     }
 
+    func testCoreDataAccountDataStoreResolvesManagedBudgetObjectID() throws {
+        let store = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(store)
+
+        let budget = Budget(
+            id: UUID(),
+            name: "Shared Household",
+            ownerParticipantID: "owner",
+            sharingState: .shared
+        )
+        try store.upsertBudget(budget)
+
+        XCTAssertNotNil(try store.managedBudgetObjectID(for: budget.id))
+    }
+
     func testBootstrapRulesWaitForCloudImportOnlyForEmptyCloudBackedPrivateStore() {
         XCTAssertTrue(
             AppBootstrapRules.shouldWaitForInitialCloudImport(

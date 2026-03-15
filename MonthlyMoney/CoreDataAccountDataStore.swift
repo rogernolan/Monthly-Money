@@ -119,6 +119,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try fetchFirst(entityName: CoreDataEntityName.budget, id: id).map(CoreDataMapping.budget(from:))
     }
 
+    func managedBudgetObjectID(for id: UUID) throws -> NSManagedObjectID? {
+        try fetchFirst(entityName: CoreDataEntityName.budget, id: id)?.objectID
+    }
+
     func upsertBudget(_ budget: Budget) throws {
         let managedObject = try fetchFirst(entityName: CoreDataEntityName.budget, id: budget.id)
             ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.budget, into: context)
