@@ -1,6 +1,137 @@
 import Foundation
 import SwiftUI
 import Combine
+import CloudKit
+
+enum SettingsSharingStatus: Equatable {
+    case localOnly
+    case sharedAvailable
+    case sharedByYou
+    case sharedWithYou
+}
+
+enum WheelOfMoneyFilter: String, CaseIterable, Equatable {
+    case all
+    case pending
+}
+
+struct WheelOfMoneyMetrics: Equatable {
+    let annualTotal: Decimal
+    let monthlyAverage: Decimal
+    let pendingTotal: Decimal
+    let remainingAverage: Decimal
+
+    var remainingAverageExceedsMonthlyAverage: Bool {
+        remainingAverage > monthlyAverage
+    }
+}
+
+enum WheelOfMoneyFilterRules {
+    static func filteredItems(_ items: [WheelOfMoneyItem], for filter: WheelOfMoneyFilter) -> [WheelOfMoneyItem] {
+        switch filter {
+        case .all:
+            return items
+        case .pending:
+            return items.filter { !$0.isPaid }
+        }
+    }
+}
+
+enum WheelOfMoneyCalculator {
+    static func metrics(items: [WheelOfMoneyItem], currentMonth: Int) -> WheelOfMoneyMetrics {
+        let annualTotal = items.reduce(Decimal.zero) { $0 + $1.amount }
+        let monthlyAverage = annualTotal / Decimal(12)
+        let pendingTotal = items.filter { !$0.isPaid }.reduce(Decimal.zero) { $0 + $1.amount }
+        let remainingMonths = max(1, 12 - min(max(currentMonth, 1), 12) + 1)
+        let remainingAverage = pendingTotal / Decimal(remainingMonths)
+        return WheelOfMoneyMetrics(
+            annualTotal: annualTotal,
+            monthlyAverage: monthlyAverage,
+            pendingTotal: pendingTotal,
+            remainingAverage: remainingAverage
+        )
+    }
+}
+
+struct SettingsSharingPresentation: Equatable {
+    let status: SettingsSharingStatus
+
+    var statusText: String {
+        switch status {
+        case .localOnly:
+            return "Local only"
+        case .sharedAvailable:
+            return "Shared budget available"
+        case .sharedByYou:
+            return "Shared by you"
+        case .sharedWithYou:
+            return "Shared with you"
+        }
+    }
+
+    var isShareButtonEnabled: Bool {
+        status == .localOnly || status == .sharedByYou
+    }
+
+    var showsUnshareButton: Bool {
+        status == .sharedByYou
+    }
+
+    var note: String? {
+        switch status {
+        case .localOnly:
+            return nil
+        case .sharedAvailable:
+            return "Open the shared budget from the overwrite prompt when you're ready."
+        case .sharedByYou, .sharedWithYou:
+            return nil
+        }
+    }
+}
+
+typealias ShareBudgetAction = (AccountRepository) async throws -> BudgetShareResult
+typealias CurrentParticipantIDProvider = () async -> String
+typealias VerifyBudgetUnsharedAction = (AccountRepository, UUID) async throws -> Bool
+
+struct PendingSharedBudgetAdoption: Equatable {
+    let budgetID: UUID
+    let budgetName: String
+}
+
+private struct PersistedMonthBalances: Codable, Equatable {
+    var openingBalances: [String: String]
+    var primaryBankBalances: [String: String]
+
+    static let empty = PersistedMonthBalances(openingBalances: [:], primaryBankBalances: [:])
+}
+
+private enum PersistedMonthBalancesCodec {
+    static func decode(_ payload: String) -> PersistedMonthBalances {
+        guard let data = payload.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(PersistedMonthBalances.self, from: data) else {
+            return .empty
+        }
+        return decoded
+    }
+
+    static func encode(openingBalances: [String: Decimal], primaryBankBalances: [String: Decimal]) -> String {
+        let payload = PersistedMonthBalances(
+            openingBalances: openingBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue },
+            primaryBankBalances: primaryBankBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue }
+        )
+        guard let data = try? JSONEncoder().encode(payload),
+              let json = String(data: data, encoding: .utf8) else {
+            return "{}"
+        }
+        return json
+    }
+
+    static func decimalMap(from values: [String: String]) -> [String: Decimal] {
+        values.reduce(into: [:]) { result, entry in
+            result[entry.key] = Decimal(string: entry.value) ?? 0
+        }
+    }
+}
 
 struct DailyBudgetCycleMetrics: Equatable {
     let previousPayday: Date
@@ -92,10 +223,20 @@ enum DailyBudgetCycleCalculator {
 
 @MainActor
 final class AppState: ObservableObject {
-    @Published var selectedMonth: YearMonth
+    static let legacyOwnerParticipantID = "owner"
 
-    @Published var openingBalances: [String: Decimal] = [:]
-    @Published var primaryBankBalances: [String: Decimal] = [:]
+    @Published var selectedMonth: YearMonth
+    @Published private(set) var isSharingBudget = false
+    @Published private(set) var sharingErrorMessage: String?
+    @Published private(set) var pendingSharedBudgetAdoption: PendingSharedBudgetAdoption?
+    @Published private(set) var pendingBudgetShareResult: BudgetShareResult?
+
+    @Published var openingBalances: [String: Decimal] = [:] {
+        didSet { persistBudgetStateIfNeeded() }
+    }
+    @Published var primaryBankBalances: [String: Decimal] = [:] {
+        didSet { persistBudgetStateIfNeeded() }
+    }
     @Published var primaryBankName: String = "Primary bank"
 
     @Published var weeklyEstimate: Decimal = 350
@@ -108,36 +249,73 @@ final class AppState: ObservableObject {
     @Published var cashBalance: Decimal = 0
     @Published var fxBalance: Decimal = 0
     @Published var paydayDay: Int = 1
-    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0
+    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0 {
+        didSet { persistBudgetStateIfNeeded() }
+    }
 
     @Published var monthItems: [PlannedItem] = []
+    @Published var wheelOfMoneyItems: [WheelOfMoneyItem] = []
+    @Published var wheelOfMoneyFilter: WheelOfMoneyFilter = .all
 
     private let repository: AccountRepository
-
-    init(repository: AccountRepository) {
+    private let shareBudgetAction: ShareBudgetAction
+    private let currentParticipantIDProvider: CurrentParticipantIDProvider
+    private let verifyBudgetUnsharedAction: VerifyBudgetUnsharedAction
+    private var currentParticipantID: String
+    private var isHydratingPersistedBudgetState = false
+    private var dismissedSharedBudgetAdoptionIDs: Set<UUID> = []
+    init(
+        repository: AccountRepository,
+        currentParticipantIDProvider: @escaping CurrentParticipantIDProvider = {
+            await CurrentParticipantIdentity.resolve()
+        },
+        verifyBudgetUnsharedAction: @escaping VerifyBudgetUnsharedAction = { repository, budgetID in
+            try !repository.hasActiveShare(for: budgetID)
+        },
+        shareBudgetAction: @escaping ShareBudgetAction = { repository in
+            let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
+            return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
+        }
+    ) {
         self.repository = repository
+        self.currentParticipantIDProvider = currentParticipantIDProvider
+        self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
+        self.currentParticipantID = Self.legacyOwnerParticipantID
+        self.shareBudgetAction = shareBudgetAction
         let now = Date()
         let calendar = Calendar.current
         self.selectedMonth = YearMonth(
             year: calendar.component(.year, from: now),
             month: calendar.component(.month, from: now)
         )
+        do {
+            try loadPersistedBudgetState()
+        } catch {
+            print("Initial budget state load failed: \(error)")
+        }
     }
 
     func bootstrapIfNeeded() async {
         do {
+            currentParticipantID = await currentParticipantIDProvider()
+            try await waitForInitialCloudImportIfNeeded()
+            _ = try repository.reconcileDuplicateLocalBudgets()
+            try migrateLegacyOwnerIdentifiersIfNeeded()
+
             if try repository.accounts().isEmpty {
                 let account = try repository.createAccount(
                     name: "Nationwide",
                     role: .regular,
                     type: .current,
-                    ownerParticipantID: "owner"
+                    ownerParticipantID: currentParticipantID
                 )
                 primaryBankBalances[selectedMonth.rawValue] = 397
                 try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
+                try ensureWheelOfMoneyHasSeedData()
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             } else if let account = try repository.accounts().first {
                 try ensureCurrentMonthHasSeedData(accountID: account.id)
+                try ensureWheelOfMoneyHasSeedData()
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             }
             try refresh()
@@ -146,20 +324,52 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func waitForInitialCloudImportIfNeeded() async throws {
+        let initialAccountCount = try repository.accounts().count
+        guard AppBootstrapRules.shouldWaitForInitialCloudImport(
+            privateStoreSyncMode: repository.privateStoreSyncMode,
+            accountCount: initialAccountCount
+        ) else {
+            return
+        }
+
+        try await repository.awaitInitialPrivateCloudImport(timeout: .seconds(10))
+    }
+
     func refresh() throws {
+        try restoreLocalBudgetIfNeeded()
+        try loadPersistedBudgetState()
         monthItems = try repository.plannedItems(for: selectedMonth)
+        wheelOfMoneyItems = try repository.wheelOfMoneyItems()
         if let firstAccount = try repository.accounts().first {
             primaryBankName = firstAccount.name
         } else {
             primaryBankName = "Primary bank"
         }
+        try updatePendingSharedBudgetAdoption()
         objectWillChange.send()
+    }
+
+    private func restoreLocalBudgetIfNeeded() throws {
+        guard try repository.activeBudget() == nil else { return }
+
+        let account = try repository.createAccount(
+            name: "Nationwide",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: currentParticipantID
+        )
+        primaryBankBalances[selectedMonth.rawValue] = 397
+        try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
+        try ensureWheelOfMoneyHasSeedData()
+        try ensureNextMonthCopiedFromCurrent(accountID: account.id)
     }
 
     var usesSeparateAccountForDailyBudget: Bool {
         get { (try? repository.activeBudget()?.usesSeparateAccountForDailyBudget) ?? false }
         set {
             do {
+                guard canEditBudgetSettings else { return }
                 guard let budget = try repository.activeBudget() else { return }
                 budget.usesSeparateAccountForDailyBudget = newValue
                 try repository.saveBudget(budget)
@@ -168,6 +378,156 @@ final class AppState: ObservableObject {
                 print("Update daily budget account setting failed: \(error)")
             }
         }
+    }
+
+    var autoGenerateWoMSavingsEveryMonth: Bool {
+        get { (try? repository.activeBudget()?.autoGenerateWoMSavingsEveryMonth) ?? false }
+        set {
+            do {
+                guard canEditBudgetSettings else { return }
+                guard let budget = try repository.activeBudget() else { return }
+                budget.autoGenerateWoMSavingsEveryMonth = newValue
+                try repository.saveBudget(budget)
+                if newValue {
+                    try ensureGeneratedWheelOfMoneySavingsItems()
+                }
+                try refresh()
+            } catch {
+                print("Update WoM savings generation setting failed: \(error)")
+            }
+        }
+    }
+
+    var persistedMonthBalancePayload: String {
+        PersistedMonthBalancesCodec.encode(
+            openingBalances: openingBalances,
+            primaryBankBalances: primaryBankBalances
+        )
+    }
+
+    var privateStoreSyncMode: StoreSyncMode {
+        repository.privateStoreSyncMode
+    }
+
+    var sharedStoreSyncMode: StoreSyncMode {
+        repository.sharedStoreSyncMode
+    }
+
+    var sharingStatus: SettingsSharingStatus {
+        if let localBudget = try? repository.localBudget(),
+           let sharedBudget = try? repository.sharedBudget(),
+           sharedBudget.ownerParticipantID != currentParticipantID,
+           sharedBudget.id != localBudget.id {
+            return .sharedAvailable
+        }
+
+        guard let budget = try? repository.activeBudget() else { return .localOnly }
+        guard budget.sharingState == .shared else { return .localOnly }
+        return budget.ownerParticipantID == currentParticipantID ? .sharedByYou : .sharedWithYou
+    }
+
+    var sharingPresentation: SettingsSharingPresentation {
+        SettingsSharingPresentation(status: sharingStatus)
+    }
+
+    var shouldShowSharedBudgetOverwriteAlert: Bool {
+        pendingSharedBudgetAdoption != nil
+    }
+
+    var canEditBudgetSettings: Bool {
+        switch sharingStatus {
+        case .localOnly, .sharedAvailable, .sharedByYou:
+            return true
+        case .sharedWithYou:
+            return false
+        }
+    }
+
+    func shareBudget() async {
+        guard !isSharingBudget else { return }
+        isSharingBudget = true
+        sharingErrorMessage = nil
+        pendingBudgetShareResult = nil
+        defer { isSharingBudget = false }
+
+        do {
+            pendingBudgetShareResult = try await shareBudgetAction(repository)
+            try refresh()
+        } catch {
+            sharingErrorMessage = shareErrorMessage(for: error)
+        }
+    }
+
+    func clearPendingBudgetSharePresentation() {
+        pendingBudgetShareResult = nil
+    }
+
+    func sharingPresentationDidFail(message: String) {
+        pendingBudgetShareResult = nil
+        sharingErrorMessage = message
+    }
+
+    func handleBudgetShareStopped() async throws {
+        guard let budget = try repository.localBudget() ?? repository.activeBudget() else {
+            clearPendingBudgetSharePresentation()
+            throw BudgetSharingError.budgetNotFound
+        }
+        let isUnshared = try await verifyBudgetUnsharedAction(repository, budget.id)
+        guard isUnshared else {
+            throw BudgetShareCoordinatorError.stopShareVerificationFailed
+        }
+        budget.sharingState = .local
+        try repository.saveBudget(budget)
+        clearPendingBudgetSharePresentation()
+        try refresh()
+    }
+
+    func handleBudgetShareStoppedFromUI() async {
+        do {
+            try await handleBudgetShareStopped()
+        } catch {
+            sharingErrorMessage = shareErrorMessage(for: error)
+        }
+    }
+
+    func acceptIncomingCloudKitShares(_ metadata: [CKShare.Metadata]) async {
+        guard !metadata.isEmpty else { return }
+        print("[ShareAccept] received \(metadata.count) share metadata item(s)")
+        do {
+            try await repository.acceptIncomingSharedBudgetInvitations(metadata)
+            print("[ShareAccept] accepted invitations, refreshing app state")
+            try refresh()
+            print("[ShareAccept] accept flow completed")
+        } catch {
+            print("[ShareAccept] accept failed: \(error)")
+            sharingErrorMessage = acceptSharedBudgetErrorMessage(for: error)
+        }
+    }
+
+    func confirmSharedBudgetOverwrite() throws {
+        guard pendingSharedBudgetAdoption != nil else { return }
+        guard let localBudget = try repository.localBudget() else {
+            pendingSharedBudgetAdoption = nil
+            return
+        }
+
+        try repository.deleteLocalBudget(id: localBudget.id)
+        pendingSharedBudgetAdoption = nil
+        try refresh()
+    }
+
+    func confirmSharedBudgetOverwriteFromUI() {
+        do {
+            try confirmSharedBudgetOverwrite()
+        } catch {
+            sharingErrorMessage = "Failed to open shared budget."
+        }
+    }
+
+    func cancelSharedBudgetOverwrite() {
+        guard let pending = pendingSharedBudgetAdoption else { return }
+        dismissedSharedBudgetAdoptionIDs.insert(pending.budgetID)
+        pendingSharedBudgetAdoption = nil
     }
 
     var dailyBudgetAmount: Decimal {
@@ -188,6 +548,7 @@ final class AppState: ObservableObject {
         get { (try? repository.activeBudget()?.dailyBudgetPaydayDay) ?? 1 }
         set {
             do {
+                guard canEditBudgetSettings else { return }
                 guard let budget = try repository.activeBudget() else { return }
                 budget.dailyBudgetPaydayDay = min(max(newValue, 1), 31)
                 try repository.saveBudget(budget)
@@ -237,6 +598,23 @@ final class AppState: ObservableObject {
             weekendEstimate: weekendEstimate,
             minSuggestedLiving: minSuggestedLiving,
             yearMonth: selectedMonth
+        )
+    }
+
+    var filteredWheelOfMoneyItems: [WheelOfMoneyItem] {
+        WheelOfMoneyFilterRules.filteredItems(wheelOfMoneyItems, for: wheelOfMoneyFilter)
+            .sorted {
+                if $0.month != $1.month {
+                    return $0.month < $1.month
+                }
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+    }
+
+    var wheelOfMoneyMetrics: WheelOfMoneyMetrics {
+        WheelOfMoneyCalculator.metrics(
+            items: wheelOfMoneyItems,
+            currentMonth: currentYearMonth.month
         )
     }
 
@@ -324,6 +702,71 @@ final class AppState: ObservableObject {
             try refresh()
         } catch {
             print("Delete failed: \(error)")
+        }
+    }
+
+    func setWheelOfMoneyPaid(item: WheelOfMoneyItem, paid: Bool) {
+        item.isPaid = paid
+        do {
+            try repository.saveWheelOfMoneyItem(item)
+            try refresh()
+        } catch {
+            print("Failed setWheelOfMoneyPaid: \(error)")
+        }
+    }
+
+    func delete(wheelOfMoneyItem item: WheelOfMoneyItem) {
+        do {
+            try repository.deleteWheelOfMoneyItem(id: item.id)
+            try refresh()
+        } catch {
+            print("Delete WoM item failed: \(error)")
+        }
+    }
+
+    func update(
+        wheelOfMoneyItem item: WheelOfMoneyItem,
+        title: String,
+        amount: Decimal,
+        month: Int,
+        notes: String
+    ) {
+        item.title = title
+        item.amount = amount
+        item.month = month
+        item.notes = notes
+        do {
+            try repository.saveWheelOfMoneyItem(item)
+            try refresh()
+        } catch {
+            print("Edit WoM item failed: \(error)")
+        }
+    }
+
+    @discardableResult
+    func createWheelOfMoneyEntry(
+        title: String,
+        amount: Decimal,
+        month: Int,
+        notes: String = "",
+        isAutoGeneratedSavingsEntry: Bool = false
+    ) -> WheelOfMoneyItem? {
+        do {
+            let item = WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: title,
+                amount: amount,
+                month: month,
+                isPaid: false,
+                notes: notes,
+                isAutoGeneratedSavingsEntry: isAutoGeneratedSavingsEntry
+            )
+            try repository.createWheelOfMoneyItem(item)
+            try refresh()
+            return item
+        } catch {
+            print("Create WoM entry failed: \(error)")
+            return nil
         }
     }
 
@@ -598,6 +1041,68 @@ final class AppState: ObservableObject {
         try copyItems(currentItems, to: next)
     }
 
+    private func ensureWheelOfMoneyHasSeedData() throws {
+        guard try repository.wheelOfMoneyItems().isEmpty else { return }
+
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "Car insurance",
+                amount: 900,
+                month: WheelOfMoneyMonth.march.rawValue
+            )
+        )
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "Christmas",
+                amount: 1000,
+                month: WheelOfMoneyMonth.december.rawValue
+            )
+        )
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "J Birthday",
+                amount: 150,
+                month: WheelOfMoneyMonth.may.rawValue
+            )
+        )
+
+        if autoGenerateWoMSavingsEveryMonth {
+            try ensureGeneratedWheelOfMoneySavingsItems()
+        }
+    }
+
+    private func ensureGeneratedWheelOfMoneySavingsItems() throws {
+        guard let budget = try repository.activeBudget() else { return }
+
+        let existingItems = try repository.wheelOfMoneyItems()
+        let existingGeneratedMonths = Set(
+            existingItems
+                .filter { $0.isAutoGeneratedSavingsEntry && $0.title == "WoM savings" }
+                .map(\.month)
+        )
+        let generatedAmount = WheelOfMoneyCalculator.metrics(
+            items: existingItems,
+            currentMonth: currentYearMonth.month
+        ).monthlyAverage
+
+        for month in 1...12 where !existingGeneratedMonths.contains(month) {
+            try repository.createWheelOfMoneyItem(
+                WheelOfMoneyItem(
+                    budgetID: budget.id,
+                    title: "WoM savings",
+                    amount: generatedAmount,
+                    month: month,
+                    isPaid: false,
+                    notes: "",
+                    isAutoGeneratedSavingsEntry: true
+                )
+            )
+        }
+    }
+
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
         for source in PlannedItem.automaticallyCopiedItems(from: sourceItems) {
             let copy = PlannedItem(
@@ -616,6 +1121,62 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func loadPersistedBudgetState() throws {
+        guard let budget = try repository.activeBudget() else {
+            isHydratingPersistedBudgetState = true
+            openingBalances = [:]
+            primaryBankBalances = [:]
+            dailyBudgetSeparateAccountBalance = 0
+            isHydratingPersistedBudgetState = false
+            return
+        }
+
+        let persisted = PersistedMonthBalancesCodec.decode(budget.monthBalancesPayload)
+        isHydratingPersistedBudgetState = true
+        openingBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.openingBalances)
+        primaryBankBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.primaryBankBalances)
+        dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
+        isHydratingPersistedBudgetState = false
+    }
+
+    private func persistBudgetStateIfNeeded() {
+        guard !isHydratingPersistedBudgetState else { return }
+        do {
+            guard let budget = try repository.activeBudget() else { return }
+            budget.monthBalancesPayload = persistedMonthBalancePayload
+            budget.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
+            try repository.saveBudget(budget)
+        } catch {
+            print("Persist budget state failed: \(error)")
+        }
+    }
+
+    private func updatePendingSharedBudgetAdoption() throws {
+        guard let localBudget = try repository.localBudget(),
+              let sharedBudget = try repository.sharedBudget(),
+              sharedBudget.ownerParticipantID != currentParticipantID,
+              localBudget.id != sharedBudget.id,
+              !dismissedSharedBudgetAdoptionIDs.contains(sharedBudget.id) else {
+            pendingSharedBudgetAdoption = nil
+            return
+        }
+
+        pendingSharedBudgetAdoption = PendingSharedBudgetAdoption(
+            budgetID: sharedBudget.id,
+            budgetName: sharedBudget.name
+        )
+    }
+
+    private func migrateLegacyOwnerIdentifiersIfNeeded() throws {
+        guard currentParticipantID != Self.legacyOwnerParticipantID else { return }
+        guard let localBudget = try repository.localBudget(),
+              localBudget.ownerParticipantID == Self.legacyOwnerParticipantID else {
+            return
+        }
+
+        localBudget.ownerParticipantID = currentParticipantID
+        try repository.saveBudget(localBudget)
+    }
     private func seedDefaultsFromSheet(accountID: UUID, month: YearMonth) throws {
         func money(_ value: String) -> Decimal {
             Decimal(string: value) ?? 0
@@ -749,5 +1310,54 @@ final class AppState: ObservableObject {
                 )
             )
         }
+    }
+
+    private func shareErrorMessage(for error: Error) -> String {
+        if let sharingError = error as? BudgetSharingError {
+            switch sharingError {
+            case .budgetNotFound:
+                return "Could not find a budget to share."
+            case .budgetAlreadyShared, .reverseMigrationNotSupported:
+                return "This budget is already shared."
+            case .invalidMonthKey:
+                return "This budget could not be shared."
+            }
+        }
+        if let coordinatorError = error as? BudgetShareCoordinatorError {
+            switch coordinatorError {
+            case .stopShareVerificationFailed:
+                return "Could not confirm that sharing was removed."
+            default:
+                break
+            }
+        }
+        return "Budget sharing failed."
+    }
+
+    private func acceptSharedBudgetErrorMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == CKError.errorDomain,
+           nsError.code == CKError.partialFailure.rawValue,
+           let partialErrors = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: NSError],
+           let nestedError = partialErrors.values.first {
+            return acceptSharedBudgetErrorMessage(for: nestedError)
+        }
+
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return "Failed to accept shared budget: \(description) (\(nsError.domain) \(nsError.code))"
+        }
+
+        if let description = nsError.userInfo[NSLocalizedDescriptionKey] as? String,
+           !description.isEmpty {
+            return "Failed to accept shared budget: \(description) (\(nsError.domain) \(nsError.code))"
+        }
+
+        return "Failed to accept shared budget: \(nsError.domain) \(nsError.code)"
+    }
+
+    func debugAcceptSharedBudgetErrorMessage(for error: Error) -> String {
+        acceptSharedBudgetErrorMessage(for: error)
     }
 }

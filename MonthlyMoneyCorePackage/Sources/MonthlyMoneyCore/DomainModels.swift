@@ -25,6 +25,21 @@ public enum PlannedItemType: String, Codable, CaseIterable {
     case transfer
 }
 
+public enum WheelOfMoneyMonth: Int, Codable, CaseIterable {
+    case january = 1
+    case february = 2
+    case march = 3
+    case april = 4
+    case may = 5
+    case june = 6
+    case july = 7
+    case august = 8
+    case september = 9
+    case october = 10
+    case november = 11
+    case december = 12
+}
+
 public struct YearMonth: Codable, Hashable, Comparable, CustomStringConvertible {
     public let year: Int
     public let month: Int
@@ -57,41 +72,56 @@ public struct YearMonth: Codable, Hashable, Comparable, CustomStringConvertible 
 
 @Model
 public final class Budget {
-    @Attribute(.unique) public var id: UUID
-    public var name: String
-    public var ownerParticipantID: String
-    public var sharingState: BudgetSharingState
-    public var usesSeparateAccountForDailyBudget: Bool
-    public var dailyBudgetAmount: Decimal
-    public var dailyBudgetPaydayDay: Int
+    public var id: UUID = UUID()
+    public var name: String = ""
+    public var ownerParticipantID: String = ""
+    public var sharingState: BudgetSharingState = BudgetSharingState.local
+    public var createdAt: Date = Date()
+    public var updatedAt: Date = Date()
+    public var usesSeparateAccountForDailyBudget: Bool = false
+    public var dailyBudgetAmount: Decimal = 0
+    public var dailyBudgetPaydayDay: Int = 1
+    public var dailyBudgetSeparateAccountBalance: Decimal = 0
+    public var autoGenerateWoMSavingsEveryMonth: Bool = false
+    public var monthBalancesPayload: String = "{}"
 
     public init(
         id: UUID = UUID(),
         name: String,
         ownerParticipantID: String,
         sharingState: BudgetSharingState = .local,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date(),
         usesSeparateAccountForDailyBudget: Bool = false,
         dailyBudgetAmount: Decimal = 0,
-        dailyBudgetPaydayDay: Int = 1
+        dailyBudgetPaydayDay: Int = 1,
+        dailyBudgetSeparateAccountBalance: Decimal = 0,
+        autoGenerateWoMSavingsEveryMonth: Bool = false,
+        monthBalancesPayload: String = "{}"
     ) {
         self.id = id
         self.name = name
         self.ownerParticipantID = ownerParticipantID
         self.sharingState = sharingState
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
         self.usesSeparateAccountForDailyBudget = usesSeparateAccountForDailyBudget
         self.dailyBudgetAmount = dailyBudgetAmount
         self.dailyBudgetPaydayDay = dailyBudgetPaydayDay
+        self.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
+        self.autoGenerateWoMSavingsEveryMonth = autoGenerateWoMSavingsEveryMonth
+        self.monthBalancesPayload = monthBalancesPayload
     }
 }
 
 @Model
 public final class Account {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var name: String
-    public var role: AccountRole
-    public var type: AccountType
-    public var ownerParticipantID: String
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var name: String = ""
+    public var role: AccountRole = AccountRole.regular
+    public var type: AccountType = AccountType.current
+    public var ownerParticipantID: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -112,18 +142,18 @@ public final class Account {
 
 @Model
 public final class PlannedItem {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var accountID: UUID
-    public var monthKey: String
-    public var type: PlannedItemType
-    public var label: String
-    public var amount: Decimal
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var accountID: UUID = UUID()
+    public var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
+    public var type: PlannedItemType = PlannedItemType.fixedDebit
+    public var label: String = ""
+    public var amount: Decimal = 0
     public var dueDay: Int?
     public var dueText: String?
-    public var isPaid: Bool
-    public var copiesToNextMonthAutomatically: Bool
-    public var notes: String
+    public var isPaid: Bool = false
+    public var copiesToNextMonthAutomatically: Bool = true
+    public var notes: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -189,12 +219,12 @@ public final class PlannedItem {
 
 @Model
 public final class Transaction {
-    @Attribute(.unique) public var id: UUID
-    public var budgetID: UUID
-    public var accountID: UUID
-    public var monthKey: String
-    public var amount: Decimal
-    public var note: String
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var accountID: UUID = UUID()
+    public var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
+    public var amount: Decimal = 0
+    public var note: String = ""
 
     public init(
         id: UUID = UUID(),
@@ -210,5 +240,37 @@ public final class Transaction {
         self.monthKey = monthKey.rawValue
         self.amount = amount
         self.note = note
+    }
+}
+
+@Model
+public final class WheelOfMoneyItem {
+    public var id: UUID = UUID()
+    public var budgetID: UUID = UUID()
+    public var title: String = ""
+    public var amount: Decimal = 0
+    public var month: Int = WheelOfMoneyMonth.january.rawValue
+    public var isPaid: Bool = false
+    public var notes: String = ""
+    public var isAutoGeneratedSavingsEntry: Bool = false
+
+    public init(
+        id: UUID = UUID(),
+        budgetID: UUID,
+        title: String,
+        amount: Decimal,
+        month: Int,
+        isPaid: Bool = false,
+        notes: String = "",
+        isAutoGeneratedSavingsEntry: Bool = false
+    ) {
+        self.id = id
+        self.budgetID = budgetID
+        self.title = title
+        self.amount = amount
+        self.month = month
+        self.isPaid = isPaid
+        self.notes = notes
+        self.isAutoGeneratedSavingsEntry = isAutoGeneratedSavingsEntry
     }
 }

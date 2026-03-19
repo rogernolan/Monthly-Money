@@ -23,7 +23,7 @@ final class MonthlyMoneyUITests: XCTestCase {
     }
 
     @MainActor
-    func testIPadShowsMonthAndDailyChipValues() throws {
+    func testIPadShowsMonthDailyAndWoMValues() throws {
         let app = XCUIApplication()
         app.launch()
 
@@ -44,6 +44,23 @@ final class MonthlyMoneyUITests: XCTestCase {
         XCTAssertTrue(chipValue(in: app, id: "daily-chip-ahead-behind-value").exists)
         XCTAssertTrue(chipValue(in: app, id: "daily-chip-current-daily-budget-value").exists)
         XCTAssertTrue(chipValue(in: app, id: "daily-chip-days-until-payday-value").exists)
+
+        let womTab = tabItem(in: app, label: "WoM")
+        XCTAssertTrue(womTab.waitForExistence(timeout: 5))
+        womTab.tap()
+
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-annual-total-value").waitForExistence(timeout: 5))
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-monthly-average-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-pending-total-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-remaining-average-value").exists)
+
+        XCTAssertTrue(app.staticTexts["Car insurance"].exists)
+        XCTAssertTrue(app.staticTexts["Christmas"].exists)
+        XCTAssertTrue(app.staticTexts["J Birthday"].exists)
+
+        let pendingFilter = app.buttons["Pending"].firstMatch
+        XCTAssertTrue(pendingFilter.exists)
+        pendingFilter.tap()
     }
 
     private func chipValue(in app: XCUIApplication, id: String) -> XCUIElement {

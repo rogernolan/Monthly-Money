@@ -37,21 +37,21 @@ struct EditableMoneyChipValue: View {
         .spring(response: 0.34, dampingFraction: 0.52)
     }
 
+    private var committedText: String {
+        plainString(from: value)
+    }
+
     var body: some View {
         ZStack(alignment: .trailing) {
             TextField("0", text: Binding(
                 get: {
                     if isFocused {
-                        return draft.isEmpty ? plainString(from: value) : draft
+                        return draft.isEmpty ? committedText : draft
                     }
                     return AppState.currency(value)
                 },
                 set: { newValue in
                     draft = newValue
-                    value = Decimal(
-                        string: sanitizedNumericString(from: newValue),
-                        locale: Locale.current
-                    ) ?? 0
                 }
             ))
             .focused(focus, equals: focusID)
@@ -63,6 +63,7 @@ struct EditableMoneyChipValue: View {
             .applyAccessibilityIdentifier(accessibilityIdentifier)
 
             Button {
+                commitDraft()
                 focus.wrappedValue = nil
             } label: {
                 Image(systemName: "checkmark")
@@ -96,7 +97,7 @@ struct EditableMoneyChipValue: View {
         .animation(buttonAnimation, value: layout)
         .onChange(of: focus.wrappedValue) { _, newValue in
             if newValue == focusID {
-                draft = plainString(from: value)
+                draft = committedText
             } else {
                 draft = ""
             }
@@ -116,6 +117,13 @@ struct EditableMoneyChipValue: View {
             .replacingOccurrences(of: groupingSeparator, with: "")
             .filter { $0.isNumber || String($0) == decimalSeparator || $0 == "-" }
         return filtered.isEmpty ? "0" : filtered
+    }
+
+    private func commitDraft() {
+        value = Decimal(
+            string: sanitizedNumericString(from: draft),
+            locale: Locale.current
+        ) ?? 0
     }
 }
 

@@ -48,7 +48,7 @@ enum DailyChipToneResolver {
 }
 
 enum DailyPresentationContent {
-    static let budgetTitle = "Starting budget at beginning of month"
+    static let budgetTitle = "Starting budget"
     static let dailyBudgetTitle = "Average daily budget"
     static let currentBalanceTitle = "Current balance"
     static let projectedFundsTitle = "Predicted remaining funds"
@@ -194,12 +194,14 @@ struct DailyView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         let style = style(for: tone)
+        let titleLeadingInset: CGFloat = editableFocusID == nil ? 0 : 28
         let chip = VStack(alignment: .trailing, spacing: 6) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.leading, titleLeadingInset)
 
             content()
                 .frame(maxWidth: .infinity, alignment: .trailing)
