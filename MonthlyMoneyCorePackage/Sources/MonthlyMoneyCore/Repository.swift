@@ -184,6 +184,10 @@ public final class AccountRepository {
         try touchBudget(id: account.budgetID, in: store)
     }
 
+    public func savePlannedItem(_ item: PlannedItem) throws {
+        try createPlannedItem(item)
+    }
+
     public func createTransaction(_ transaction: Transaction) throws {
         guard let (store, account) = try storeAndAccount(for: transaction.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
@@ -193,6 +197,10 @@ public final class AccountRepository {
         try touchBudget(id: account.budgetID, in: store)
     }
 
+    public func saveTransaction(_ transaction: Transaction) throws {
+        try createTransaction(transaction)
+    }
+
     public func createImportedTransactionRecord(_ record: ImportedTransactionRecord) throws {
         guard let (store, account) = try storeAndAccount(for: record.accountID) else {
             throw RepositoryError.invalidCrossScopeReference
@@ -200,6 +208,10 @@ public final class AccountRepository {
         record.budgetID = account.budgetID
         try store.upsertImportedTransactionRecords([record])
         try touchBudget(id: account.budgetID, in: store)
+    }
+
+    public func saveImportedTransactionRecord(_ record: ImportedTransactionRecord) throws {
+        try createImportedTransactionRecord(record)
     }
 
     public func createWheelOfMoneyItem(_ item: WheelOfMoneyItem) throws {
@@ -223,6 +235,12 @@ public final class AccountRepository {
             return item
         }
         return try sharedStore.fetchWheelOfMoneyItem(id: id)
+    }
+
+    public func transactions(accountIDs: Set<UUID>) throws -> [Transaction] {
+        let privateTransactions = try privateStore.fetchTransactions(accountIDs: accountIDs)
+        let sharedTransactions = try sharedStore.fetchTransactions(accountIDs: accountIDs)
+        return uniqueTransactions(from: privateTransactions + sharedTransactions)
     }
 
     public func importedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
@@ -404,6 +422,14 @@ public final class AccountRepository {
             recordsByID[record.id] = record
         }
         return Array(recordsByID.values).sorted(by: Self.importedTransactionSort)
+    }
+
+    private func uniqueTransactions(from transactions: [Transaction]) -> [Transaction] {
+        var transactionsByID: [UUID: Transaction] = [:]
+        for transaction in transactions {
+            transactionsByID[transaction.id] = transaction
+        }
+        return Array(transactionsByID.values)
     }
 
     private static func importedTransactionSort(_ lhs: ImportedTransactionRecord, _ rhs: ImportedTransactionRecord) -> Bool {
