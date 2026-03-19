@@ -479,19 +479,24 @@ final class AppState: ObservableObject {
         return data
     }
 
-    func importOFXData(_ data: Data, fileName: String, into accountID: UUID) throws -> ImportedTransactionImportResult {
+    func importOFXData(
+        _ data: Data,
+        fileName: String,
+        into accountID: UUID
+    ) throws -> (importResult: ImportedTransactionImportResult, reconciliationResult: ImportedTransactionReconciliationResult) {
         let availableAccounts = try repository.accounts()
         guard let account = availableAccounts.first(where: { $0.id == accountID }) else {
             throw RepositoryError.accountNotFound
         }
 
         let statement = try NationwideOFXImporter().parse(data: data)
-        let result = try ImportedTransactionService(repository: repository).import(statement: statement, into: account)
+        let importResult = try ImportedTransactionService(repository: repository).import(statement: statement, into: account)
+        let reconciliationResult = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
         try refresh()
         print(
-            "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(result.parsedCount), inserted \(result.insertedCount), skipped \(result.skippedCount)"
+            "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created \(reconciliationResult.createdCount)"
         )
-        return result
+        return (importResult: importResult, reconciliationResult: reconciliationResult)
     }
 
     func sharingPresentationDidFail(message: String) {
