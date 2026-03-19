@@ -45,6 +45,20 @@ struct BudgetShareCoordinator {
 
     func prepareShareResult(for sharedBudget: Budget) async throws -> BudgetShareResult {
         let shareSession = try await repository.prepareShareSession(forSharedBudgetID: sharedBudget.id)
+        ShareMetadataConfigurator.apply(to: shareSession.share, budgetName: sharedBudget.name)
         return BudgetShareResult(sharedBudget: sharedBudget, shareSession: shareSession)
+    }
+}
+
+enum ShareMetadataConfigurator {
+    static let appDisplayName = "Monthly Money"
+    static let itemType = "Monthly Money budget"
+
+    static func apply(to share: CKShare, budgetName _: String) {
+        share[CKShare.SystemFieldKey.title] = appDisplayName as CKRecordValue
+        share[CKShare.SystemFieldKey.shareType] = itemType as CKRecordValue
+        if let imageData = ShareThumbnailProvider.pngData() {
+            share[CKShare.SystemFieldKey.thumbnailImageData] = imageData as CKRecordValue
+        }
     }
 }

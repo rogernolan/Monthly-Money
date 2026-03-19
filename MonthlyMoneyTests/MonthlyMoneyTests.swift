@@ -177,6 +177,10 @@ final class MonthlyMoneyTests: XCTestCase {
             "Predicted remaining funds"
         )
         XCTAssertEqual(
+            DailyPresentationContent.budgetTitle,
+            "Starting budget"
+        )
+        XCTAssertEqual(
             DailyPresentationContent.daysUntilPaydayTitle(paydayDay: 17),
             "Days until payday (17th)"
         )
@@ -656,7 +660,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(presentation.statusText, "Shared by you")
         XCTAssertTrue(presentation.isShareButtonEnabled)
         XCTAssertTrue(presentation.showsUnshareButton)
-        XCTAssertEqual(presentation.note, "Unshare will come later.")
+        XCTAssertNil(presentation.note)
     }
 
     func testSettingsSharingPresentationForRecipientSharedBudget() {
@@ -665,7 +669,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(presentation.statusText, "Shared with you")
         XCTAssertFalse(presentation.isShareButtonEnabled)
         XCTAssertFalse(presentation.showsUnshareButton)
-        XCTAssertEqual(presentation.note, "Unshare will come later.")
+        XCTAssertNil(presentation.note)
     }
 
     func testSettingsSharingPresentationForSharedBudgetAvailable() {
@@ -675,6 +679,16 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(presentation.isShareButtonEnabled)
         XCTAssertFalse(presentation.showsUnshareButton)
         XCTAssertEqual(presentation.note, "Open the shared budget from the overwrite prompt when you're ready.")
+    }
+
+    func testShareMetadataConfiguratorSetsTitleAndType() {
+        let rootRecord = CKRecord(recordType: "Budget")
+        let share = CKShare(rootRecord: rootRecord)
+
+        ShareMetadataConfigurator.apply(to: share, budgetName: "Joint Budget")
+
+        XCTAssertEqual(share[CKShare.SystemFieldKey.title] as? String, ShareMetadataConfigurator.appDisplayName)
+        XCTAssertEqual(share[CKShare.SystemFieldKey.shareType] as? String, ShareMetadataConfigurator.itemType)
     }
 
     func testSettingsSharingPresentationForLocalBudgetDoesNotShowUnshare() {
@@ -957,6 +971,29 @@ final class MonthlyMoneyTests: XCTestCase {
 
         try state.refresh()
         XCTAssertFalse(state.shouldShowSharedBudgetOverwriteAlert)
+    }
+
+    func testRefreshRecreatesLocalBudgetWhenSharedBudgetDisappearsAfterAdoption() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            currentParticipantIDProvider: { "rog" }
+        )
+
+        await state.bootstrapIfNeeded()
+        try insertIncomingSharedBudget(into: repository, month: state.selectedMonth)
+        try state.refresh()
+        try state.confirmSharedBudgetOverwrite()
+
+        let sharedBudgetID = try XCTUnwrap(try repository.sharedBudget()?.id)
+        try repository.deleteBudget(id: sharedBudgetID)
+
+        try state.refresh()
+
+        XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
+        XCTAssertNotNil(try repository.localBudget())
+        XCTAssertFalse(state.monthItems.isEmpty)
+        XCTAssertEqual(state.primaryBankName, "Nationwide")
     }
 
     func testSharedBudgetOwnedByResolvedParticipantIsSharedByYou() async throws {

@@ -404,6 +404,21 @@ final class AccountRepository {
         return false
     }
 
+    func deleteBudget(id: UUID) throws {
+        if try privateStore.fetchBudget(id: id) != nil {
+            try deleteLocalBudget(id: id)
+            return
+        }
+
+        let accounts = try sharedStore.fetchAccounts().filter { $0.budgetID == id }
+        for account in accounts {
+            try sharedStore.deletePlannedItems(accountID: account.id)
+            try sharedStore.deleteTransactions(accountID: account.id)
+            try sharedStore.deleteAccount(id: account.id)
+        }
+        try sharedStore.deleteBudget(id: id)
+    }
+
     func createAccount(name: String, role: AccountRole, type: AccountType, ownerParticipantID: String) throws -> Account {
         let budget = try ensureLocalBudget(ownerParticipantID: ownerParticipantID)
         let account = Account(budgetID: budget.id, name: name, role: role, type: type, ownerParticipantID: ownerParticipantID)

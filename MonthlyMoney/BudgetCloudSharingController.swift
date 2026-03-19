@@ -32,7 +32,15 @@ struct BudgetCloudSharingController: UIViewControllerRepresentable {
         }
 
         func itemTitle(for csc: UICloudSharingController) -> String? {
-            parent.shareResult.sharedBudget.name
+            ShareMetadataConfigurator.appDisplayName
+        }
+
+        func itemThumbnailData(for csc: UICloudSharingController) -> Data? {
+            ShareThumbnailProvider.pngData()
+        }
+
+        func itemType(for csc: UICloudSharingController) -> String? {
+            ShareMetadataConfigurator.itemType
         }
 
         func cloudSharingControllerDidSaveShare(_ csc: UICloudSharingController) {

@@ -344,6 +344,7 @@ struct MonthView: View {
         prefixColor: Color? = nil
     ) -> some View {
         let style = styleFor(value)
+        let titleLeadingInset: CGFloat = editableFocusID == nil ? 0 : 28
         let card = VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
                 if let icon = prefixIcon {
@@ -356,6 +357,7 @@ struct MonthView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, titleLeadingInset)
 
             if let editableValue {
                 EditableMoneyChipValue(

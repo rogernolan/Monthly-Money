@@ -41,7 +41,7 @@ struct SettingsSharingPresentation: Equatable {
         case .sharedAvailable:
             return "Open the shared budget from the overwrite prompt when you're ready."
         case .sharedByYou, .sharedWithYou:
-            return "Unshare will come later."
+            return nil
         }
     }
 }
@@ -290,6 +290,7 @@ final class AppState: ObservableObject {
     }
 
     func refresh() throws {
+        try restoreLocalBudgetIfNeeded()
         try loadPersistedBudgetState()
         monthItems = try repository.plannedItems(for: selectedMonth)
         if let firstAccount = try repository.accounts().first {
@@ -299,6 +300,20 @@ final class AppState: ObservableObject {
         }
         try updatePendingSharedBudgetAdoption()
         objectWillChange.send()
+    }
+
+    private func restoreLocalBudgetIfNeeded() throws {
+        guard try repository.activeBudget() == nil else { return }
+
+        let account = try repository.createAccount(
+            name: "Nationwide",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: currentParticipantID
+        )
+        primaryBankBalances[selectedMonth.rawValue] = 397
+        try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
+        try ensureNextMonthCopiedFromCurrent(accountID: account.id)
     }
 
     var usesSeparateAccountForDailyBudget: Bool {
