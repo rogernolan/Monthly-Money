@@ -6,6 +6,7 @@ enum CoreDataEntityName {
     static let account = "CDAccount"
     static let plannedItem = "CDPlannedItem"
     static let transaction = "CDTransaction"
+    static let importedTransactionRecord = "CDImportedTransactionRecord"
     static let wheelOfMoneyItem = "CDWheelOfMoneyItem"
 }
 
@@ -18,6 +19,7 @@ enum CoreDataModelBuilder {
         let accountEntity = makeAccountEntity()
         let plannedItemEntity = makePlannedItemEntity()
         let transactionEntity = makeTransactionEntity()
+        let importedTransactionRecordEntity = makeImportedTransactionRecordEntity()
         let wheelOfMoneyItemEntity = makeWheelOfMoneyItemEntity()
 
         let budgetAccounts = relationship(
@@ -71,6 +73,23 @@ enum CoreDataModelBuilder {
         budgetTransactions.inverseRelationship = transactionBudget
         transactionBudget.inverseRelationship = budgetTransactions
 
+        let budgetImportedTransactionRecords = relationship(
+            "importedTransactionRecords",
+            destination: importedTransactionRecordEntity,
+            minCount: 0,
+            maxCount: 0,
+            deleteRule: .cascadeDeleteRule
+        )
+        let importedTransactionRecordBudget = relationship(
+            "budget",
+            destination: budgetEntity,
+            minCount: 0,
+            maxCount: 1,
+            deleteRule: .nullifyDeleteRule
+        )
+        budgetImportedTransactionRecords.inverseRelationship = importedTransactionRecordBudget
+        importedTransactionRecordBudget.inverseRelationship = budgetImportedTransactionRecords
+
         let budgetWheelOfMoneyItems = relationship(
             "wheelOfMoneyItems",
             destination: wheelOfMoneyItemEntity,
@@ -88,13 +107,14 @@ enum CoreDataModelBuilder {
         budgetWheelOfMoneyItems.inverseRelationship = wheelOfMoneyItemBudget
         wheelOfMoneyItemBudget.inverseRelationship = budgetWheelOfMoneyItems
 
-        budgetEntity.properties.append(contentsOf: [budgetAccounts, budgetPlannedItems, budgetTransactions, budgetWheelOfMoneyItems])
+        budgetEntity.properties.append(contentsOf: [budgetAccounts, budgetPlannedItems, budgetTransactions, budgetImportedTransactionRecords, budgetWheelOfMoneyItems])
         accountEntity.properties.append(accountBudget)
         plannedItemEntity.properties.append(plannedItemBudget)
         transactionEntity.properties.append(transactionBudget)
+        importedTransactionRecordEntity.properties.append(importedTransactionRecordBudget)
         wheelOfMoneyItemEntity.properties.append(wheelOfMoneyItemBudget)
 
-        model.entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, wheelOfMoneyItemEntity]
+        model.entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, importedTransactionRecordEntity, wheelOfMoneyItemEntity]
         return model
     }
 
@@ -165,6 +185,27 @@ enum CoreDataModelBuilder {
             attribute("monthKey", .stringAttributeType, defaultValue: YearMonth(year: 2000, month: 1).rawValue),
             attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
             attribute("note", .stringAttributeType, defaultValue: "")
+        ]
+        return entity
+    }
+
+    private static func makeImportedTransactionRecordEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.importedTransactionRecord
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("id", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("budgetID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("accountID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("sourceKind", .stringAttributeType, defaultValue: ""),
+            attribute("sourceAccountIdentifier", .stringAttributeType, defaultValue: ""),
+            attribute("externalTransactionID", .stringAttributeType, defaultValue: ""),
+            attribute("postedAt", .dateAttributeType, defaultValue: Date()),
+            attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
+            attribute("payee", .stringAttributeType, defaultValue: ""),
+            attribute("transactionType", .stringAttributeType, defaultValue: ""),
+            attribute("rawSourcePayload", .stringAttributeType, defaultValue: ""),
+            attribute("importedAt", .dateAttributeType, defaultValue: Date())
         ]
         return entity
     }
@@ -318,6 +359,38 @@ enum CoreDataMapping {
             monthKey: YearMonth(rawValue: managedObject.value(forKey: "monthKey") as? String ?? "") ?? YearMonth(year: 2000, month: 1),
             amount: (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0,
             note: managedObject.value(forKey: "note") as? String ?? ""
+        )
+    }
+
+    static func apply(_ record: ImportedTransactionRecord, to managedObject: NSManagedObject) {
+        managedObject.setValue(record.id, forKey: "id")
+        managedObject.setValue(record.budgetID, forKey: "budgetID")
+        managedObject.setValue(record.accountID, forKey: "accountID")
+        managedObject.setValue(record.sourceKind, forKey: "sourceKind")
+        managedObject.setValue(record.sourceAccountIdentifier, forKey: "sourceAccountIdentifier")
+        managedObject.setValue(record.externalTransactionID, forKey: "externalTransactionID")
+        managedObject.setValue(record.postedAt, forKey: "postedAt")
+        managedObject.setValue(record.amount as NSDecimalNumber, forKey: "amount")
+        managedObject.setValue(record.payee, forKey: "payee")
+        managedObject.setValue(record.transactionType, forKey: "transactionType")
+        managedObject.setValue(record.rawSourcePayload, forKey: "rawSourcePayload")
+        managedObject.setValue(record.importedAt, forKey: "importedAt")
+    }
+
+    static func importedTransactionRecord(from managedObject: NSManagedObject) -> ImportedTransactionRecord {
+        ImportedTransactionRecord(
+            id: managedObject.value(forKey: "id") as? UUID ?? UUID(),
+            budgetID: managedObject.value(forKey: "budgetID") as? UUID ?? UUID(),
+            accountID: managedObject.value(forKey: "accountID") as? UUID ?? UUID(),
+            sourceKind: managedObject.value(forKey: "sourceKind") as? String ?? "",
+            sourceAccountIdentifier: managedObject.value(forKey: "sourceAccountIdentifier") as? String ?? "",
+            externalTransactionID: managedObject.value(forKey: "externalTransactionID") as? String ?? "",
+            postedAt: managedObject.value(forKey: "postedAt") as? Date ?? .distantPast,
+            amount: (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0,
+            payee: managedObject.value(forKey: "payee") as? String ?? "",
+            transactionType: managedObject.value(forKey: "transactionType") as? String ?? "",
+            rawSourcePayload: managedObject.value(forKey: "rawSourcePayload") as? String ?? "",
+            importedAt: managedObject.value(forKey: "importedAt") as? Date ?? .distantPast
         )
     }
 

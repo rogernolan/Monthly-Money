@@ -253,6 +253,7 @@ final class AppState: ObservableObject {
         didSet { persistBudgetStateIfNeeded() }
     }
 
+    @Published private(set) var accounts: [Account] = []
     @Published var monthItems: [PlannedItem] = []
     @Published var wheelOfMoneyItems: [WheelOfMoneyItem] = []
     @Published var wheelOfMoneyFilter: WheelOfMoneyFilter = .all
@@ -339,9 +340,10 @@ final class AppState: ObservableObject {
     func refresh() throws {
         try restoreLocalBudgetIfNeeded()
         try loadPersistedBudgetState()
+        accounts = try repository.accounts()
         monthItems = try repository.plannedItems(for: selectedMonth)
         wheelOfMoneyItems = try repository.wheelOfMoneyItems()
-        if let firstAccount = try repository.accounts().first {
+        if let firstAccount = accounts.first {
             primaryBankName = firstAccount.name
         } else {
             primaryBankName = "Primary bank"
@@ -460,6 +462,36 @@ final class AppState: ObservableObject {
 
     func clearPendingBudgetSharePresentation() {
         pendingBudgetShareResult = nil
+    }
+
+    nonisolated static func loadImportedOFXFile(from url: URL) async throws -> Data {
+        let data = try await Task.detached(priority: .userInitiated) {
+            let didStartAccessing = url.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            return try Data(contentsOf: url)
+        }.value
+        print("[OFXImport] loaded file '\(url.lastPathComponent)' (\(data.count) bytes)")
+        return data
+    }
+
+    func importOFXData(_ data: Data, fileName: String, into accountID: UUID) throws -> ImportedTransactionImportResult {
+        let availableAccounts = try repository.accounts()
+        guard let account = availableAccounts.first(where: { $0.id == accountID }) else {
+            throw RepositoryError.accountNotFound
+        }
+
+        let statement = try NationwideOFXImporter().parse(data: data)
+        let result = try ImportedTransactionService(repository: repository).import(statement: statement, into: account)
+        try refresh()
+        print(
+            "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(result.parsedCount), inserted \(result.insertedCount), skipped \(result.skippedCount)"
+        )
+        return result
     }
 
     func sharingPresentationDidFail(message: String) {

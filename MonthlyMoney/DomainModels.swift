@@ -252,6 +252,50 @@ final class Transaction {
 }
 
 @Model
+final class ImportedTransactionRecord {
+    var id: UUID = UUID()
+    var budgetID: UUID = UUID()
+    var accountID: UUID = UUID()
+    var sourceKind: String = ""
+    var sourceAccountIdentifier: String = ""
+    var externalTransactionID: String = ""
+    var postedAt: Date = Date()
+    var amount: Decimal = 0
+    var payee: String = ""
+    var transactionType: String = ""
+    var rawSourcePayload: String = ""
+    var importedAt: Date = Date()
+
+    init(
+        id: UUID = UUID(),
+        budgetID: UUID = UUID(),
+        accountID: UUID,
+        sourceKind: String,
+        sourceAccountIdentifier: String,
+        externalTransactionID: String,
+        postedAt: Date,
+        amount: Decimal,
+        payee: String,
+        transactionType: String,
+        rawSourcePayload: String,
+        importedAt: Date = Date()
+    ) {
+        self.id = id
+        self.budgetID = budgetID
+        self.accountID = accountID
+        self.sourceKind = sourceKind
+        self.sourceAccountIdentifier = sourceAccountIdentifier
+        self.externalTransactionID = externalTransactionID
+        self.postedAt = postedAt
+        self.amount = amount
+        self.payee = payee
+        self.transactionType = transactionType
+        self.rawSourcePayload = rawSourcePayload
+        self.importedAt = importedAt
+    }
+}
+
+@Model
 final class WheelOfMoneyItem {
     var id: UUID = UUID()
     var budgetID: UUID = UUID()

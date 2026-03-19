@@ -289,6 +289,29 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try save()
     }
 
+    func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.importedTransactionRecord)
+        request.predicate = NSPredicate(format: "accountID IN %@", Array(accountIDs))
+        return try context.fetch(request).map(CoreDataMapping.importedTransactionRecord(from:))
+    }
+
+    func upsertImportedTransactionRecords(_ records: [ImportedTransactionRecord]) throws {
+        for record in records {
+            let managedObject = try fetchFirst(entityName: CoreDataEntityName.importedTransactionRecord, id: record.id)
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.importedTransactionRecord, into: context)
+            CoreDataMapping.apply(record, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: record.budgetID)
+        }
+        try save()
+    }
+
+    func deleteImportedTransactionRecords(accountID: UUID) throws {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.importedTransactionRecord)
+        request.predicate = NSPredicate(format: "accountID == %@", accountID as CVarArg)
+        try context.fetch(request).forEach(context.delete)
+        try save()
+    }
+
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
         try fetch(entityName: CoreDataEntityName.wheelOfMoneyItem).map(CoreDataMapping.wheelOfMoneyItem(from:))
     }
@@ -327,16 +350,17 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try save()
     }
 
-    func budgetRelationshipCounts(for budgetID: UUID) throws -> (accounts: Int, plannedItems: Int, transactions: Int, wheelOfMoneyItems: Int) {
+    func budgetRelationshipCounts(for budgetID: UUID) throws -> (accounts: Int, plannedItems: Int, transactions: Int, importedTransactionRecords: Int, wheelOfMoneyItems: Int) {
         guard let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: budgetID) else {
-            return (0, 0, 0, 0)
+            return (0, 0, 0, 0, 0)
         }
 
         let accounts = (budget.value(forKey: "accounts") as? NSSet)?.count ?? 0
         let plannedItems = (budget.value(forKey: "plannedItems") as? NSSet)?.count ?? 0
         let transactions = (budget.value(forKey: "transactions") as? NSSet)?.count ?? 0
+        let importedTransactionRecords = (budget.value(forKey: "importedTransactionRecords") as? NSSet)?.count ?? 0
         let wheelOfMoneyItems = (budget.value(forKey: "wheelOfMoneyItems") as? NSSet)?.count ?? 0
-        return (accounts, plannedItems, transactions, wheelOfMoneyItems)
+        return (accounts, plannedItems, transactions, importedTransactionRecords, wheelOfMoneyItems)
     }
 
     func repairBudgetRelationships(for budgetID: UUID) throws {
@@ -351,6 +375,9 @@ final class CoreDataAccountDataStore: AccountDataStore {
             $0.setValue(budget, forKey: "budget")
         }
         try fetchObjects(entityName: CoreDataEntityName.transaction, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
+        try fetchObjects(entityName: CoreDataEntityName.importedTransactionRecord, budgetID: budgetID).forEach {
             $0.setValue(budget, forKey: "budget")
         }
         try fetchObjects(entityName: CoreDataEntityName.wheelOfMoneyItem, budgetID: budgetID).forEach {

@@ -21,6 +21,7 @@ struct MonthlyMoneyApp: App {
             Account.self,
             PlannedItem.self,
             Transaction.self,
+            ImportedTransactionRecord.self,
             WheelOfMoneyItem.self
         ])
 

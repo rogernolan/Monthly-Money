@@ -504,7 +504,8 @@ final class MonthlyMoneyTests: XCTestCase {
             dueDay: 1,
             isPaid: false,
             copiesToNextMonthAutomatically: true,
-            notes: "Landlord"
+            notes: "Landlord",
+            matchingString: "Council tax"
         )
         try store.upsertPlannedItems([item])
 
@@ -514,7 +515,10 @@ final class MonthlyMoneyTests: XCTestCase {
             accountID: account.id,
             monthKey: YearMonth(year: 2026, month: 3),
             amount: 1200,
-            note: "Rent payment"
+            note: "Rent payment",
+            sourceKind: "nationwide_ofx",
+            sourceExternalTransactionID: "FITID-TRANSACTION-1",
+            sourcePostedAt: Date(timeIntervalSince1970: 1_234.5)
         )
         try store.upsertTransactions([transaction])
 
@@ -530,11 +534,15 @@ final class MonthlyMoneyTests: XCTestCase {
             plannedItems.map(\.id),
             [item.id]
         )
+        XCTAssertEqual(plannedItems.first?.matchingString, "Council tax")
         let transactions = try store.fetchTransactions(accountIDs: [account.id])
         XCTAssertEqual(
             transactions.map(\.id),
             [transaction.id]
         )
+        XCTAssertEqual(transactions.first?.sourceKind, "nationwide_ofx")
+        XCTAssertEqual(transactions.first?.sourceExternalTransactionID, "FITID-TRANSACTION-1")
+        XCTAssertEqual(transactions.first?.sourcePostedAt, Date(timeIntervalSince1970: 1_234.5))
     }
 
     func testCoreDataAccountDataStoreMergesRemoteChangesIntoViewContext() throws {
@@ -565,13 +573,20 @@ final class MonthlyMoneyTests: XCTestCase {
         let accountEntity = try? XCTUnwrap(model.entitiesByName[CoreDataEntityName.account])
         let plannedItemEntity = try? XCTUnwrap(model.entitiesByName[CoreDataEntityName.plannedItem])
         let transactionEntity = try? XCTUnwrap(model.entitiesByName[CoreDataEntityName.transaction])
+        let importedTransactionRecordEntity = try? XCTUnwrap(model.entitiesByName[CoreDataEntityName.importedTransactionRecord])
+        let wheelOfMoneyItemEntity = try? XCTUnwrap(model.entitiesByName[CoreDataEntityName.wheelOfMoneyItem])
 
         let budgetRelationshipNames = Set(budgetEntity?.relationshipsByName.keys ?? Dictionary<String, NSRelationshipDescription>().keys)
-        XCTAssertEqual(budgetRelationshipNames, ["accounts", "plannedItems", "transactions"])
+        XCTAssertEqual(
+            budgetRelationshipNames,
+            ["accounts", "plannedItems", "transactions", "importedTransactionRecords", "wheelOfMoneyItems"]
+        )
 
         XCTAssertEqual(accountEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
         XCTAssertEqual(plannedItemEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
         XCTAssertEqual(transactionEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
+        XCTAssertEqual(importedTransactionRecordEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
+        XCTAssertEqual(wheelOfMoneyItemEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
     }
 
     func testCoreDataAccountDataStoreAttachesDependentsToBudgetRelationships() throws {
@@ -618,10 +633,77 @@ final class MonthlyMoneyTests: XCTestCase {
         )
         try store.upsertTransactions([transaction])
 
+        let importedRecord = ImportedTransactionRecord(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****81197",
+            externalTransactionID: "FITID-1",
+            postedAt: Date(timeIntervalSince1970: 1_000),
+            amount: -12.34,
+            payee: "Test Payee",
+            transactionType: "POS",
+            rawSourcePayload: "{\"fitid\":\"FITID-1\"}",
+            importedAt: Date(timeIntervalSince1970: 1_100),
+            appliedPlannedItemID: UUID(),
+            createdTransactionID: UUID()
+        )
+        try store.upsertImportedTransactionRecords([importedRecord])
+
         let counts = try store.budgetRelationshipCounts(for: budget.id)
         XCTAssertEqual(counts.accounts, 1)
         XCTAssertEqual(counts.plannedItems, 1)
         XCTAssertEqual(counts.transactions, 1)
+        XCTAssertEqual(counts.importedTransactionRecords, 1)
+    }
+
+    func testCoreDataAccountDataStoreRoundTripsImportedTransactionRecords() throws {
+        let store = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(store)
+
+        let budget = Budget(
+            id: UUID(),
+            name: "Household",
+            ownerParticipantID: "owner",
+            sharingState: .local
+        )
+        try store.upsertBudget(budget)
+
+        let account = Account(
+            id: UUID(),
+            budgetID: budget.id,
+            name: "Joint",
+            role: .regular,
+            type: .current,
+            ownerParticipantID: "owner"
+        )
+        try store.upsertAccount(account)
+
+        let record = ImportedTransactionRecord(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****81197",
+            externalTransactionID: "FITID-ROUNDTRIP",
+            postedAt: Date(timeIntervalSince1970: 1_000),
+            amount: -42.50,
+            payee: "Roundtrip Payee",
+            transactionType: "DIRECTDEBIT",
+            rawSourcePayload: "{\"fitid\":\"FITID-ROUNDTRIP\"}",
+            importedAt: Date(timeIntervalSince1970: 1_100),
+            appliedPlannedItemID: UUID(),
+            createdTransactionID: UUID()
+        )
+
+        try store.upsertImportedTransactionRecords([record])
+
+        let fetched = try store.fetchImportedTransactionRecords(accountIDs: [account.id])
+        XCTAssertEqual(fetched.map(\.externalTransactionID), ["FITID-ROUNDTRIP"])
+        XCTAssertEqual(fetched.first?.rawSourcePayload, "{\"fitid\":\"FITID-ROUNDTRIP\"}")
+        XCTAssertNotNil(fetched.first?.appliedPlannedItemID)
+        XCTAssertNotNil(fetched.first?.createdTransactionID)
     }
 
     func testCoreDataAccountDataStoreBackfillsBudgetRelationshipsForExistingDependents() throws {
@@ -708,6 +790,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(beforeCounts.accounts, 0)
         XCTAssertEqual(beforeCounts.plannedItems, 0)
         XCTAssertEqual(beforeCounts.transactions, 0)
+        XCTAssertEqual(beforeCounts.importedTransactionRecords, 0)
 
         try store.repairBudgetRelationships(for: budget.id)
 
@@ -715,6 +798,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(afterCounts.accounts, 1)
         XCTAssertEqual(afterCounts.plannedItems, 1)
         XCTAssertEqual(afterCounts.transactions, 1)
+        XCTAssertEqual(afterCounts.importedTransactionRecords, 0)
     }
 
     func testBootstrapRulesWaitForCloudImportOnlyForEmptyCloudBackedPrivateStore() {
@@ -1634,6 +1718,15 @@ private final class AwaitingAccountDataStoreSpy: AccountDataStore {
         try backingStore.upsertTransactions(transactions)
     }
     func deleteTransactions(accountID: UUID) throws { try backingStore.deleteTransactions(accountID: accountID) }
+    func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
+        try backingStore.fetchImportedTransactionRecords(accountIDs: accountIDs)
+    }
+    func upsertImportedTransactionRecords(_ records: [ImportedTransactionRecord]) throws {
+        try backingStore.upsertImportedTransactionRecords(records)
+    }
+    func deleteImportedTransactionRecords(accountID: UUID) throws {
+        try backingStore.deleteImportedTransactionRecords(accountID: accountID)
+    }
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] { try backingStore.fetchWheelOfMoneyItems() }
     func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? { try backingStore.fetchWheelOfMoneyItem(id: id) }
     func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem] {

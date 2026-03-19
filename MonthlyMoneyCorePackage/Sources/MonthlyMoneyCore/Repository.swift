@@ -24,6 +24,10 @@ public protocol AccountDataStore {
     func upsertTransactions(_ transactions: [Transaction]) throws
     func deleteTransactions(accountID: UUID) throws
 
+    func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord]
+    func upsertImportedTransactionRecords(_ records: [ImportedTransactionRecord]) throws
+    func deleteImportedTransactionRecords(accountID: UUID) throws
+
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem]
     func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem?
     func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem]
@@ -37,6 +41,7 @@ public final class InMemoryAccountDataStore: AccountDataStore {
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
+    private var importedTransactionRecordsByID: [UUID: ImportedTransactionRecord] = [:]
     private var wheelOfMoneyItemsByID: [UUID: WheelOfMoneyItem] = [:]
 
     public init() {}
@@ -79,6 +84,18 @@ public final class InMemoryAccountDataStore: AccountDataStore {
 
     public func deleteTransactions(accountID: UUID) throws {
         transactionsByID = transactionsByID.filter { $0.value.accountID != accountID }
+    }
+
+    public func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
+        Array(importedTransactionRecordsByID.values).filter { accountIDs.contains($0.accountID) }
+    }
+
+    public func upsertImportedTransactionRecords(_ records: [ImportedTransactionRecord]) throws {
+        for record in records { importedTransactionRecordsByID[record.id] = record }
+    }
+
+    public func deleteImportedTransactionRecords(accountID: UUID) throws {
+        importedTransactionRecordsByID = importedTransactionRecordsByID.filter { $0.value.accountID != accountID }
     }
 
     public func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
@@ -176,6 +193,15 @@ public final class AccountRepository {
         try touchBudget(id: account.budgetID, in: store)
     }
 
+    public func createImportedTransactionRecord(_ record: ImportedTransactionRecord) throws {
+        guard let (store, account) = try storeAndAccount(for: record.accountID) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        record.budgetID = account.budgetID
+        try store.upsertImportedTransactionRecords([record])
+        try touchBudget(id: account.budgetID, in: store)
+    }
+
     public func createWheelOfMoneyItem(_ item: WheelOfMoneyItem) throws {
         guard let budget = try activeBudget(),
               let store = try storeHoldingBudget(id: budget.id) else {
@@ -197,6 +223,12 @@ public final class AccountRepository {
             return item
         }
         return try sharedStore.fetchWheelOfMoneyItem(id: id)
+    }
+
+    public func importedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
+        let privateRecords = try privateStore.fetchImportedTransactionRecords(accountIDs: accountIDs)
+        let sharedRecords = try sharedStore.fetchImportedTransactionRecords(accountIDs: accountIDs)
+        return uniqueImportedTransactionRecords(from: privateRecords + sharedRecords)
     }
 
     public func saveWheelOfMoneyItem(_ item: WheelOfMoneyItem) throws {
@@ -296,6 +328,8 @@ public final class AccountRepository {
         }
         try sharedStore.upsertPlannedItems(plannedItems)
         try sharedStore.upsertTransactions(transactions)
+        let importedRecords = try privateStore.fetchImportedTransactionRecords(accountIDs: Set(accounts.map(\.id)))
+        try sharedStore.upsertImportedTransactionRecords(importedRecords)
         try sharedStore.upsertWheelOfMoneyItems(wheelOfMoneyItems)
     }
 
@@ -304,6 +338,7 @@ public final class AccountRepository {
         for account in accounts {
             try privateStore.deletePlannedItems(accountID: account.id)
             try privateStore.deleteTransactions(accountID: account.id)
+            try privateStore.deleteImportedTransactionRecords(accountID: account.id)
             try privateStore.deleteAccount(id: account.id)
         }
         try privateStore.deleteWheelOfMoneyItems(budgetID: id)
@@ -361,5 +396,23 @@ public final class AccountRepository {
             return (sharedStore, account)
         }
         return nil
+    }
+
+    private func uniqueImportedTransactionRecords(from records: [ImportedTransactionRecord]) -> [ImportedTransactionRecord] {
+        var recordsByID: [UUID: ImportedTransactionRecord] = [:]
+        for record in records {
+            recordsByID[record.id] = record
+        }
+        return Array(recordsByID.values).sorted(by: Self.importedTransactionSort)
+    }
+
+    private static func importedTransactionSort(_ lhs: ImportedTransactionRecord, _ rhs: ImportedTransactionRecord) -> Bool {
+        if lhs.postedAt != rhs.postedAt {
+            return lhs.postedAt < rhs.postedAt
+        }
+        if lhs.externalTransactionID != rhs.externalTransactionID {
+            return lhs.externalTransactionID < rhs.externalTransactionID
+        }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 }

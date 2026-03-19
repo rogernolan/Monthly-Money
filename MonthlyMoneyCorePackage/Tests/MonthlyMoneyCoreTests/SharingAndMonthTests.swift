@@ -1,3 +1,4 @@
+import Foundation
 import XCTest
 @testable import MonthlyMoneyCore
 
@@ -6,7 +7,14 @@ final class SharingAndMonthTests: XCTestCase {
         let budget = Budget(name: "Home", ownerParticipantID: "owner")
         let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
         let month = YearMonth(year: 2026, month: 2)
-        let item = PlannedItem(budgetID: budget.id, accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200)
+        let item = PlannedItem(
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: month,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200
+        )
         let transaction = Transaction(budgetID: budget.id, accountID: account.id, monthKey: month, amount: 10)
 
         XCTAssertEqual(budget.sharingState, .local)
@@ -16,6 +24,33 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(account.budgetID, budget.id)
         XCTAssertEqual(item.budgetID, budget.id)
         XCTAssertEqual(transaction.budgetID, budget.id)
+    }
+
+    func testPlannedItemMatcherUsesMatchingStringThenFallsBackToLabel() {
+        let budget = Budget(name: "Home", ownerParticipantID: "owner")
+        let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
+        let month = YearMonth(year: 2026, month: 3)
+
+        let explicitMatch = PlannedItem(
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: month,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            matchingString: "Council tax"
+        )
+        let fallbackMatch = PlannedItem(
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: month,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200
+        )
+
+        XCTAssertEqual(Self.matchingText(for: explicitMatch), "Council tax")
+        XCTAssertEqual(Self.matchingText(for: fallbackMatch), "Rent")
     }
 
     func testWheelOfMoneyCrudAndPaidToggle() throws {
@@ -83,6 +118,103 @@ final class SharingAndMonthTests: XCTestCase {
         ])
 
         XCTAssertEqual(try repository.wheelOfMoneyItems().map(\.title), ["Christmas"])
+    }
+
+    func testImportedTransactionRecordsRemainScopedToOwningAccounts() throws {
+        let privateStore = InMemoryAccountDataStore()
+        let sharedStore = InMemoryAccountDataStore()
+        let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
+
+        let privateBudget = Budget(name: "Private", ownerParticipantID: "owner", sharingState: .local)
+        let sharedBudget = Budget(name: "Shared", ownerParticipantID: "other", sharingState: .shared)
+        try privateStore.upsertBudget(privateBudget)
+        try sharedStore.upsertBudget(sharedBudget)
+
+        let privateAccount = Account(budgetID: privateBudget.id, name: "Private account", role: .regular, type: .current)
+        let sharedAccount = Account(budgetID: sharedBudget.id, name: "Shared account", role: .regular, type: .current)
+        try privateStore.upsertAccount(privateAccount)
+        try sharedStore.upsertAccount(sharedAccount)
+
+        let privateRecord = ImportedTransactionRecord(
+            budgetID: privateBudget.id,
+            accountID: privateAccount.id,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****1111",
+            externalTransactionID: "FITID-PRIVATE",
+            postedAt: Date(timeIntervalSince1970: 1_000),
+            amount: -12.34,
+            payee: "Private shop",
+            transactionType: "POS",
+            rawSourcePayload: "{\"fitid\":\"FITID-PRIVATE\"}",
+            importedAt: Date(timeIntervalSince1970: 1_100)
+        )
+        let sharedRecord = ImportedTransactionRecord(
+            budgetID: sharedBudget.id,
+            accountID: sharedAccount.id,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****2222",
+            externalTransactionID: "FITID-SHARED",
+            postedAt: Date(timeIntervalSince1970: 2_000),
+            amount: 45.67,
+            payee: "Shared shop",
+            transactionType: "CREDIT",
+            rawSourcePayload: "{\"fitid\":\"FITID-SHARED\"}",
+            importedAt: Date(timeIntervalSince1970: 2_100)
+        )
+
+        try repository.createImportedTransactionRecord(privateRecord)
+        try repository.createImportedTransactionRecord(sharedRecord)
+
+        XCTAssertEqual(
+            try repository.importedTransactionRecords(accountIDs: [privateAccount.id]).map(\.externalTransactionID),
+            ["FITID-PRIVATE"]
+        )
+        XCTAssertEqual(
+            try repository.importedTransactionRecords(accountIDs: [sharedAccount.id]).map(\.externalTransactionID),
+            ["FITID-SHARED"]
+        )
+    }
+
+    func testImportedTransactionRecordsDeduplicateAcrossStoresByRecordID() throws {
+        let privateStore = InMemoryAccountDataStore()
+        let sharedStore = InMemoryAccountDataStore()
+        let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
+
+        let sharedRecordID = UUID()
+        let accountID = UUID()
+        let privateRecord = ImportedTransactionRecord(
+            id: sharedRecordID,
+            budgetID: UUID(),
+            accountID: accountID,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****1111",
+            externalTransactionID: "FITID-DUPLICATE",
+            postedAt: Date(timeIntervalSince1970: 1_000),
+            amount: -12.34,
+            payee: "Private copy",
+            transactionType: "POS",
+            rawSourcePayload: "{\"fitid\":\"FITID-DUPLICATE\"}"
+        )
+        let sharedRecord = ImportedTransactionRecord(
+            id: sharedRecordID,
+            budgetID: UUID(),
+            accountID: accountID,
+            sourceKind: "nationwide_ofx",
+            sourceAccountIdentifier: "****1111",
+            externalTransactionID: "FITID-DUPLICATE",
+            postedAt: Date(timeIntervalSince1970: 1_000),
+            amount: -12.34,
+            payee: "Shared copy",
+            transactionType: "POS",
+            rawSourcePayload: "{\"fitid\":\"FITID-DUPLICATE\"}"
+        )
+
+        try privateStore.upsertImportedTransactionRecords([privateRecord])
+        try sharedStore.upsertImportedTransactionRecords([sharedRecord])
+
+        let fetched = try repository.importedTransactionRecords(accountIDs: [accountID])
+        XCTAssertEqual(fetched.count, 1)
+        XCTAssertEqual(fetched.first?.id, sharedRecordID)
     }
 
     func testNewAccountsAttachToActiveLocalBudget() throws {
@@ -447,5 +579,10 @@ final class SharingAndMonthTests: XCTestCase {
             privateStore: InMemoryAccountDataStore(),
             sharedStore: InMemoryAccountDataStore()
         )
+    }
+
+    private static func matchingText(for item: PlannedItem) -> String {
+        let trimmed = item.matchingString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? item.label : trimmed
     }
 }
