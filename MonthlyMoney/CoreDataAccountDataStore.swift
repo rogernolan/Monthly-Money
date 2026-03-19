@@ -132,6 +132,8 @@ final class CoreDataAccountDataStore: AccountDataStore {
             throw BudgetShareCoordinatorError.missingSharedBudgetRoot
         }
 
+        try repairBudgetRelationships(for: budgetID)
+
         if let existingShare = try existingShare(for: objectID, in: cloudContainer) {
             return BudgetShareSession(
                 budgetID: budgetID,
@@ -178,6 +180,14 @@ final class CoreDataAccountDataStore: AccountDataStore {
         }
     }
 
+    func hasActiveShare(for budgetID: UUID) throws -> Bool {
+        guard let cloudContainer = persistentContainer as? NSPersistentCloudKitContainer,
+              let objectID = try managedBudgetObjectID(for: budgetID) else {
+            return false
+        }
+        return try existingShare(for: objectID, in: cloudContainer) != nil
+    }
+
     func upsertBudget(_ budget: Budget) throws {
         let managedObject = try fetchFirst(entityName: CoreDataEntityName.budget, id: budget.id)
             ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.budget, into: context)
@@ -204,6 +214,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
         let managedObject = try fetchFirst(entityName: CoreDataEntityName.account, id: account.id)
             ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.account, into: context)
         CoreDataMapping.apply(account, to: managedObject)
+        try attachToBudgetRelationship(managedObject: managedObject, budgetID: account.budgetID)
         try save()
     }
 
@@ -239,6 +250,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             let managedObject = try fetchFirst(entityName: CoreDataEntityName.plannedItem, id: item.id)
                 ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.plannedItem, into: context)
             CoreDataMapping.apply(item, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: item.budgetID)
         }
         try save()
     }
@@ -272,6 +284,35 @@ final class CoreDataAccountDataStore: AccountDataStore {
             let managedObject = try fetchFirst(entityName: CoreDataEntityName.transaction, id: transaction.id)
                 ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.transaction, into: context)
             CoreDataMapping.apply(transaction, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: transaction.budgetID)
+        }
+        try save()
+    }
+
+    func budgetRelationshipCounts(for budgetID: UUID) throws -> (accounts: Int, plannedItems: Int, transactions: Int) {
+        guard let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: budgetID) else {
+            return (0, 0, 0)
+        }
+
+        let accounts = (budget.value(forKey: "accounts") as? NSSet)?.count ?? 0
+        let plannedItems = (budget.value(forKey: "plannedItems") as? NSSet)?.count ?? 0
+        let transactions = (budget.value(forKey: "transactions") as? NSSet)?.count ?? 0
+        return (accounts, plannedItems, transactions)
+    }
+
+    func repairBudgetRelationships(for budgetID: UUID) throws {
+        guard let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: budgetID) else {
+            return
+        }
+
+        try fetchObjects(entityName: CoreDataEntityName.account, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
+        try fetchObjects(entityName: CoreDataEntityName.plannedItem, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
+        try fetchObjects(entityName: CoreDataEntityName.transaction, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
         }
         try save()
     }
@@ -299,6 +340,19 @@ final class CoreDataAccountDataStore: AccountDataStore {
         request.fetchLimit = 1
         request.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         return try context.fetch(request).first
+    }
+
+    private func fetchObjects(entityName: String, budgetID: UUID) throws -> [NSManagedObject] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+        request.predicate = NSPredicate(format: "budgetID == %@", budgetID as CVarArg)
+        return try context.fetch(request)
+    }
+
+    private func attachToBudgetRelationship(managedObject: NSManagedObject, budgetID: UUID) throws {
+        guard let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: budgetID) else {
+            return
+        }
+        managedObject.setValue(budget, forKey: "budget")
     }
 
     private func existingShare(

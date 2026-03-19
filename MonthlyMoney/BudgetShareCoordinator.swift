@@ -20,6 +20,7 @@ enum BudgetShareCoordinatorError: LocalizedError, Equatable {
     case missingSharedBudgetRoot
     case sharingUnavailable
     case sharePreparationFailed
+    case stopShareVerificationFailed
 
     var errorDescription: String? {
         switch self {
@@ -29,6 +30,8 @@ enum BudgetShareCoordinatorError: LocalizedError, Equatable {
             return "Sharing is not available on this device."
         case .sharePreparationFailed:
             return "Could not prepare the CloudKit share."
+        case .stopShareVerificationFailed:
+            return "Could not confirm that sharing was removed."
         }
     }
 }

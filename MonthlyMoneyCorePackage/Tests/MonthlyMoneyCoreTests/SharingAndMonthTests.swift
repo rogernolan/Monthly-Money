@@ -25,7 +25,7 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(try repository.activeBudget()?.sharingState, .local)
     }
 
-    func testShareBudgetMigratesWholeBudgetAndPreservesTotals() throws {
+    func testShareBudgetMarksPrivateBudgetSharedAndPreservesTotals() throws {
         let privateStore = InMemoryAccountDataStore()
         let sharedStore = InMemoryAccountDataStore()
         let repository = AccountRepository(privateStore: privateStore, sharedStore: sharedStore)
@@ -43,14 +43,15 @@ final class SharingAndMonthTests: XCTestCase {
 
         XCTAssertEqual(sharedBudget.sharingState, .shared)
         XCTAssertEqual(try repository.activeBudget()?.id, sharedBudget.id)
-        XCTAssertTrue(try privateStore.fetchBudgets().isEmpty)
-        XCTAssertTrue(try privateStore.fetchAccounts().isEmpty)
-        XCTAssertTrue(try privateStore.fetchPlannedItems(accountIDs: [account.id], monthKey: nil).isEmpty)
-        XCTAssertTrue(try privateStore.fetchTransactions(accountIDs: [account.id]).isEmpty)
-        XCTAssertEqual(try sharedStore.fetchBudgets().map(\.id), [sharedBudget.id])
-        XCTAssertEqual(try sharedStore.fetchAccounts().map(\.id), [account.id])
-        XCTAssertEqual(try sharedStore.fetchPlannedItems(accountIDs: [account.id], monthKey: month).count, 2)
-        XCTAssertEqual(try sharedStore.fetchTransactions(accountIDs: [account.id]).count, 1)
+        XCTAssertEqual(try privateStore.fetchBudgets().map(\.id), [sharedBudget.id])
+        XCTAssertEqual(try privateStore.fetchBudgets().first?.sharingState, .shared)
+        XCTAssertEqual(try privateStore.fetchAccounts().map(\.id), [account.id])
+        XCTAssertEqual(try privateStore.fetchPlannedItems(accountIDs: [account.id], monthKey: month).count, 2)
+        XCTAssertEqual(try privateStore.fetchTransactions(accountIDs: [account.id]).count, 1)
+        XCTAssertTrue(try sharedStore.fetchBudgets().isEmpty)
+        XCTAssertTrue(try sharedStore.fetchAccounts().isEmpty)
+        XCTAssertTrue(try sharedStore.fetchPlannedItems(accountIDs: [account.id], monthKey: nil).isEmpty)
+        XCTAssertTrue(try sharedStore.fetchTransactions(accountIDs: [account.id]).isEmpty)
 
         let after = try repository.plannedItems(for: month)
         let afterTotals = MonthCalculationEngine.calculate(items: after, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
@@ -260,9 +261,9 @@ final class SharingAndMonthTests: XCTestCase {
         let service = BudgetSharingService(repository: repository)
         _ = try service.shareBudget(participantsSelection: [])
 
-        XCTAssertThrowsError(try service.shareBudget(participantsSelection: [])) { error in
-            XCTAssertEqual(error as? BudgetSharingError, .reverseMigrationNotSupported)
-        }
+        let sharedBudget = try service.shareBudget(participantsSelection: [])
+        XCTAssertEqual(sharedBudget.sharingState, .shared)
+        XCTAssertEqual(try repository.localBudget()?.id, sharedBudget.id)
     }
 
     func testMonthCalculationDeterministicBudgetAndSuggestedLiving() {

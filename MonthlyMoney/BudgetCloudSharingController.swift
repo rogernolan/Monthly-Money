@@ -5,6 +5,7 @@ import UIKit
 struct BudgetCloudSharingController: UIViewControllerRepresentable {
     let shareResult: BudgetShareResult
     let onDismiss: () -> Void
+    let onStopSharing: () -> Void
     let onError: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -17,7 +18,7 @@ struct BudgetCloudSharingController: UIViewControllerRepresentable {
             container: CKContainer(identifier: shareResult.shareSession.containerIdentifier)
         )
         controller.delegate = context.coordinator
-        controller.availablePermissions = [.allowReadWrite]
+        controller.availablePermissions = [.allowReadWrite, .allowPrivate]
         return controller
     }
 
@@ -39,7 +40,7 @@ struct BudgetCloudSharingController: UIViewControllerRepresentable {
         }
 
         func cloudSharingControllerDidStopSharing(_ csc: UICloudSharingController) {
-            parent.onDismiss()
+            parent.onStopSharing()
         }
 
         func cloudSharingController(_ csc: UICloudSharingController, failedToSaveShareWithError error: any Error) {

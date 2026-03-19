@@ -13,12 +13,68 @@ enum CoreDataModelBuilder {
 
     static func makeModel() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
-        model.entities = [
-            makeBudgetEntity(),
-            makeAccountEntity(),
-            makePlannedItemEntity(),
-            makeTransactionEntity()
-        ]
+        let budgetEntity = makeBudgetEntity()
+        let accountEntity = makeAccountEntity()
+        let plannedItemEntity = makePlannedItemEntity()
+        let transactionEntity = makeTransactionEntity()
+
+        let budgetAccounts = relationship(
+            "accounts",
+            destination: accountEntity,
+            minCount: 0,
+            maxCount: 0,
+            deleteRule: .cascadeDeleteRule
+        )
+        let accountBudget = relationship(
+            "budget",
+            destination: budgetEntity,
+            minCount: 0,
+            maxCount: 1,
+            deleteRule: .nullifyDeleteRule
+        )
+        budgetAccounts.inverseRelationship = accountBudget
+        accountBudget.inverseRelationship = budgetAccounts
+
+        let budgetPlannedItems = relationship(
+            "plannedItems",
+            destination: plannedItemEntity,
+            minCount: 0,
+            maxCount: 0,
+            deleteRule: .cascadeDeleteRule
+        )
+        let plannedItemBudget = relationship(
+            "budget",
+            destination: budgetEntity,
+            minCount: 0,
+            maxCount: 1,
+            deleteRule: .nullifyDeleteRule
+        )
+        budgetPlannedItems.inverseRelationship = plannedItemBudget
+        plannedItemBudget.inverseRelationship = budgetPlannedItems
+
+        let budgetTransactions = relationship(
+            "transactions",
+            destination: transactionEntity,
+            minCount: 0,
+            maxCount: 0,
+            deleteRule: .cascadeDeleteRule
+        )
+        let transactionBudget = relationship(
+            "budget",
+            destination: budgetEntity,
+            minCount: 0,
+            maxCount: 1,
+            deleteRule: .nullifyDeleteRule
+        )
+        budgetTransactions.inverseRelationship = transactionBudget
+        transactionBudget.inverseRelationship = budgetTransactions
+
+        budgetEntity.properties.append(contentsOf: [budgetAccounts, budgetPlannedItems, budgetTransactions])
+        accountEntity.properties.append(accountBudget)
+        plannedItemEntity.properties.append(plannedItemBudget)
+        transactionEntity.properties.append(transactionBudget)
+
+        model.entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity]
         return model
     }
 
@@ -105,6 +161,23 @@ enum CoreDataModelBuilder {
         attribute.isOptional = isOptional
         attribute.defaultValue = defaultValue
         return attribute
+    }
+
+    private static func relationship(
+        _ name: String,
+        destination: NSEntityDescription,
+        minCount: Int,
+        maxCount: Int,
+        deleteRule: NSDeleteRule
+    ) -> NSRelationshipDescription {
+        let relationship = NSRelationshipDescription()
+        relationship.name = name
+        relationship.destinationEntity = destination
+        relationship.minCount = minCount
+        relationship.maxCount = maxCount
+        relationship.deleteRule = deleteRule
+        relationship.isOptional = true
+        return relationship
     }
 }
 

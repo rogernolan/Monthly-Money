@@ -3,14 +3,36 @@ import SwiftUI
 enum CloudRefreshPolicy {
     static let pollInterval: Duration = .seconds(5)
 
-    static func shouldPoll(privateStoreSyncMode: StoreSyncMode, scenePhase: ScenePhase, isRunningTests: Bool) -> Bool {
-        privateStoreSyncMode == .cloudPrivate && scenePhase == .active && !isRunningTests
+    static func shouldPoll(
+        privateStoreSyncMode: StoreSyncMode,
+        sharedStoreSyncMode: StoreSyncMode,
+        scenePhase: ScenePhase,
+        isRunningTests: Bool
+    ) -> Bool {
+        let hasCloudBackedStore = privateStoreSyncMode == .cloudPrivate || sharedStoreSyncMode == .cloudShared
+        return hasCloudBackedStore && scenePhase == .active && !isRunningTests
     }
 }
 
 enum CloudKitShareAcceptancePolicy {
     static func shouldProcess(pendingMetadataCount: Int) -> Bool {
         pendingMetadataCount > 0
+    }
+}
+
+enum CloudKitShareAcceptanceDispatcher {
+    static func dispatchIfNeeded<Metadata>(
+        pendingMetadataCount: Int,
+        drain: () -> [Metadata],
+        start: ([Metadata]) -> Void
+    ) {
+        guard CloudKitShareAcceptancePolicy.shouldProcess(pendingMetadataCount: pendingMetadataCount) else {
+            return
+        }
+
+        let metadata = drain()
+        guard !metadata.isEmpty else { return }
+        start(metadata)
     }
 }
 
@@ -22,6 +44,18 @@ struct ContentView: View {
 
     init(repository: AccountRepository) {
         _state = StateObject(wrappedValue: AppState(repository: repository))
+    }
+
+    private func dispatchPendingAcceptedSharesIfNeeded() {
+        CloudKitShareAcceptanceDispatcher.dispatchIfNeeded(
+            pendingMetadataCount: acceptedCloudKitShareInbox.pendingMetadata.count,
+            drain: { acceptedCloudKitShareInbox.drainPendingMetadata() },
+            start: { metadata in
+                Task {
+                    await state.acceptIncomingCloudKitShares(metadata)
+                }
+            }
+        )
     }
 
     var body: some View {
@@ -53,6 +87,9 @@ struct ContentView: View {
                 await state.bootstrapIfNeeded()
             }
         }
+        .task {
+            dispatchPendingAcceptedSharesIfNeeded()
+        }
         .alert(
             "Open shared budget?",
             isPresented: Binding(
@@ -77,6 +114,7 @@ struct ContentView: View {
         .task(id: scenePhase) {
             guard CloudRefreshPolicy.shouldPoll(
                 privateStoreSyncMode: state.privateStoreSyncMode,
+                sharedStoreSyncMode: state.sharedStoreSyncMode,
                 scenePhase: scenePhase,
                 isRunningTests: isRunningTests
             ) else {
@@ -87,6 +125,7 @@ struct ContentView: View {
 
             while CloudRefreshPolicy.shouldPoll(
                 privateStoreSyncMode: state.privateStoreSyncMode,
+                sharedStoreSyncMode: state.sharedStoreSyncMode,
                 scenePhase: scenePhase,
                 isRunningTests: isRunningTests
             ) {
@@ -95,15 +134,9 @@ struct ContentView: View {
                 try? state.refresh()
             }
         }
-        .task(id: acceptedCloudKitShareInbox.pendingMetadata.count) {
-            guard CloudKitShareAcceptancePolicy.shouldProcess(
-                pendingMetadataCount: acceptedCloudKitShareInbox.pendingMetadata.count
-            ) else {
-                return
-            }
-
-            let metadata = acceptedCloudKitShareInbox.drainPendingMetadata()
-            await state.acceptIncomingCloudKitShares(metadata)
+        .onChange(of: acceptedCloudKitShareInbox.pendingMetadata.count) { _, count in
+            guard count > 0 else { return }
+            dispatchPendingAcceptedSharesIfNeeded()
         }
     }
 }

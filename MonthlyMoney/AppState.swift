@@ -5,6 +5,7 @@ import CloudKit
 
 enum SettingsSharingStatus: Equatable {
     case localOnly
+    case sharedAvailable
     case sharedByYou
     case sharedWithYou
 }
@@ -16,6 +17,8 @@ struct SettingsSharingPresentation: Equatable {
         switch status {
         case .localOnly:
             return "Local only"
+        case .sharedAvailable:
+            return "Shared budget available"
         case .sharedByYou:
             return "Shared by you"
         case .sharedWithYou:
@@ -24,13 +27,19 @@ struct SettingsSharingPresentation: Equatable {
     }
 
     var isShareButtonEnabled: Bool {
-        status == .localOnly
+        status == .localOnly || status == .sharedByYou
+    }
+
+    var showsUnshareButton: Bool {
+        status == .sharedByYou
     }
 
     var note: String? {
         switch status {
         case .localOnly:
             return nil
+        case .sharedAvailable:
+            return "Open the shared budget from the overwrite prompt when you're ready."
         case .sharedByYou, .sharedWithYou:
             return "Unshare will come later."
         }
@@ -38,6 +47,8 @@ struct SettingsSharingPresentation: Equatable {
 }
 
 typealias ShareBudgetAction = (AccountRepository) async throws -> BudgetShareResult
+typealias CurrentParticipantIDProvider = () async -> String
+typealias VerifyBudgetUnsharedAction = (AccountRepository, UUID) async throws -> Bool
 
 struct PendingSharedBudgetAdoption: Equatable {
     let budgetID: UUID
@@ -169,7 +180,7 @@ enum DailyBudgetCycleCalculator {
 
 @MainActor
 final class AppState: ObservableObject {
-    static let localOwnerParticipantID = "owner"
+    static let legacyOwnerParticipantID = "owner"
 
     @Published var selectedMonth: YearMonth
     @Published private(set) var isSharingBudget = false
@@ -203,16 +214,28 @@ final class AppState: ObservableObject {
 
     private let repository: AccountRepository
     private let shareBudgetAction: ShareBudgetAction
+    private let currentParticipantIDProvider: CurrentParticipantIDProvider
+    private let verifyBudgetUnsharedAction: VerifyBudgetUnsharedAction
+    private var currentParticipantID: String
     private var isHydratingPersistedBudgetState = false
     private var dismissedSharedBudgetAdoptionIDs: Set<UUID> = []
     init(
         repository: AccountRepository,
+        currentParticipantIDProvider: @escaping CurrentParticipantIDProvider = {
+            await CurrentParticipantIdentity.resolve()
+        },
+        verifyBudgetUnsharedAction: @escaping VerifyBudgetUnsharedAction = { repository, budgetID in
+            try !repository.hasActiveShare(for: budgetID)
+        },
         shareBudgetAction: @escaping ShareBudgetAction = { repository in
             let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
             return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
         }
     ) {
         self.repository = repository
+        self.currentParticipantIDProvider = currentParticipantIDProvider
+        self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
+        self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
         let now = Date()
         let calendar = Calendar.current
@@ -229,15 +252,17 @@ final class AppState: ObservableObject {
 
     func bootstrapIfNeeded() async {
         do {
+            currentParticipantID = await currentParticipantIDProvider()
             try await waitForInitialCloudImportIfNeeded()
             _ = try repository.reconcileDuplicateLocalBudgets()
+            try migrateLegacyOwnerIdentifiersIfNeeded()
 
             if try repository.accounts().isEmpty {
                 let account = try repository.createAccount(
                     name: "Nationwide",
                     role: .regular,
                     type: .current,
-                    ownerParticipantID: "owner"
+                    ownerParticipantID: currentParticipantID
                 )
                 primaryBankBalances[selectedMonth.rawValue] = 397
                 try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
@@ -302,10 +327,21 @@ final class AppState: ObservableObject {
         repository.privateStoreSyncMode
     }
 
+    var sharedStoreSyncMode: StoreSyncMode {
+        repository.sharedStoreSyncMode
+    }
+
     var sharingStatus: SettingsSharingStatus {
+        if let localBudget = try? repository.localBudget(),
+           let sharedBudget = try? repository.sharedBudget(),
+           sharedBudget.ownerParticipantID != currentParticipantID,
+           sharedBudget.id != localBudget.id {
+            return .sharedAvailable
+        }
+
         guard let budget = try? repository.activeBudget() else { return .localOnly }
         guard budget.sharingState == .shared else { return .localOnly }
-        return budget.ownerParticipantID == Self.localOwnerParticipantID ? .sharedByYou : .sharedWithYou
+        return budget.ownerParticipantID == currentParticipantID ? .sharedByYou : .sharedWithYou
     }
 
     var sharingPresentation: SettingsSharingPresentation {
@@ -318,7 +354,7 @@ final class AppState: ObservableObject {
 
     var canEditBudgetSettings: Bool {
         switch sharingStatus {
-        case .localOnly, .sharedByYou:
+        case .localOnly, .sharedAvailable, .sharedByYou:
             return true
         case .sharedWithYou:
             return false
@@ -349,13 +385,40 @@ final class AppState: ObservableObject {
         sharingErrorMessage = message
     }
 
+    func handleBudgetShareStopped() async throws {
+        guard let budget = try repository.localBudget() ?? repository.activeBudget() else {
+            clearPendingBudgetSharePresentation()
+            throw BudgetSharingError.budgetNotFound
+        }
+        let isUnshared = try await verifyBudgetUnsharedAction(repository, budget.id)
+        guard isUnshared else {
+            throw BudgetShareCoordinatorError.stopShareVerificationFailed
+        }
+        budget.sharingState = .local
+        try repository.saveBudget(budget)
+        clearPendingBudgetSharePresentation()
+        try refresh()
+    }
+
+    func handleBudgetShareStoppedFromUI() async {
+        do {
+            try await handleBudgetShareStopped()
+        } catch {
+            sharingErrorMessage = shareErrorMessage(for: error)
+        }
+    }
+
     func acceptIncomingCloudKitShares(_ metadata: [CKShare.Metadata]) async {
         guard !metadata.isEmpty else { return }
+        print("[ShareAccept] received \(metadata.count) share metadata item(s)")
         do {
             try await repository.acceptIncomingSharedBudgetInvitations(metadata)
+            print("[ShareAccept] accepted invitations, refreshing app state")
             try refresh()
+            print("[ShareAccept] accept flow completed")
         } catch {
-            sharingErrorMessage = "Failed to accept shared budget."
+            print("[ShareAccept] accept failed: \(error)")
+            sharingErrorMessage = acceptSharedBudgetErrorMessage(for: error)
         }
     }
 
@@ -865,7 +928,7 @@ final class AppState: ObservableObject {
     private func updatePendingSharedBudgetAdoption() throws {
         guard let localBudget = try repository.localBudget(),
               let sharedBudget = try repository.sharedBudget(),
-              sharedBudget.ownerParticipantID != Self.localOwnerParticipantID,
+              sharedBudget.ownerParticipantID != currentParticipantID,
               localBudget.id != sharedBudget.id,
               !dismissedSharedBudgetAdoptionIDs.contains(sharedBudget.id) else {
             pendingSharedBudgetAdoption = nil
@@ -876,6 +939,17 @@ final class AppState: ObservableObject {
             budgetID: sharedBudget.id,
             budgetName: sharedBudget.name
         )
+    }
+
+    private func migrateLegacyOwnerIdentifiersIfNeeded() throws {
+        guard currentParticipantID != Self.legacyOwnerParticipantID else { return }
+        guard let localBudget = try repository.localBudget(),
+              localBudget.ownerParticipantID == Self.legacyOwnerParticipantID else {
+            return
+        }
+
+        localBudget.ownerParticipantID = currentParticipantID
+        try repository.saveBudget(localBudget)
     }
     private func seedDefaultsFromSheet(accountID: UUID, month: YearMonth) throws {
         func money(_ value: String) -> Decimal {
@@ -1023,6 +1097,41 @@ final class AppState: ObservableObject {
                 return "This budget could not be shared."
             }
         }
+        if let coordinatorError = error as? BudgetShareCoordinatorError {
+            switch coordinatorError {
+            case .stopShareVerificationFailed:
+                return "Could not confirm that sharing was removed."
+            default:
+                break
+            }
+        }
         return "Budget sharing failed."
+    }
+
+    private func acceptSharedBudgetErrorMessage(for error: Error) -> String {
+        let nsError = error as NSError
+        if nsError.domain == CKError.errorDomain,
+           nsError.code == CKError.partialFailure.rawValue,
+           let partialErrors = nsError.userInfo[CKPartialErrorsByItemIDKey] as? [AnyHashable: NSError],
+           let nestedError = partialErrors.values.first {
+            return acceptSharedBudgetErrorMessage(for: nestedError)
+        }
+
+        if let localized = error as? LocalizedError,
+           let description = localized.errorDescription,
+           !description.isEmpty {
+            return "Failed to accept shared budget: \(description) (\(nsError.domain) \(nsError.code))"
+        }
+
+        if let description = nsError.userInfo[NSLocalizedDescriptionKey] as? String,
+           !description.isEmpty {
+            return "Failed to accept shared budget: \(description) (\(nsError.domain) \(nsError.code))"
+        }
+
+        return "Failed to accept shared budget: \(nsError.domain) \(nsError.code)"
+    }
+
+    func debugAcceptSharedBudgetErrorMessage(for error: Error) -> String {
+        acceptSharedBudgetErrorMessage(for: error)
     }
 }

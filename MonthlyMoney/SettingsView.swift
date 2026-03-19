@@ -44,6 +44,15 @@ struct SettingsView: View {
                 }
                 .disabled(!state.sharingPresentation.isShareButtonEnabled || state.isSharingBudget)
 
+                if state.sharingPresentation.showsUnshareButton {
+                    Button("Unshare Budget", role: .destructive) {
+                        Task {
+                            await state.shareBudget()
+                        }
+                    }
+                    .disabled(state.isSharingBudget)
+                }
+
                 LabeledContent("Status", value: state.sharingPresentation.statusText)
 
                 if let note = state.sharingPresentation.note {
@@ -72,6 +81,11 @@ struct SettingsView: View {
                 shareResult: shareResult,
                 onDismiss: {
                     state.clearPendingBudgetSharePresentation()
+                },
+                onStopSharing: {
+                    Task {
+                        await state.handleBudgetShareStoppedFromUI()
+                    }
                 },
                 onError: { message in
                     state.sharingPresentationDidFail(message: message)
