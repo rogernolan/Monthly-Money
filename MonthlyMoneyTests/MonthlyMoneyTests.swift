@@ -451,6 +451,8 @@ final class MonthlyMoneyTests: XCTestCase {
         let options = description.value(forKey: "options") as? [String: Any]
         XCTAssertEqual(options?[NSPersistentHistoryTrackingKey] as? Bool, true)
         XCTAssertEqual(options?[NSPersistentStoreRemoteChangeNotificationPostOptionKey] as? Bool, true)
+        XCTAssertTrue(description.shouldMigrateStoreAutomatically)
+        XCTAssertTrue(description.shouldInferMappingModelAutomatically)
     }
 
     func testCoreDataCloudKitProbeBuildsSharedStoreDescription() {
@@ -466,6 +468,8 @@ final class MonthlyMoneyTests: XCTestCase {
         let options = description.value(forKey: "options") as? [String: Any]
         XCTAssertEqual(options?[NSPersistentHistoryTrackingKey] as? Bool, true)
         XCTAssertEqual(options?[NSPersistentStoreRemoteChangeNotificationPostOptionKey] as? Bool, true)
+        XCTAssertTrue(description.shouldMigrateStoreAutomatically)
+        XCTAssertTrue(description.shouldInferMappingModelAutomatically)
     }
 
     func testCoreDataAccountDataStoreRoundTripsBudgetAccountsItemsAndTransactions() throws {
@@ -501,11 +505,11 @@ final class MonthlyMoneyTests: XCTestCase {
             type: .fixedDebit,
             label: "Rent",
             amount: 1200,
+            matchingString: "Council tax",
             dueDay: 1,
             isPaid: false,
             copiesToNextMonthAutomatically: true,
-            notes: "Landlord",
-            matchingString: "Council tax"
+            notes: "Landlord"
         )
         try store.upsertPlannedItems([item])
 

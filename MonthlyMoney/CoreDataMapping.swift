@@ -164,6 +164,7 @@ enum CoreDataModelBuilder {
             attribute("monthKey", .stringAttributeType, defaultValue: YearMonth(year: 2000, month: 1).rawValue),
             attribute("typeRaw", .stringAttributeType, defaultValue: PlannedItemType.fixedDebit.rawValue),
             attribute("label", .stringAttributeType, defaultValue: ""),
+            attribute("matchingString", .stringAttributeType, isOptional: true),
             attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
             attribute("dueDay", .integer16AttributeType, isOptional: true),
             attribute("dueText", .stringAttributeType, isOptional: true),
@@ -184,7 +185,10 @@ enum CoreDataModelBuilder {
             attribute("accountID", .UUIDAttributeType, defaultValue: UUID()),
             attribute("monthKey", .stringAttributeType, defaultValue: YearMonth(year: 2000, month: 1).rawValue),
             attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
-            attribute("note", .stringAttributeType, defaultValue: "")
+            attribute("note", .stringAttributeType, defaultValue: ""),
+            attribute("sourceKind", .stringAttributeType, defaultValue: ""),
+            attribute("sourceExternalTransactionID", .stringAttributeType, defaultValue: ""),
+            attribute("sourcePostedAt", .dateAttributeType, isOptional: true)
         ]
         return entity
     }
@@ -205,7 +209,9 @@ enum CoreDataModelBuilder {
             attribute("payee", .stringAttributeType, defaultValue: ""),
             attribute("transactionType", .stringAttributeType, defaultValue: ""),
             attribute("rawSourcePayload", .stringAttributeType, defaultValue: ""),
-            attribute("importedAt", .dateAttributeType, defaultValue: Date())
+            attribute("importedAt", .dateAttributeType, defaultValue: Date()),
+            attribute("appliedPlannedItemID", .UUIDAttributeType, isOptional: true),
+            attribute("createdTransactionID", .UUIDAttributeType, isOptional: true)
         ]
         return entity
     }
@@ -317,6 +323,7 @@ enum CoreDataMapping {
         managedObject.setValue(item.monthKey, forKey: "monthKey")
         managedObject.setValue(item.type.rawValue, forKey: "typeRaw")
         managedObject.setValue(item.label, forKey: "label")
+        managedObject.setValue(item.matchingString, forKey: "matchingString")
         managedObject.setValue(item.amount as NSDecimalNumber, forKey: "amount")
         managedObject.setValue(item.dueDay.map(NSNumber.init(value:)), forKey: "dueDay")
         managedObject.setValue(item.dueText, forKey: "dueText")
@@ -326,19 +333,34 @@ enum CoreDataMapping {
     }
 
     static func plannedItem(from managedObject: NSManagedObject) -> PlannedItem {
-        PlannedItem(
-            id: managedObject.value(forKey: "id") as? UUID ?? UUID(),
-            budgetID: managedObject.value(forKey: "budgetID") as? UUID ?? UUID(),
-            accountID: managedObject.value(forKey: "accountID") as? UUID ?? UUID(),
-            monthKey: YearMonth(rawValue: managedObject.value(forKey: "monthKey") as? String ?? "") ?? YearMonth(year: 2000, month: 1),
-            type: PlannedItemType(rawValue: managedObject.value(forKey: "typeRaw") as? String ?? "") ?? .fixedDebit,
-            label: managedObject.value(forKey: "label") as? String ?? "",
-            amount: (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0,
-            dueDay: (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue,
-            dueText: managedObject.value(forKey: "dueText") as? String,
-            isPaid: managedObject.value(forKey: "isPaid") as? Bool ?? false,
-            copiesToNextMonthAutomatically: managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true,
-            notes: managedObject.value(forKey: "notes") as? String ?? ""
+        let id = managedObject.value(forKey: "id") as? UUID ?? UUID()
+        let budgetID = managedObject.value(forKey: "budgetID") as? UUID ?? UUID()
+        let accountID = managedObject.value(forKey: "accountID") as? UUID ?? UUID()
+        let monthKey = YearMonth(rawValue: managedObject.value(forKey: "monthKey") as? String ?? "") ?? YearMonth(year: 2000, month: 1)
+        let type = PlannedItemType(rawValue: managedObject.value(forKey: "typeRaw") as? String ?? "") ?? .fixedDebit
+        let label = managedObject.value(forKey: "label") as? String ?? ""
+        let matchingString = managedObject.value(forKey: "matchingString") as? String
+        let amount = (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0
+        let dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
+        let dueText = managedObject.value(forKey: "dueText") as? String
+        let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
+        let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
+        let notes = managedObject.value(forKey: "notes") as? String ?? ""
+
+        return PlannedItem(
+            id: id,
+            budgetID: budgetID,
+            accountID: accountID,
+            monthKey: monthKey,
+            type: type,
+            label: label,
+            amount: amount,
+            matchingString: matchingString,
+            dueDay: dueDay,
+            dueText: dueText,
+            isPaid: isPaid,
+            copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
+            notes: notes
         )
     }
 
@@ -349,6 +371,9 @@ enum CoreDataMapping {
         managedObject.setValue(transaction.monthKey, forKey: "monthKey")
         managedObject.setValue(transaction.amount as NSDecimalNumber, forKey: "amount")
         managedObject.setValue(transaction.note, forKey: "note")
+        managedObject.setValue(transaction.sourceKind, forKey: "sourceKind")
+        managedObject.setValue(transaction.sourceExternalTransactionID, forKey: "sourceExternalTransactionID")
+        managedObject.setValue(transaction.sourcePostedAt, forKey: "sourcePostedAt")
     }
 
     static func transaction(from managedObject: NSManagedObject) -> Transaction {
@@ -358,7 +383,10 @@ enum CoreDataMapping {
             accountID: managedObject.value(forKey: "accountID") as? UUID ?? UUID(),
             monthKey: YearMonth(rawValue: managedObject.value(forKey: "monthKey") as? String ?? "") ?? YearMonth(year: 2000, month: 1),
             amount: (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0,
-            note: managedObject.value(forKey: "note") as? String ?? ""
+            note: managedObject.value(forKey: "note") as? String ?? "",
+            sourceKind: managedObject.value(forKey: "sourceKind") as? String ?? "",
+            sourceExternalTransactionID: managedObject.value(forKey: "sourceExternalTransactionID") as? String ?? "",
+            sourcePostedAt: managedObject.value(forKey: "sourcePostedAt") as? Date
         )
     }
 
@@ -375,6 +403,8 @@ enum CoreDataMapping {
         managedObject.setValue(record.transactionType, forKey: "transactionType")
         managedObject.setValue(record.rawSourcePayload, forKey: "rawSourcePayload")
         managedObject.setValue(record.importedAt, forKey: "importedAt")
+        managedObject.setValue(record.appliedPlannedItemID, forKey: "appliedPlannedItemID")
+        managedObject.setValue(record.createdTransactionID, forKey: "createdTransactionID")
     }
 
     static func importedTransactionRecord(from managedObject: NSManagedObject) -> ImportedTransactionRecord {
@@ -390,7 +420,9 @@ enum CoreDataMapping {
             payee: managedObject.value(forKey: "payee") as? String ?? "",
             transactionType: managedObject.value(forKey: "transactionType") as? String ?? "",
             rawSourcePayload: managedObject.value(forKey: "rawSourcePayload") as? String ?? "",
-            importedAt: managedObject.value(forKey: "importedAt") as? Date ?? .distantPast
+            importedAt: managedObject.value(forKey: "importedAt") as? Date ?? .distantPast,
+            appliedPlannedItemID: managedObject.value(forKey: "appliedPlannedItemID") as? UUID,
+            createdTransactionID: managedObject.value(forKey: "createdTransactionID") as? UUID
         )
     }
 

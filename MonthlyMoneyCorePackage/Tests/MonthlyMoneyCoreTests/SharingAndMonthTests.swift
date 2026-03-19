@@ -582,7 +582,7 @@ final class SharingAndMonthTests: XCTestCase {
     }
 
     private static func matchingText(for item: PlannedItem) -> String {
-        let trimmed = item.matchingString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let trimmed = item.matchingString?.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? item.label : trimmed
     }
 }

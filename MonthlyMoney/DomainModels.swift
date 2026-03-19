@@ -152,6 +152,7 @@ final class PlannedItem {
     var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
     var type: PlannedItemType = PlannedItemType.fixedDebit
     var label: String = ""
+    var matchingString: String?
     var amount: Decimal = 0
     var dueDay: Int?
     var dueText: String?
@@ -167,6 +168,7 @@ final class PlannedItem {
         type: PlannedItemType,
         label: String,
         amount: Decimal,
+        matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
         isPaid: Bool = false,
@@ -179,6 +181,7 @@ final class PlannedItem {
         self.monthKey = monthKey.rawValue
         self.type = type
         self.label = label
+        self.matchingString = matchingString
         self.amount = amount
         self.dueDay = dueDay
         self.dueText = dueText
@@ -195,6 +198,7 @@ final class PlannedItem {
         type: PlannedItemType,
         label: String,
         amount: Decimal,
+        matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
         isPaid: Bool = false,
@@ -208,6 +212,7 @@ final class PlannedItem {
             type: type,
             label: label,
             amount: amount,
+            matchingString: matchingString,
             dueDay: dueDay,
             dueText: dueText,
             isPaid: isPaid,
@@ -233,6 +238,9 @@ final class Transaction {
     var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
     var amount: Decimal = 0
     var note: String = ""
+    var sourceKind: String = ""
+    var sourceExternalTransactionID: String = ""
+    var sourcePostedAt: Date?
 
     init(
         id: UUID = UUID(),
@@ -240,7 +248,10 @@ final class Transaction {
         accountID: UUID,
         monthKey: YearMonth,
         amount: Decimal,
-        note: String = ""
+        note: String = "",
+        sourceKind: String = "",
+        sourceExternalTransactionID: String = "",
+        sourcePostedAt: Date? = nil
     ) {
         self.id = id
         self.budgetID = budgetID
@@ -248,6 +259,9 @@ final class Transaction {
         self.monthKey = monthKey.rawValue
         self.amount = amount
         self.note = note
+        self.sourceKind = sourceKind
+        self.sourceExternalTransactionID = sourceExternalTransactionID
+        self.sourcePostedAt = sourcePostedAt
     }
 }
 
@@ -265,6 +279,8 @@ final class ImportedTransactionRecord {
     var transactionType: String = ""
     var rawSourcePayload: String = ""
     var importedAt: Date = Date()
+    var appliedPlannedItemID: UUID?
+    var createdTransactionID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -278,7 +294,9 @@ final class ImportedTransactionRecord {
         payee: String,
         transactionType: String,
         rawSourcePayload: String,
-        importedAt: Date = Date()
+        importedAt: Date = Date(),
+        appliedPlannedItemID: UUID? = nil,
+        createdTransactionID: UUID? = nil
     ) {
         self.id = id
         self.budgetID = budgetID
@@ -292,6 +310,8 @@ final class ImportedTransactionRecord {
         self.transactionType = transactionType
         self.rawSourcePayload = rawSourcePayload
         self.importedAt = importedAt
+        self.appliedPlannedItemID = appliedPlannedItemID
+        self.createdTransactionID = createdTransactionID
     }
 }
 
