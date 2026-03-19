@@ -101,6 +101,15 @@ final class SharingAndMonthTests: XCTestCase {
         try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .fixedDebit, label: "Rent", amount: 1200))
         try repository.createPlannedItem(PlannedItem(accountID: account.id, monthKey: month, type: .credit, label: "Salary", amount: 2500))
         try repository.createTransaction(Transaction(accountID: account.id, monthKey: month, amount: 100, note: "Stub"))
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: account.budgetID,
+                title: "Christmas",
+                amount: 1000,
+                month: WheelOfMoneyMonth.december.rawValue,
+                notes: "Presents"
+            )
+        )
 
         let before = try repository.plannedItems(for: month)
         let beforeTotals = MonthCalculationEngine.calculate(items: before, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
@@ -115,14 +124,17 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(try privateStore.fetchAccounts().map(\.id), [account.id])
         XCTAssertEqual(try privateStore.fetchPlannedItems(accountIDs: [account.id], monthKey: month).count, 2)
         XCTAssertEqual(try privateStore.fetchTransactions(accountIDs: [account.id]).count, 1)
+        XCTAssertEqual(try privateStore.fetchWheelOfMoneyItems().map(\.title), ["Christmas"])
         XCTAssertTrue(try sharedStore.fetchBudgets().isEmpty)
         XCTAssertTrue(try sharedStore.fetchAccounts().isEmpty)
         XCTAssertTrue(try sharedStore.fetchPlannedItems(accountIDs: [account.id], monthKey: nil).isEmpty)
         XCTAssertTrue(try sharedStore.fetchTransactions(accountIDs: [account.id]).isEmpty)
+        XCTAssertTrue(try sharedStore.fetchWheelOfMoneyItems().isEmpty)
 
         let after = try repository.plannedItems(for: month)
         let afterTotals = MonthCalculationEngine.calculate(items: after, openingBalance: 1000, livingBuffer: 100, weeklyEstimate: 100, weekendEstimate: 10, minSuggestedLiving: 1500, yearMonth: month)
         XCTAssertEqual(beforeTotals, afterTotals)
+        XCTAssertEqual(try repository.wheelOfMoneyItems().map(\.title), ["Christmas"])
     }
 
     func testActiveBudgetScope() throws {

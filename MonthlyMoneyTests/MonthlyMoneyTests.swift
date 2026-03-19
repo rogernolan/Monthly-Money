@@ -1114,6 +1114,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.primaryBankName, "Shared Monzo")
         XCTAssertFalse(state.shouldShowSharedBudgetOverwriteAlert)
         XCTAssertEqual(state.monthItems.map(\.label), ["Shared Rent"])
+        XCTAssertEqual(state.wheelOfMoneyItems.map(\.title), ["Shared Christmas"])
     }
 
     func testCancelSharedBudgetOverwriteKeepsLocalBudgetActive() async throws {
@@ -1537,13 +1538,21 @@ final class MonthlyMoneyTests: XCTestCase {
             dueDay: 1,
             isPaid: false
         )
+        let wheelOfMoneyItem = WheelOfMoneyItem(
+            budgetID: budget.id,
+            title: "Shared Christmas",
+            amount: 1000,
+            month: WheelOfMoneyMonth.december.rawValue,
+            isPaid: false,
+            notes: "Shared presents"
+        )
 
         try repository.insertShared(
             budget: budget,
             accounts: [account],
             plannedItems: [item],
             transactions: [],
-            wheelOfMoneyItems: []
+            wheelOfMoneyItems: [wheelOfMoneyItem]
         )
     }
 
