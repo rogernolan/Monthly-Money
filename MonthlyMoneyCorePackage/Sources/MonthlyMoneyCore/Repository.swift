@@ -23,6 +23,13 @@ public protocol AccountDataStore {
     func fetchTransactions(accountIDs: Set<UUID>) throws -> [Transaction]
     func upsertTransactions(_ transactions: [Transaction]) throws
     func deleteTransactions(accountID: UUID) throws
+
+    func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem]
+    func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem?
+    func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem]
+    func upsertWheelOfMoneyItems(_ items: [WheelOfMoneyItem]) throws
+    func deleteWheelOfMoneyItem(id: UUID) throws
+    func deleteWheelOfMoneyItems(budgetID: UUID) throws
 }
 
 public final class InMemoryAccountDataStore: AccountDataStore {
@@ -30,6 +37,7 @@ public final class InMemoryAccountDataStore: AccountDataStore {
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
+    private var wheelOfMoneyItemsByID: [UUID: WheelOfMoneyItem] = [:]
 
     public init() {}
 
@@ -71,6 +79,30 @@ public final class InMemoryAccountDataStore: AccountDataStore {
 
     public func deleteTransactions(accountID: UUID) throws {
         transactionsByID = transactionsByID.filter { $0.value.accountID != accountID }
+    }
+
+    public func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
+        Array(wheelOfMoneyItemsByID.values)
+    }
+
+    public func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? {
+        wheelOfMoneyItemsByID[id]
+    }
+
+    public func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem] {
+        Array(wheelOfMoneyItemsByID.values).filter { $0.budgetID == budgetID }
+    }
+
+    public func upsertWheelOfMoneyItems(_ items: [WheelOfMoneyItem]) throws {
+        for item in items { wheelOfMoneyItemsByID[item.id] = item }
+    }
+
+    public func deleteWheelOfMoneyItem(id: UUID) throws {
+        wheelOfMoneyItemsByID[id] = nil
+    }
+
+    public func deleteWheelOfMoneyItems(budgetID: UUID) throws {
+        wheelOfMoneyItemsByID = wheelOfMoneyItemsByID.filter { $0.value.budgetID != budgetID }
     }
 }
 
@@ -144,10 +176,60 @@ public final class AccountRepository {
         try touchBudget(id: account.budgetID, in: store)
     }
 
+    public func createWheelOfMoneyItem(_ item: WheelOfMoneyItem) throws {
+        guard let budget = try activeBudget(),
+              let store = try storeHoldingBudget(id: budget.id) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        item.budgetID = budget.id
+        try store.upsertWheelOfMoneyItems([item])
+        try touchBudget(id: budget.id, in: store)
+    }
+
     public func accounts() throws -> [Account] {
         guard let budget = try activeBudget() else { return [] }
         guard let store = try storeHoldingBudget(id: budget.id) else { return [] }
         return try store.fetchAccounts().filter { $0.budgetID == budget.id }
+    }
+
+    public func wheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? {
+        if let item = try privateStore.fetchWheelOfMoneyItem(id: id) {
+            return item
+        }
+        return try sharedStore.fetchWheelOfMoneyItem(id: id)
+    }
+
+    public func saveWheelOfMoneyItem(_ item: WheelOfMoneyItem) throws {
+        if try privateStore.fetchBudget(id: item.budgetID) != nil {
+            try privateStore.upsertWheelOfMoneyItems([item])
+            try sharedStore.deleteWheelOfMoneyItem(id: item.id)
+            try touchBudget(id: item.budgetID, in: privateStore)
+            return
+        }
+        if try sharedStore.fetchBudget(id: item.budgetID) != nil {
+            try sharedStore.upsertWheelOfMoneyItems([item])
+            try privateStore.deleteWheelOfMoneyItem(id: item.id)
+            try touchBudget(id: item.budgetID, in: sharedStore)
+            return
+        }
+        throw RepositoryError.invalidCrossScopeReference
+    }
+
+    public func setWheelOfMoneyItemPaid(id: UUID, isPaid: Bool) throws {
+        guard let item = try wheelOfMoneyItem(id: id) else { return }
+        item.isPaid = isPaid
+        try saveWheelOfMoneyItem(item)
+    }
+
+    public func deleteWheelOfMoneyItem(id: UUID) throws {
+        if let item = try privateStore.fetchWheelOfMoneyItem(id: id) {
+            try privateStore.deleteWheelOfMoneyItem(id: id)
+            try touchBudget(id: item.budgetID, in: privateStore)
+        }
+        if let item = try sharedStore.fetchWheelOfMoneyItem(id: id) {
+            try sharedStore.deleteWheelOfMoneyItem(id: id)
+            try touchBudget(id: item.budgetID, in: sharedStore)
+        }
     }
 
     public func deletePlannedItem(id: UUID) throws {
@@ -161,6 +243,15 @@ public final class AccountRepository {
         guard let store = try storeHoldingBudget(id: budget.id) else { return [] }
         return try store
             .fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
+            .filter { $0.budgetID == budget.id }
+    }
+
+    public func wheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
+        guard let budget = try activeBudget(),
+              let store = try storeHoldingBudget(id: budget.id) else {
+            return []
+        }
+        return try store.fetchWheelOfMoneyItems(budgetID: budget.id)
             .filter { $0.budgetID == budget.id }
     }
 
@@ -185,7 +276,7 @@ public final class AccountRepository {
         try preferredBudget(from: sharedStore.fetchBudgets())
     }
 
-    public func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction])? {
+    public func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem])? {
         guard let budget = try localBudget() else { return nil }
         let accounts = try privateStore.fetchAccounts().filter { $0.budgetID == budget.id }
         let accountIDs = Set(accounts.map(\.id))
@@ -193,16 +284,19 @@ public final class AccountRepository {
             .filter { $0.budgetID == budget.id }
         let transactions = try privateStore.fetchTransactions(accountIDs: accountIDs)
             .filter { $0.budgetID == budget.id }
-        return (budget, accounts, plannedItems, transactions)
+        let wheelOfMoneyItems = try privateStore.fetchWheelOfMoneyItems(budgetID: budget.id)
+            .filter { $0.budgetID == budget.id }
+        return (budget, accounts, plannedItems, transactions, wheelOfMoneyItems)
     }
 
-    public func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction]) throws {
+    public func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem]) throws {
         try sharedStore.upsertBudget(budget)
         for account in accounts {
             try sharedStore.upsertAccount(account)
         }
         try sharedStore.upsertPlannedItems(plannedItems)
         try sharedStore.upsertTransactions(transactions)
+        try sharedStore.upsertWheelOfMoneyItems(wheelOfMoneyItems)
     }
 
     public func deleteLocalBudget(id: UUID) throws {
@@ -212,6 +306,7 @@ public final class AccountRepository {
             try privateStore.deleteTransactions(accountID: account.id)
             try privateStore.deleteAccount(id: account.id)
         }
+        try privateStore.deleteWheelOfMoneyItems(budgetID: id)
         try privateStore.deleteBudget(id: id)
     }
 

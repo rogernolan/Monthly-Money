@@ -75,6 +75,13 @@ struct ContentView: View {
             }
 
             NavigationStack {
+                WheelOfMoneyView()
+            }
+            .tabItem {
+                Label("WoM", systemImage: "sterlingsign.circle")
+            }
+
+            NavigationStack {
                 SettingsView()
             }
             .tabItem {

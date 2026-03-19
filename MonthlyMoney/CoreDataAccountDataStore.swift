@@ -289,15 +289,54 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try save()
     }
 
-    func budgetRelationshipCounts(for budgetID: UUID) throws -> (accounts: Int, plannedItems: Int, transactions: Int) {
+    func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
+        try fetch(entityName: CoreDataEntityName.wheelOfMoneyItem).map(CoreDataMapping.wheelOfMoneyItem(from:))
+    }
+
+    func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? {
+        try fetchFirst(entityName: CoreDataEntityName.wheelOfMoneyItem, id: id).map(CoreDataMapping.wheelOfMoneyItem(from:))
+    }
+
+    func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.wheelOfMoneyItem)
+        request.predicate = NSPredicate(format: "budgetID == %@", budgetID as CVarArg)
+        return try context.fetch(request).map(CoreDataMapping.wheelOfMoneyItem(from:))
+    }
+
+    func upsertWheelOfMoneyItems(_ items: [WheelOfMoneyItem]) throws {
+        for item in items {
+            let managedObject = try fetchFirst(entityName: CoreDataEntityName.wheelOfMoneyItem, id: item.id)
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.wheelOfMoneyItem, into: context)
+            CoreDataMapping.apply(item, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: item.budgetID)
+        }
+        try save()
+    }
+
+    func deleteWheelOfMoneyItem(id: UUID) throws {
+        if let item = try fetchFirst(entityName: CoreDataEntityName.wheelOfMoneyItem, id: id) {
+            context.delete(item)
+            try save()
+        }
+    }
+
+    func deleteWheelOfMoneyItems(budgetID: UUID) throws {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.wheelOfMoneyItem)
+        request.predicate = NSPredicate(format: "budgetID == %@", budgetID as CVarArg)
+        try context.fetch(request).forEach(context.delete)
+        try save()
+    }
+
+    func budgetRelationshipCounts(for budgetID: UUID) throws -> (accounts: Int, plannedItems: Int, transactions: Int, wheelOfMoneyItems: Int) {
         guard let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: budgetID) else {
-            return (0, 0, 0)
+            return (0, 0, 0, 0)
         }
 
         let accounts = (budget.value(forKey: "accounts") as? NSSet)?.count ?? 0
         let plannedItems = (budget.value(forKey: "plannedItems") as? NSSet)?.count ?? 0
         let transactions = (budget.value(forKey: "transactions") as? NSSet)?.count ?? 0
-        return (accounts, plannedItems, transactions)
+        let wheelOfMoneyItems = (budget.value(forKey: "wheelOfMoneyItems") as? NSSet)?.count ?? 0
+        return (accounts, plannedItems, transactions, wheelOfMoneyItems)
     }
 
     func repairBudgetRelationships(for budgetID: UUID) throws {
@@ -312,6 +351,9 @@ final class CoreDataAccountDataStore: AccountDataStore {
             $0.setValue(budget, forKey: "budget")
         }
         try fetchObjects(entityName: CoreDataEntityName.transaction, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
+        try fetchObjects(entityName: CoreDataEntityName.wheelOfMoneyItem, budgetID: budgetID).forEach {
             $0.setValue(budget, forKey: "budget")
         }
         try save()

@@ -20,7 +20,8 @@ struct MonthlyMoneyApp: App {
             Budget.self,
             Account.self,
             PlannedItem.self,
-            Transaction.self
+            Transaction.self,
+            WheelOfMoneyItem.self
         ])
 
         do {

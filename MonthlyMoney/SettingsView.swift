@@ -36,6 +36,17 @@ struct SettingsView: View {
                 }
             }
 
+            Section("WoM") {
+                Toggle(
+                    "Auto generate WoM savings every month",
+                    isOn: Binding(
+                        get: { state.autoGenerateWoMSavingsEveryMonth },
+                        set: { state.autoGenerateWoMSavingsEveryMonth = $0 }
+                    )
+                )
+                .disabled(!state.canEditBudgetSettings)
+            }
+
             Section("Sharing") {
                 Button("Share Budget") {
                     Task {

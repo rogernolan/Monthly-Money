@@ -10,6 +10,49 @@ enum SettingsSharingStatus: Equatable {
     case sharedWithYou
 }
 
+enum WheelOfMoneyFilter: String, CaseIterable, Equatable {
+    case all
+    case pending
+}
+
+struct WheelOfMoneyMetrics: Equatable {
+    let annualTotal: Decimal
+    let monthlyAverage: Decimal
+    let pendingTotal: Decimal
+    let remainingAverage: Decimal
+
+    var remainingAverageExceedsMonthlyAverage: Bool {
+        remainingAverage > monthlyAverage
+    }
+}
+
+enum WheelOfMoneyFilterRules {
+    static func filteredItems(_ items: [WheelOfMoneyItem], for filter: WheelOfMoneyFilter) -> [WheelOfMoneyItem] {
+        switch filter {
+        case .all:
+            return items
+        case .pending:
+            return items.filter { !$0.isPaid }
+        }
+    }
+}
+
+enum WheelOfMoneyCalculator {
+    static func metrics(items: [WheelOfMoneyItem], currentMonth: Int) -> WheelOfMoneyMetrics {
+        let annualTotal = items.reduce(Decimal.zero) { $0 + $1.amount }
+        let monthlyAverage = annualTotal / Decimal(12)
+        let pendingTotal = items.filter { !$0.isPaid }.reduce(Decimal.zero) { $0 + $1.amount }
+        let remainingMonths = max(1, 12 - min(max(currentMonth, 1), 12) + 1)
+        let remainingAverage = pendingTotal / Decimal(remainingMonths)
+        return WheelOfMoneyMetrics(
+            annualTotal: annualTotal,
+            monthlyAverage: monthlyAverage,
+            pendingTotal: pendingTotal,
+            remainingAverage: remainingAverage
+        )
+    }
+}
+
 struct SettingsSharingPresentation: Equatable {
     let status: SettingsSharingStatus
 
@@ -211,6 +254,8 @@ final class AppState: ObservableObject {
     }
 
     @Published var monthItems: [PlannedItem] = []
+    @Published var wheelOfMoneyItems: [WheelOfMoneyItem] = []
+    @Published var wheelOfMoneyFilter: WheelOfMoneyFilter = .all
 
     private let repository: AccountRepository
     private let shareBudgetAction: ShareBudgetAction
@@ -266,9 +311,11 @@ final class AppState: ObservableObject {
                 )
                 primaryBankBalances[selectedMonth.rawValue] = 397
                 try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
+                try ensureWheelOfMoneyHasSeedData()
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             } else if let account = try repository.accounts().first {
                 try ensureCurrentMonthHasSeedData(accountID: account.id)
+                try ensureWheelOfMoneyHasSeedData()
                 try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             }
             try refresh()
@@ -293,6 +340,7 @@ final class AppState: ObservableObject {
         try restoreLocalBudgetIfNeeded()
         try loadPersistedBudgetState()
         monthItems = try repository.plannedItems(for: selectedMonth)
+        wheelOfMoneyItems = try repository.wheelOfMoneyItems()
         if let firstAccount = try repository.accounts().first {
             primaryBankName = firstAccount.name
         } else {
@@ -313,6 +361,7 @@ final class AppState: ObservableObject {
         )
         primaryBankBalances[selectedMonth.rawValue] = 397
         try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
+        try ensureWheelOfMoneyHasSeedData()
         try ensureNextMonthCopiedFromCurrent(accountID: account.id)
     }
 
@@ -327,6 +376,24 @@ final class AppState: ObservableObject {
                 objectWillChange.send()
             } catch {
                 print("Update daily budget account setting failed: \(error)")
+            }
+        }
+    }
+
+    var autoGenerateWoMSavingsEveryMonth: Bool {
+        get { (try? repository.activeBudget()?.autoGenerateWoMSavingsEveryMonth) ?? false }
+        set {
+            do {
+                guard canEditBudgetSettings else { return }
+                guard let budget = try repository.activeBudget() else { return }
+                budget.autoGenerateWoMSavingsEveryMonth = newValue
+                try repository.saveBudget(budget)
+                if newValue {
+                    try ensureGeneratedWheelOfMoneySavingsItems()
+                }
+                try refresh()
+            } catch {
+                print("Update WoM savings generation setting failed: \(error)")
             }
         }
     }
@@ -534,6 +601,23 @@ final class AppState: ObservableObject {
         )
     }
 
+    var filteredWheelOfMoneyItems: [WheelOfMoneyItem] {
+        WheelOfMoneyFilterRules.filteredItems(wheelOfMoneyItems, for: wheelOfMoneyFilter)
+            .sorted {
+                if $0.month != $1.month {
+                    return $0.month < $1.month
+                }
+                return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
+            }
+    }
+
+    var wheelOfMoneyMetrics: WheelOfMoneyMetrics {
+        WheelOfMoneyCalculator.metrics(
+            items: wheelOfMoneyItems,
+            currentMonth: currentYearMonth.month
+        )
+    }
+
     var projectedBalanceFromCurrentBalance: Decimal {
         let base = isSelectedMonthInFuture ? openingBalance : primaryBankBalance
         return base - monthTotals.netOutgoingsDue
@@ -618,6 +702,71 @@ final class AppState: ObservableObject {
             try refresh()
         } catch {
             print("Delete failed: \(error)")
+        }
+    }
+
+    func setWheelOfMoneyPaid(item: WheelOfMoneyItem, paid: Bool) {
+        item.isPaid = paid
+        do {
+            try repository.saveWheelOfMoneyItem(item)
+            try refresh()
+        } catch {
+            print("Failed setWheelOfMoneyPaid: \(error)")
+        }
+    }
+
+    func delete(wheelOfMoneyItem item: WheelOfMoneyItem) {
+        do {
+            try repository.deleteWheelOfMoneyItem(id: item.id)
+            try refresh()
+        } catch {
+            print("Delete WoM item failed: \(error)")
+        }
+    }
+
+    func update(
+        wheelOfMoneyItem item: WheelOfMoneyItem,
+        title: String,
+        amount: Decimal,
+        month: Int,
+        notes: String
+    ) {
+        item.title = title
+        item.amount = amount
+        item.month = month
+        item.notes = notes
+        do {
+            try repository.saveWheelOfMoneyItem(item)
+            try refresh()
+        } catch {
+            print("Edit WoM item failed: \(error)")
+        }
+    }
+
+    @discardableResult
+    func createWheelOfMoneyEntry(
+        title: String,
+        amount: Decimal,
+        month: Int,
+        notes: String = "",
+        isAutoGeneratedSavingsEntry: Bool = false
+    ) -> WheelOfMoneyItem? {
+        do {
+            let item = WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: title,
+                amount: amount,
+                month: month,
+                isPaid: false,
+                notes: notes,
+                isAutoGeneratedSavingsEntry: isAutoGeneratedSavingsEntry
+            )
+            try repository.createWheelOfMoneyItem(item)
+            try refresh()
+            return item
+        } catch {
+            print("Create WoM entry failed: \(error)")
+            return nil
         }
     }
 
@@ -890,6 +1039,68 @@ final class AppState: ObservableObject {
         guard !currentItems.isEmpty else { return }
 
         try copyItems(currentItems, to: next)
+    }
+
+    private func ensureWheelOfMoneyHasSeedData() throws {
+        guard try repository.wheelOfMoneyItems().isEmpty else { return }
+
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "Car insurance",
+                amount: 900,
+                month: WheelOfMoneyMonth.march.rawValue
+            )
+        )
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "Christmas",
+                amount: 1000,
+                month: WheelOfMoneyMonth.december.rawValue
+            )
+        )
+        try repository.createWheelOfMoneyItem(
+            WheelOfMoneyItem(
+                budgetID: UUID(),
+                title: "J Birthday",
+                amount: 150,
+                month: WheelOfMoneyMonth.may.rawValue
+            )
+        )
+
+        if autoGenerateWoMSavingsEveryMonth {
+            try ensureGeneratedWheelOfMoneySavingsItems()
+        }
+    }
+
+    private func ensureGeneratedWheelOfMoneySavingsItems() throws {
+        guard let budget = try repository.activeBudget() else { return }
+
+        let existingItems = try repository.wheelOfMoneyItems()
+        let existingGeneratedMonths = Set(
+            existingItems
+                .filter { $0.isAutoGeneratedSavingsEntry && $0.title == "WoM savings" }
+                .map(\.month)
+        )
+        let generatedAmount = WheelOfMoneyCalculator.metrics(
+            items: existingItems,
+            currentMonth: currentYearMonth.month
+        ).monthlyAverage
+
+        for month in 1...12 where !existingGeneratedMonths.contains(month) {
+            try repository.createWheelOfMoneyItem(
+                WheelOfMoneyItem(
+                    budgetID: budget.id,
+                    title: "WoM savings",
+                    amount: generatedAmount,
+                    month: month,
+                    isPaid: false,
+                    notes: "",
+                    isAutoGeneratedSavingsEntry: true
+                )
+            )
+        }
     }
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
