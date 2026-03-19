@@ -35,7 +35,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
 
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertTrue(reconciledItem.isPaid)
-        XCTAssertEqual(reconciledItem.amount, -1200)
+        XCTAssertEqual(reconciledItem.amount, 1200)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, reconciledItem.id)
     }
 
@@ -70,6 +70,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
 
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertTrue(reconciledItem.isPaid)
+        XCTAssertEqual(reconciledItem.amount, 1200)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, reconciledItem.id)
     }
 

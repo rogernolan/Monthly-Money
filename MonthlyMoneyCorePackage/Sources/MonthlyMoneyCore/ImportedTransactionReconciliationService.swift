@@ -94,7 +94,7 @@ public final class ImportedTransactionReconciliationService {
         }
 
         match.isPaid = true
-        match.amount = record.amount
+        match.amount = abs(record.amount)
         try repository.savePlannedItem(match)
 
         record.appliedPlannedItemID = match.id
