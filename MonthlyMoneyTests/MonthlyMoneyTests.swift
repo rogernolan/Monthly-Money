@@ -547,7 +547,32 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(transactions.first?.sourceKind, "nationwide_ofx")
         XCTAssertEqual(transactions.first?.sourceExternalTransactionID, "FITID-TRANSACTION-1")
         XCTAssertEqual(transactions.first?.sourcePostedAt, Date(timeIntervalSince1970: 1_234.5))
-        XCTAssertEqual(plannedItems.first?.source, .copiedFromPreviousMonth)
+        XCTAssertEqual(plannedItems.first?.source, .manual)
+
+        let copiedItem = PlannedItem(
+            id: UUID(),
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            source: .copiedFromPreviousMonth,
+            label: "Utilities",
+            amount: 75,
+            dueDay: 2,
+            isPaid: false,
+            copiesToNextMonthAutomatically: true,
+            notes: "Copied source check"
+        )
+        let copiedItemObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem,
+            into: context
+        )
+        CoreDataMapping.apply(copiedItem, to: copiedItemObject)
+        try context.save()
+
+        let copiedPlannedItems = try store.fetchPlannedItems(accountIDs: [account.id], monthKey: YearMonth(year: 2026, month: 3))
+        let persistedCopiedItem = try XCTUnwrap(copiedPlannedItems.first { $0.id == copiedItem.id })
+        XCTAssertEqual(persistedCopiedItem.source, .copiedFromPreviousMonth)
     }
 
     func testCoreDataAccountDataStoreMergesRemoteChangesIntoViewContext() throws {
