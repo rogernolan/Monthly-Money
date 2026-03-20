@@ -25,6 +25,12 @@ enum PlannedItemType: String, Codable, CaseIterable {
     case transfer
 }
 
+enum PlannedItemSource: String, Codable, CaseIterable {
+    case manual
+    case copiedFromPreviousMonth
+    case importedUnplanned
+}
+
 enum WheelOfMoneyMonth: Int, Codable, CaseIterable {
     case january = 1
     case february = 2
@@ -151,6 +157,7 @@ final class PlannedItem {
     var accountID: UUID = UUID()
     var monthKey: String = YearMonth(year: 2000, month: 1).rawValue
     var type: PlannedItemType = PlannedItemType.fixedDebit
+    var source: PlannedItemSource = PlannedItemSource.manual
     var label: String = ""
     var matchingString: String?
     var amount: Decimal = 0
@@ -166,6 +173,7 @@ final class PlannedItem {
         accountID: UUID,
         monthKey: YearMonth,
         type: PlannedItemType,
+        source: PlannedItemSource = .manual,
         label: String,
         amount: Decimal,
         matchingString: String? = nil,
@@ -180,6 +188,7 @@ final class PlannedItem {
         self.accountID = accountID
         self.monthKey = monthKey.rawValue
         self.type = type
+        self.source = source
         self.label = label
         self.matchingString = matchingString
         self.amount = amount
@@ -196,6 +205,7 @@ final class PlannedItem {
         accountID: UUID,
         monthKey: YearMonth,
         type: PlannedItemType,
+        source: PlannedItemSource = .manual,
         label: String,
         amount: Decimal,
         matchingString: String? = nil,
@@ -210,6 +220,7 @@ final class PlannedItem {
             accountID: accountID,
             monthKey: monthKey,
             type: type,
+            source: source,
             label: label,
             amount: amount,
             matchingString: matchingString,
@@ -227,6 +238,25 @@ final class PlannedItem {
 
     static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
         items.filter(\.copiesToNextMonthAutomatically)
+    }
+
+    static func copied(from item: PlannedItem, into monthKey: YearMonth) -> PlannedItem {
+        PlannedItem(
+            id: UUID(),
+            budgetID: item.budgetID,
+            accountID: item.accountID,
+            monthKey: monthKey,
+            type: item.type,
+            source: .copiedFromPreviousMonth,
+            label: item.label,
+            amount: item.amount,
+            matchingString: item.matchingString,
+            dueDay: item.dueDay,
+            dueText: item.dueText,
+            isPaid: item.isPaid,
+            copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
+            notes: item.notes
+        )
     }
 }
 

@@ -547,7 +547,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(transactions.first?.sourceKind, "nationwide_ofx")
         XCTAssertEqual(transactions.first?.sourceExternalTransactionID, "FITID-TRANSACTION-1")
         XCTAssertEqual(transactions.first?.sourcePostedAt, Date(timeIntervalSince1970: 1_234.5))
-        XCTAssertEqual(plannedItems.first?.source, .manual)
+        XCTAssertEqual(plannedItems.first?.source, .copiedFromPreviousMonth)
     }
 
     func testCoreDataAccountDataStoreMergesRemoteChangesIntoViewContext() throws {
@@ -767,6 +767,7 @@ final class MonthlyMoneyTests: XCTestCase {
             amount: 1200,
             dueDay: 1
         )
+        item.source = .copiedFromPreviousMonth
         let itemObject = NSEntityDescription.insertNewObject(
             forEntityName: CoreDataEntityName.plannedItem,
             into: context
@@ -1510,6 +1511,7 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertTrue(item.copiesToNextMonthAutomatically)
+        XCTAssertEqual(item.source, .manual)
     }
 
     func testMonthItemRowMetadataLinesShowDayThenNotes() {

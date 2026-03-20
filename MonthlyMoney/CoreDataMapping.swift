@@ -169,6 +169,7 @@ enum CoreDataModelBuilder {
             attribute("dueDay", .integer16AttributeType, isOptional: true),
             attribute("dueText", .stringAttributeType, isOptional: true),
             attribute("isPaid", .booleanAttributeType, defaultValue: false),
+            attribute("sourceRaw", .stringAttributeType, defaultValue: PlannedItemSource.manual.rawValue),
             attribute("copiesToNextMonthAutomatically", .booleanAttributeType, defaultValue: true),
             attribute("notes", .stringAttributeType, defaultValue: "")
         ]
@@ -328,6 +329,7 @@ enum CoreDataMapping {
         managedObject.setValue(item.dueDay.map(NSNumber.init(value:)), forKey: "dueDay")
         managedObject.setValue(item.dueText, forKey: "dueText")
         managedObject.setValue(item.isPaid, forKey: "isPaid")
+        managedObject.setValue(item.source.rawValue, forKey: "sourceRaw")
         managedObject.setValue(item.copiesToNextMonthAutomatically, forKey: "copiesToNextMonthAutomatically")
         managedObject.setValue(item.notes, forKey: "notes")
     }
@@ -344,6 +346,7 @@ enum CoreDataMapping {
         let dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
         let dueText = managedObject.value(forKey: "dueText") as? String
         let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
+        let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
         let notes = managedObject.value(forKey: "notes") as? String ?? ""
 
@@ -353,6 +356,7 @@ enum CoreDataMapping {
             accountID: accountID,
             monthKey: monthKey,
             type: type,
+            source: source,
             label: label,
             amount: amount,
             matchingString: matchingString,
