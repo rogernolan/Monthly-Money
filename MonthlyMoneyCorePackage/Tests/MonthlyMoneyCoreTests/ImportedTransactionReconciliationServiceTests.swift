@@ -35,6 +35,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
 
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertTrue(reconciledItem.isPaid)
+        XCTAssertEqual(reconciledItem.source, plannedItem.source)
         XCTAssertEqual(reconciledItem.amount, 1200)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, reconciledItem.id)
     }
@@ -74,7 +75,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, reconciledItem.id)
     }
 
-    func testReconciliationCreatesTransactionForUnmatchedImportedRowWithSourceIdentity() throws {
+    func testReconciliationCreatesImportedUnplannedPlannedItemForUnmatchedImportedRow() throws {
         let repository = makeRepository()
         let account = try makeAccount(in: repository, name: "Nationwide")
         let importedRecord = makeImportedRecord(
@@ -89,22 +90,22 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         try repository.createImportedTransactionRecord(importedRecord)
 
         let service = ImportedTransactionReconciliationService(repository: repository)
-        let result = try service.reconcile(account: account)
+        _ = try service.reconcile(account: account)
 
         let reconciledRecord = try XCTUnwrap(try repository.importedTransactionRecords(accountIDs: [account.id]).first)
         let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
-        let createdTransaction = try XCTUnwrap(createdTransactions.first)
+        XCTAssertEqual(createdTransactions.count, 0)
+        let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+        let createdPlannedItem = try XCTUnwrap(plannedItems.first)
 
-        XCTAssertEqual(result.createdCount, 1)
-        XCTAssertEqual(createdTransactions.count, 1)
-        XCTAssertEqual(reconciledRecord.createdTransactionID, createdTransaction.id)
-        XCTAssertEqual(createdTransaction.note, "Shop Purchase")
-        XCTAssertEqual(createdTransaction.sourceKind, "nationwide_ofx")
-        XCTAssertEqual(createdTransaction.sourceExternalTransactionID, "FITID-3")
-        XCTAssertEqual(createdTransaction.sourcePostedAt, Self.date("2026-03-12T14:15:16.789Z"))
+        XCTAssertEqual(plannedItems.count, 1)
+        XCTAssertEqual(createdPlannedItem.source, .importedUnplanned)
+        XCTAssertFalse(createdPlannedItem.copiesToNextMonthAutomatically)
+        XCTAssertEqual(reconciledRecord.appliedPlannedItemID, createdPlannedItem.id)
+        XCTAssertNil(reconciledRecord.createdTransactionID)
     }
 
-    func testReconciliationIsIdempotentAcrossRepeatedRuns() throws {
+    func testReconciliationDoesNotDuplicateImportedUnplannedItemsAcrossRepeatedRuns() throws {
         let repository = makeRepository()
         let account = try makeAccount(in: repository, name: "Nationwide")
         let importedRecord = makeImportedRecord(
@@ -119,20 +120,60 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         try repository.createImportedTransactionRecord(importedRecord)
 
         let service = ImportedTransactionReconciliationService(repository: repository)
-        let firstResult = try service.reconcile(account: account)
-        let firstCreatedTransactionID = try XCTUnwrap(
-            repository.importedTransactionRecords(accountIDs: [account.id]).first?.createdTransactionID
-        )
-        let secondResult = try service.reconcile(account: account)
+        _ = try service.reconcile(account: account)
+        _ = try service.reconcile(account: account)
 
         let records = try repository.importedTransactionRecords(accountIDs: [account.id])
+        let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+        let importedUnplannedItems = plannedItems.filter { $0.source == .importedUnplanned }
         let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
 
-        XCTAssertEqual(firstResult.createdCount, 1)
-        XCTAssertEqual(secondResult.createdCount, 0)
+        XCTAssertEqual(createdTransactions.count, 0)
+        XCTAssertEqual(importedUnplannedItems.count, 1)
         XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.appliedPlannedItemID, importedUnplannedItems.first?.id)
+    }
+
+    func testReconciliationCanBeLimitedToSpecificImportedRecords() throws {
+        let repository = makeRepository()
+        let account = try makeAccount(in: repository, name: "Nationwide")
+        let olderImportedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-older",
+            postedAt: Self.date("2026-03-14T08:00:00.000Z"),
+            amount: -42,
+            payee: "Older Unapplied Import",
+            transactionType: "DIRECTDEBIT"
+        )
+        let newlyImportedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-new",
+            postedAt: Self.date("2026-03-15T08:00:00.000Z"),
+            amount: -84,
+            payee: "Newly Imported Record",
+            transactionType: "DIRECTDEBIT"
+        )
+        try repository.createImportedTransactionRecord(olderImportedRecord)
+        try repository.createImportedTransactionRecord(newlyImportedRecord)
+
+        let result = try ImportedTransactionReconciliationService(repository: repository).reconcile(
+            account: account,
+            importedRecordIDs: [newlyImportedRecord.id]
+        )
+
+        let records = try repository.importedTransactionRecords(accountIDs: [account.id])
+        let refreshedOlderRecord = try XCTUnwrap(records.first(where: { $0.id == olderImportedRecord.id }))
+        let refreshedNewRecord = try XCTUnwrap(records.first(where: { $0.id == newlyImportedRecord.id }))
+        let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
+
+        XCTAssertEqual(result.matchedCount, 0)
+        XCTAssertEqual(result.createdCount, 1)
+        XCTAssertNil(refreshedOlderRecord.createdTransactionID)
+        XCTAssertNotNil(refreshedNewRecord.createdTransactionID)
         XCTAssertEqual(createdTransactions.count, 1)
-        XCTAssertEqual(records.first?.createdTransactionID, firstCreatedTransactionID)
+        XCTAssertEqual(createdTransactions.first?.sourceExternalTransactionID, "FITID-new")
     }
 
     private func makeRepository() -> AccountRepository {
