@@ -593,6 +593,7 @@ final class SharingAndMonthTests: XCTestCase {
 
         let copiedItem = PlannedItem.copied(from: sourceItem, into: YearMonth(year: 2026, month: 4))
         XCTAssertEqual(copiedItem.source, .copiedFromPreviousMonth)
+        XCTAssertFalse(copiedItem.isPaid)
     }
 
     private func makeRepository() -> AccountRepository {

@@ -491,7 +491,10 @@ final class AppState: ObservableObject {
 
         let statement = try NationwideOFXImporter().parse(data: data)
         let importResult = try ImportedTransactionService(repository: repository).import(statement: statement, into: account)
-        let reconciliationResult = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
+        let reconciliationResult = try ImportedTransactionReconciliationService(repository: repository).reconcile(
+            account: account,
+            importedRecordIDs: importResult.insertedRecordIDs
+        )
         try refresh()
         print(
             "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created \(reconciliationResult.createdCount)"
@@ -1142,18 +1145,7 @@ final class AppState: ObservableObject {
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
         for source in PlannedItem.automaticallyCopiedItems(from: sourceItems) {
-            let copy = PlannedItem(
-                accountID: source.accountID,
-                monthKey: month,
-                type: source.type,
-                label: source.label,
-                amount: source.amount,
-                dueDay: source.dueDay,
-                dueText: source.dueText,
-                isPaid: false,
-                copiesToNextMonthAutomatically: source.copiesToNextMonthAutomatically,
-                notes: source.notes
-            )
+            let copy = PlannedItem.copied(from: source, into: month)
             try repository.createPlannedItem(copy)
         }
     }

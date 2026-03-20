@@ -245,7 +245,7 @@ public final class PlannedItem {
             matchingString: item.matchingString,
             dueDay: item.dueDay,
             dueText: item.dueText,
-            isPaid: item.isPaid,
+            isPaid: false,
             copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes
         )
