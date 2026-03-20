@@ -16,6 +16,7 @@ public protocol AccountDataStore {
     func deleteAccount(id: UUID) throws
 
     func fetchPlannedItems(accountIDs: Set<UUID>, monthKey: YearMonth?) throws -> [PlannedItem]
+    func fetchPlannedItem(id: UUID) throws -> PlannedItem?
     func upsertPlannedItems(_ items: [PlannedItem]) throws
     func deletePlannedItem(id: UUID) throws
     func deletePlannedItems(accountID: UUID) throws
@@ -60,6 +61,10 @@ public final class InMemoryAccountDataStore: AccountDataStore {
         Array(plannedItemsByID.values).filter { item in
             accountIDs.contains(item.accountID) && (monthKey == nil || item.monthKey == monthKey?.rawValue)
         }
+    }
+
+    public func fetchPlannedItem(id: UUID) throws -> PlannedItem? {
+        plannedItemsByID[id]
     }
 
     public func upsertPlannedItems(_ items: [PlannedItem]) throws {
@@ -294,6 +299,10 @@ public final class AccountRepository {
         return try store
             .fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
             .filter { $0.budgetID == budget.id }
+    }
+
+    public func hasPlannedItem(id: UUID) throws -> Bool {
+        try privateStore.fetchPlannedItem(id: id) != nil || sharedStore.fetchPlannedItem(id: id) != nil
     }
 
     public func wheelOfMoneyItems() throws -> [WheelOfMoneyItem] {

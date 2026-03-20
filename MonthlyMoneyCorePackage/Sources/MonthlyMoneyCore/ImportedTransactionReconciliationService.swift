@@ -31,6 +31,24 @@ public final class ImportedTransactionReconciliationService {
     @discardableResult
     public func reconcile(account: Account) throws -> ImportedTransactionReconciliationResult {
         let importedRecords = try repository.importedTransactionRecords(accountIDs: [account.id])
+        return try reconcile(account: account, importedRecords: importedRecords)
+    }
+
+    @discardableResult
+    public func reconcile(
+        account: Account,
+        importedRecordIDs: [UUID]
+    ) throws -> ImportedTransactionReconciliationResult {
+        let importedRecordIDSet = Set(importedRecordIDs)
+        let importedRecords = try repository.importedTransactionRecords(accountIDs: [account.id])
+            .filter { importedRecordIDSet.contains($0.id) }
+        return try reconcile(account: account, importedRecords: importedRecords)
+    }
+
+    private func reconcile(
+        account: Account,
+        importedRecords: [ImportedTransactionRecord]
+    ) throws -> ImportedTransactionReconciliationResult {
         let monthKeys = Set(importedRecords.map { monthKey(for: $0.postedAt).rawValue })
         let monthItems = try repository.plannedItems(for: nil)
             .filter { $0.accountID == account.id }
@@ -49,7 +67,7 @@ public final class ImportedTransactionReconciliationService {
                 continue
             }
 
-            if try reconcileTransactionCreation(for: record, account: account) {
+            if try reconcileImportedUnplannedItem(for: record, account: account) {
                 createdCount += 1
             }
         }
@@ -61,8 +79,8 @@ public final class ImportedTransactionReconciliationService {
     }
 
     private func reconcileExistingTransactionLink(for record: ImportedTransactionRecord) throws -> Bool {
-        if record.appliedPlannedItemID != nil {
-            return true
+        if let appliedPlannedItemID = record.appliedPlannedItemID {
+            return try repository.hasPlannedItem(id: appliedPlannedItemID)
         }
 
         if let createdTransactionID = record.createdTransactionID,
@@ -80,7 +98,9 @@ public final class ImportedTransactionReconciliationService {
     }
 
     private func reconcilePlannedItem(for record: ImportedTransactionRecord, using plannedItems: [PlannedItem]) throws -> Bool {
-        guard record.appliedPlannedItemID == nil else { return true }
+        if let appliedPlannedItemID = record.appliedPlannedItemID {
+            return try repository.hasPlannedItem(id: appliedPlannedItemID)
+        }
 
         let monthKey = monthKey(for: record.postedAt)
         let candidates = plannedItems
@@ -102,25 +122,27 @@ public final class ImportedTransactionReconciliationService {
         return true
     }
 
-    private func reconcileTransactionCreation(for record: ImportedTransactionRecord, account: Account) throws -> Bool {
-        if let existing = try findExistingTransaction(for: record) {
-            record.createdTransactionID = existing.id
-            try repository.saveImportedTransactionRecord(record)
+    private func reconcileImportedUnplannedItem(for record: ImportedTransactionRecord, account: Account) throws -> Bool {
+        if let appliedPlannedItemID = record.appliedPlannedItemID,
+           try repository.hasPlannedItem(id: appliedPlannedItemID) {
             return false
         }
 
-        let transaction = Transaction(
+        let plannedItem = PlannedItem(
+            budgetID: account.budgetID,
             accountID: account.id,
             monthKey: monthKey(for: record.postedAt),
-            amount: record.amount,
-            note: record.payee,
-            sourceKind: record.sourceKind,
-            sourceExternalTransactionID: record.externalTransactionID,
-            sourcePostedAt: record.postedAt
+            type: Self.plannedItemType(for: record.amount),
+            source: .importedUnplanned,
+            label: record.payee,
+            amount: abs(record.amount),
+            matchingString: record.payee,
+            isPaid: true,
+            copiesToNextMonthAutomatically: false
         )
-        try repository.createTransaction(transaction)
+        try repository.createPlannedItem(plannedItem)
 
-        record.createdTransactionID = transaction.id
+        record.appliedPlannedItemID = plannedItem.id
         try repository.saveImportedTransactionRecord(record)
         return true
     }
@@ -180,6 +202,10 @@ public final class ImportedTransactionReconciliationService {
     private static func plannedMatcher(for plannedItem: PlannedItem) -> String {
         let trimmed = plannedItem.matchingString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? plannedItem.label : trimmed
+    }
+
+    private static func plannedItemType(for amount: Decimal) -> PlannedItemType {
+        amount < 0 ? .fixedDebit : .credit
     }
 
     private static func normalize(_ string: String) -> String {

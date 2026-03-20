@@ -666,6 +666,10 @@ final class AccountRepository {
             .filter { $0.budgetID == budget.id }
     }
 
+    func hasPlannedItem(id: UUID) throws -> Bool {
+        try privateStore.fetchPlannedItem(id: id) != nil || sharedStore.fetchPlannedItem(id: id) != nil
+    }
+
     func wheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? {
         if let item = try privateStore.fetchWheelOfMoneyItem(id: id) {
             return item

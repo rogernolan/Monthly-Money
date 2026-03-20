@@ -497,7 +497,7 @@ final class AppState: ObservableObject {
         )
         try refresh()
         print(
-            "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created \(reconciliationResult.createdCount)"
+            "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
         )
         return (importResult: importResult, reconciliationResult: reconciliationResult)
     }

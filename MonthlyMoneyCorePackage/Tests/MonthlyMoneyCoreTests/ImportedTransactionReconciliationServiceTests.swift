@@ -98,7 +98,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         try repository.createImportedTransactionRecord(importedRecord)
 
         let service = ImportedTransactionReconciliationService(repository: repository)
-        _ = try service.reconcile(account: account)
+        let result = try service.reconcile(account: account)
 
         let reconciledRecord = try XCTUnwrap(
             repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == importedRecord.id })
@@ -107,11 +107,15 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
         let createdPlannedItem = try XCTUnwrap(plannedItems.first(where: { $0.source == .importedUnplanned }))
 
+        XCTAssertEqual(result.createdCount, 1)
         XCTAssertEqual(createdTransactions.count, 0)
         XCTAssertEqual(plannedItems.count, 1)
         XCTAssertEqual(createdPlannedItem.monthKey, YearMonth(year: 2026, month: 3).rawValue)
         XCTAssertEqual(createdPlannedItem.label, importedRecord.payee)
+        XCTAssertEqual(createdPlannedItem.matchingString, importedRecord.payee)
         XCTAssertEqual(createdPlannedItem.amount, Decimal(string: "42.50"))
+        XCTAssertEqual(createdPlannedItem.type, .fixedDebit)
+        XCTAssertTrue(createdPlannedItem.isPaid)
         XCTAssertEqual(createdPlannedItem.source, .importedUnplanned)
         XCTAssertFalse(createdPlannedItem.copiesToNextMonthAutomatically)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, createdPlannedItem.id)
@@ -180,6 +184,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
         let importedUnplannedItem = try XCTUnwrap(plannedItems.first(where: { $0.source == .importedUnplanned }))
 
+        XCTAssertEqual(result.createdCount, 1)
         XCTAssertEqual(result.matchedCount, 0)
         XCTAssertNil(refreshedOlderRecord.appliedPlannedItemID)
         XCTAssertNil(refreshedOlderRecord.createdTransactionID)
@@ -188,6 +193,8 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(plannedItems.count, 1)
         XCTAssertEqual(importedUnplannedItem.label, newlyImportedRecord.payee)
         XCTAssertEqual(importedUnplannedItem.amount, Decimal(string: "84"))
+        XCTAssertEqual(importedUnplannedItem.type, .fixedDebit)
+        XCTAssertTrue(importedUnplannedItem.isPaid)
         XCTAssertEqual(importedUnplannedItem.monthKey, YearMonth(year: 2026, month: 3).rawValue)
         XCTAssertEqual(importedUnplannedItem.source, .importedUnplanned)
         XCTAssertFalse(importedUnplannedItem.copiesToNextMonthAutomatically)
