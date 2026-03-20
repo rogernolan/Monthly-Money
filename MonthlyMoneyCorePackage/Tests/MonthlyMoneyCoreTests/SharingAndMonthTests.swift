@@ -590,29 +590,9 @@ final class SharingAndMonthTests: XCTestCase {
             copiesToNextMonthAutomatically: true,
             notes: "Landlord"
         )
-        let copiedItem = Self.copyPlannedItem(
-            sourceItem,
-            into: YearMonth(year: 2026, month: 4)
-        )
 
+        let copiedItem = PlannedItem.copied(from: sourceItem, into: YearMonth(year: 2026, month: 4))
         XCTAssertEqual(copiedItem.source, .copiedFromPreviousMonth)
-    }
-
-    private static func copyPlannedItem(_ source: PlannedItem, into month: YearMonth) -> PlannedItem {
-        PlannedItem(
-            budgetID: source.budgetID,
-            accountID: source.accountID,
-            monthKey: month,
-            type: source.type,
-            label: source.label,
-            amount: source.amount,
-            matchingString: source.matchingString,
-            dueDay: source.dueDay,
-            dueText: source.dueText,
-            isPaid: false,
-            copiesToNextMonthAutomatically: source.copiesToNextMonthAutomatically,
-            notes: source.notes
-        )
     }
 
     private func makeRepository() -> AccountRepository {
