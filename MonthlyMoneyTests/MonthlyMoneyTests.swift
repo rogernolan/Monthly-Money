@@ -549,6 +549,24 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(transactions.first?.sourcePostedAt, Date(timeIntervalSince1970: 1_234.5))
         XCTAssertEqual(plannedItems.first?.source, .manual)
 
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError {
+            throw loadError
+        }
+
+        let context = container.viewContext
         let copiedItem = PlannedItem(
             id: UUID(),
             budgetID: budget.id,
@@ -570,7 +588,11 @@ final class MonthlyMoneyTests: XCTestCase {
         CoreDataMapping.apply(copiedItem, to: copiedItemObject)
         try context.save()
 
-        let copiedPlannedItems = try store.fetchPlannedItems(accountIDs: [account.id], monthKey: YearMonth(year: 2026, month: 3))
+        let roundTripStore = CoreDataAccountDataStore(persistentContainer: container)
+        let copiedPlannedItems = try roundTripStore.fetchPlannedItems(
+            accountIDs: [account.id],
+            monthKey: YearMonth(year: 2026, month: 3)
+        )
         let persistedCopiedItem = try XCTUnwrap(copiedPlannedItems.first { $0.id == copiedItem.id })
         XCTAssertEqual(persistedCopiedItem.source, .copiedFromPreviousMonth)
     }
