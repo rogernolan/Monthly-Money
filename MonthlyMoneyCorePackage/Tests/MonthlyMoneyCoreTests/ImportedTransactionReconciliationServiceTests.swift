@@ -30,8 +30,12 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let service = ImportedTransactionReconciliationService(repository: repository)
         let result = try service.reconcile(account: account)
 
-        let reconciledItem = try XCTUnwrap(try repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first)
-        let reconciledRecord = try XCTUnwrap(try repository.importedTransactionRecords(accountIDs: [account.id]).first)
+        let reconciledItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.id == plannedItem.id })
+        )
+        let reconciledRecord = try XCTUnwrap(
+            repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == importedRecord.id })
+        )
 
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertTrue(reconciledItem.isPaid)
@@ -66,8 +70,12 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let service = ImportedTransactionReconciliationService(repository: repository)
         let result = try service.reconcile(account: account)
 
-        let reconciledItem = try XCTUnwrap(try repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first)
-        let reconciledRecord = try XCTUnwrap(try repository.importedTransactionRecords(accountIDs: [account.id]).first)
+        let reconciledItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.id == plannedItem.id })
+        )
+        let reconciledRecord = try XCTUnwrap(
+            repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == importedRecord.id })
+        )
 
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertTrue(reconciledItem.isPaid)
@@ -92,13 +100,18 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let service = ImportedTransactionReconciliationService(repository: repository)
         _ = try service.reconcile(account: account)
 
-        let reconciledRecord = try XCTUnwrap(try repository.importedTransactionRecords(accountIDs: [account.id]).first)
+        let reconciledRecord = try XCTUnwrap(
+            repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == importedRecord.id })
+        )
         let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
-        XCTAssertEqual(createdTransactions.count, 0)
         let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
-        let createdPlannedItem = try XCTUnwrap(plannedItems.first)
+        let createdPlannedItem = try XCTUnwrap(plannedItems.first(where: { $0.source == .importedUnplanned }))
 
+        XCTAssertEqual(createdTransactions.count, 0)
         XCTAssertEqual(plannedItems.count, 1)
+        XCTAssertEqual(createdPlannedItem.monthKey, YearMonth(year: 2026, month: 3).rawValue)
+        XCTAssertEqual(createdPlannedItem.label, importedRecord.payee)
+        XCTAssertEqual(createdPlannedItem.amount, Decimal(string: "42.50"))
         XCTAssertEqual(createdPlannedItem.source, .importedUnplanned)
         XCTAssertFalse(createdPlannedItem.copiesToNextMonthAutomatically)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, createdPlannedItem.id)
@@ -126,9 +139,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let records = try repository.importedTransactionRecords(accountIDs: [account.id])
         let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
         let importedUnplannedItems = plannedItems.filter { $0.source == .importedUnplanned }
-        let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
 
-        XCTAssertEqual(createdTransactions.count, 0)
         XCTAssertEqual(importedUnplannedItems.count, 1)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.appliedPlannedItemID, importedUnplannedItems.first?.id)
@@ -166,14 +177,22 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         let records = try repository.importedTransactionRecords(accountIDs: [account.id])
         let refreshedOlderRecord = try XCTUnwrap(records.first(where: { $0.id == olderImportedRecord.id }))
         let refreshedNewRecord = try XCTUnwrap(records.first(where: { $0.id == newlyImportedRecord.id }))
-        let createdTransactions = try repository.localBudgetSnapshot()?.transactions ?? []
+        let plannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+        let importedUnplannedItem = try XCTUnwrap(plannedItems.first(where: { $0.source == .importedUnplanned }))
 
         XCTAssertEqual(result.matchedCount, 0)
-        XCTAssertEqual(result.createdCount, 1)
+        XCTAssertNil(refreshedOlderRecord.appliedPlannedItemID)
         XCTAssertNil(refreshedOlderRecord.createdTransactionID)
-        XCTAssertNotNil(refreshedNewRecord.createdTransactionID)
-        XCTAssertEqual(createdTransactions.count, 1)
-        XCTAssertEqual(createdTransactions.first?.sourceExternalTransactionID, "FITID-new")
+        XCTAssertNotNil(refreshedNewRecord.appliedPlannedItemID)
+        XCTAssertNil(refreshedNewRecord.createdTransactionID)
+        XCTAssertEqual(plannedItems.count, 1)
+        XCTAssertEqual(importedUnplannedItem.label, newlyImportedRecord.payee)
+        XCTAssertEqual(importedUnplannedItem.amount, Decimal(string: "84"))
+        XCTAssertEqual(importedUnplannedItem.monthKey, YearMonth(year: 2026, month: 3).rawValue)
+        XCTAssertEqual(importedUnplannedItem.source, .importedUnplanned)
+        XCTAssertFalse(importedUnplannedItem.copiesToNextMonthAutomatically)
+        XCTAssertEqual(refreshedNewRecord.appliedPlannedItemID, importedUnplannedItem.id)
+        XCTAssertEqual(try repository.localBudgetSnapshot()?.transactions.count ?? 0, 0)
     }
 
     private func makeRepository() -> AccountRepository {
