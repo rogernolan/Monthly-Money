@@ -574,6 +574,21 @@ final class SharingAndMonthTests: XCTestCase {
         )
     }
 
+    func testCopiedPlannedItemIsStampedFromPreviousMonth() {
+        let budget = Budget(name: "Home", ownerParticipantID: "owner")
+        let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
+        let copiedItem = PlannedItem(
+            budgetID: budget.id,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 4),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200
+        )
+
+        XCTAssertEqual(copiedItem.source, .copiedFromPreviousMonth)
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(),
