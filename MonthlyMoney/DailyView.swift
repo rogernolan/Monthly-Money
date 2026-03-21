@@ -65,6 +65,7 @@ enum DailyPresentationContent {
 struct DailyView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedEditableChipID: String?
 
     var body: some View {
@@ -194,11 +195,12 @@ struct DailyView: View {
         @ViewBuilder content: () -> Content
     ) -> some View {
         let style = style(for: tone)
+        let palette = ChipPalette.forColorScheme(colorScheme)
         let titleLeadingInset: CGFloat = editableFocusID == nil ? 0 : 28
         let chip = VStack(alignment: .trailing, spacing: 6) {
             Text(title)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.titleColor)
                 .multilineTextAlignment(.trailing)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.leading, titleLeadingInset)
@@ -206,6 +208,7 @@ struct DailyView: View {
             content()
                 .frame(maxWidth: .infinity, alignment: .trailing)
         }
+        .foregroundStyle(palette.valueColor)
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: .infinity, alignment: .topTrailing)
         .frame(minHeight: 92, alignment: .topTrailing)
@@ -243,12 +246,13 @@ struct DailyView: View {
     }
 
     private func style(for tone: DailyChipTone) -> (top: Color, bottom: Color, border: Color) {
+        let palette = ChipPalette.forColorScheme(colorScheme)
         switch tone {
         case .plain:
             return (
-                Color.white,
-                Color(red: 0.96, green: 0.96, blue: 0.96),
-                Color.black.opacity(0.15)
+                palette.plainTop,
+                palette.plainBottom,
+                palette.plainBorder
             )
         case .negative:
             return (

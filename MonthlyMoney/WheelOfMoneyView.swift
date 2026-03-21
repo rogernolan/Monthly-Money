@@ -10,6 +10,7 @@ enum WheelOfMoneyRowContent {
 struct WheelOfMoneyView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var activeEditorItem: WheelOfMoneyItem?
     @State private var isPresentingNewItem = false
@@ -127,10 +128,11 @@ struct WheelOfMoneyView: View {
         accessibilityValueID: String,
         tint: Color = .white
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let palette = ChipPalette.forColorScheme(colorScheme)
+        return VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.titleColor)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(AppState.currency(value))
                 .font(.system(
@@ -143,18 +145,29 @@ struct WheelOfMoneyView: View {
                 .accessibilityIdentifier(accessibilityValueID)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .foregroundStyle(palette.valueColor)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(tint)
+                .fill(
+                    LinearGradient(
+                        colors: resolvedTintColors(from: tint, palette: palette),
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
                 .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
+                .stroke(palette.plainBorder.opacity(0.53), lineWidth: 1)
         )
+    }
+
+    private func resolvedTintColors(from tint: Color, palette: ChipPalette) -> [Color] {
+        tint == .white ? [palette.plainTop, palette.plainBottom] : [tint, tint]
     }
 
     private func row(for item: WheelOfMoneyItem) -> some View {

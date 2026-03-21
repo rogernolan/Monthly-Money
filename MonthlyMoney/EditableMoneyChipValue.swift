@@ -16,6 +16,7 @@ struct EditableMoneyChipLayout: Equatable {
 }
 
 struct EditableMoneyChipValue: View {
+    @Environment(\.colorScheme) private var colorScheme
     @Binding var value: Decimal
 
     let fontSize: CGFloat
@@ -42,6 +43,7 @@ struct EditableMoneyChipValue: View {
     }
 
     var body: some View {
+        let palette = ChipPalette.forColorScheme(colorScheme)
         ZStack(alignment: .trailing) {
             TextField("0", text: Binding(
                 get: {
@@ -58,6 +60,7 @@ struct EditableMoneyChipValue: View {
             .keyboardType(.decimalPad)
             .multilineTextAlignment(.trailing)
             .font(.system(size: fontSize, weight: .semibold))
+            .foregroundStyle(palette.valueColor)
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.trailing, layout.trailingAccessoryWidth)
             .applyAccessibilityIdentifier(accessibilityIdentifier)

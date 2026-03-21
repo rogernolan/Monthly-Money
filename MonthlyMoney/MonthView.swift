@@ -97,6 +97,7 @@ private extension VerticalAlignment {
 struct MonthView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focusedEditableChipID: String?
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
@@ -344,6 +345,7 @@ struct MonthView: View {
         prefixColor: Color? = nil
     ) -> some View {
         let style = styleFor(value)
+        let palette = ChipPalette.forColorScheme(colorScheme)
         let titleLeadingInset: CGFloat = editableFocusID == nil ? 0 : 28
         let card = VStack(alignment: .trailing, spacing: 4) {
             HStack(spacing: 6) {
@@ -354,7 +356,7 @@ struct MonthView: View {
                 }
                 Text(title)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.titleColor)
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
             .padding(.leading, titleLeadingInset)
@@ -376,10 +378,11 @@ struct MonthView: View {
             if let secondaryText {
                 Text(secondaryText)
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.titleColor)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
+        .foregroundStyle(palette.valueColor)
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: .infinity, alignment: .topTrailing)
         .frame(minHeight: 54, alignment: .topTrailing)
