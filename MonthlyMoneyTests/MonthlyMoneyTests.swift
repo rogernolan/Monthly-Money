@@ -378,6 +378,8 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(palette.valueColor, .black)
         XCTAssertEqual(palette.plainTop, Color(red: 0.86, green: 0.86, blue: 0.86))
         XCTAssertEqual(palette.plainBottom, Color(red: 0.80, green: 0.80, blue: 0.80))
+        XCTAssertEqual(palette.negativeTop, Color(red: 0.98, green: 0.90, blue: 0.90))
+        XCTAssertEqual(palette.negativeBottom, Color(red: 0.94, green: 0.78, blue: 0.78))
     }
 
     func testChipPaletteKeepsWhitePlainChipsInLightMode() {
@@ -387,6 +389,8 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(palette.valueColor, .primary)
         XCTAssertEqual(palette.plainTop, .white)
         XCTAssertEqual(palette.plainBottom, Color(red: 0.96, green: 0.96, blue: 0.96))
+        XCTAssertEqual(palette.negativeTop, Color(red: 0.98, green: 0.86, blue: 0.86))
+        XCTAssertEqual(palette.negativeBottom, Color(red: 0.93, green: 0.70, blue: 0.70))
     }
 
     func testMonthEditableCardRulesOnlyAllowCurrentMonthBalanceEditing() {

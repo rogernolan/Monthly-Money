@@ -515,10 +515,11 @@ struct MonthView: View {
     }
 
     private func styleFor(_ value: Decimal) -> (top: Color, bottom: Color, border: Color) {
+        let palette = ChipPalette.forColorScheme(colorScheme)
         if value < 0 {
             return (
-                Color(red: 0.98, green: 0.86, blue: 0.86),
-                Color(red: 0.93, green: 0.70, blue: 0.70),
+                palette.negativeTop,
+                palette.negativeBottom,
                 .red
             )
         }

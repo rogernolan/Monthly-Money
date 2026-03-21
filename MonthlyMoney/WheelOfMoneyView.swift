@@ -109,7 +109,7 @@ struct WheelOfMoneyView: View {
                     title: "Remaining average",
                     value: state.wheelOfMoneyMetrics.remainingAverage,
                     accessibilityValueID: "wom-chip-remaining-average-value",
-                    tint: state.wheelOfMoneyMetrics.remainingAverageExceedsMonthlyAverage ? .red.opacity(0.18) : .white
+                    tint: state.wheelOfMoneyMetrics.remainingAverageExceedsMonthlyAverage ? ChipPalette.forColorScheme(colorScheme).negativeTop : .white
                 )
             }
 
@@ -167,7 +167,13 @@ struct WheelOfMoneyView: View {
     }
 
     private func resolvedTintColors(from tint: Color, palette: ChipPalette) -> [Color] {
-        tint == .white ? [palette.plainTop, palette.plainBottom] : [tint, tint]
+        if tint == .white {
+            return [palette.plainTop, palette.plainBottom]
+        }
+        if tint == palette.negativeTop {
+            return [palette.negativeTop, palette.negativeBottom]
+        }
+        return [tint, tint]
     }
 
     private func row(for item: WheelOfMoneyItem) -> some View {

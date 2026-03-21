@@ -256,8 +256,8 @@ struct DailyView: View {
             )
         case .negative:
             return (
-                Color(red: 0.98, green: 0.86, blue: 0.86),
-                Color(red: 0.93, green: 0.70, blue: 0.70),
+                palette.negativeTop,
+                palette.negativeBottom,
                 .red
             )
         case .neutral:
