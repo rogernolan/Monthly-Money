@@ -556,13 +556,19 @@ private struct MonthItemEditorView: View {
     var body: some View {
         Form {
             Section("Details") {
-                TextField("Name", text: $draft.label)
-                    .disabled(!isEditable)
+                labeledEditor(
+                    title: "Display title",
+                    text: $draft.label
+                )
+                .disabled(!isEditable)
 
-                TextField("Statement keywords", text: $draft.matchingString)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .disabled(!isEditable)
+                labeledEditor(
+                    title: "Search string for import",
+                    text: $draft.matchingString
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .disabled(!isEditable)
 
                 Picker("Type", selection: $draft.entryKind) {
                     ForEach(MonthEntryKind.allCases) { kind in
@@ -607,6 +613,19 @@ private struct MonthItemEditorView: View {
                     .disabled(!draft.canSave)
                 }
             }
+        }
+    }
+
+    private func labeledEditor(title: String, text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            TextField("", text: text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(title)
         }
     }
 
