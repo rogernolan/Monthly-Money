@@ -220,7 +220,7 @@ struct SettingsView: View {
                     into: account.id
                 )
                 await MainActor.run {
-                    importSuccessMessage = "Imported \(result.importResult.insertedCount) transactions, skipped \(result.importResult.skippedCount) duplicates, matched \(result.reconciliationResult.matchedCount) planned items, created \(result.reconciliationResult.createdCount) transactions."
+                    importSuccessMessage = "Imported \(result.importResult.insertedCount) transactions, skipped \(result.importResult.skippedCount) duplicates, matched \(result.reconciliationResult.matchedCount) planned items, created \(result.reconciliationResult.createdCount) unplanned items."
                 }
             } catch {
                 await MainActor.run {

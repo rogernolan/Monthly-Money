@@ -66,7 +66,8 @@ final class ImportedTransactionService {
             skippedCount: skippedCount,
             statementAccountIdentifier: statement.accountIdentifier,
             statementStartDate: statement.statementStartDate,
-            statementEndDate: statement.statementEndDate
+            statementEndDate: statement.statementEndDate,
+            insertedRecordIDs: unseenRecords.map(\.id)
         )
     }
 

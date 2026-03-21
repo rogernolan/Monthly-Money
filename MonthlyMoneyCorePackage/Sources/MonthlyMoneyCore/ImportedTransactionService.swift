@@ -7,6 +7,7 @@ public struct ImportedTransactionImportResult: Equatable {
     public let statementAccountIdentifier: String
     public let statementStartDate: Date
     public let statementEndDate: Date
+    public let insertedRecordIDs: [UUID]
 
     public init(
         parsedCount: Int,
@@ -14,7 +15,8 @@ public struct ImportedTransactionImportResult: Equatable {
         skippedCount: Int,
         statementAccountIdentifier: String,
         statementStartDate: Date,
-        statementEndDate: Date
+        statementEndDate: Date,
+        insertedRecordIDs: [UUID] = []
     ) {
         self.parsedCount = parsedCount
         self.insertedCount = insertedCount
@@ -22,6 +24,7 @@ public struct ImportedTransactionImportResult: Equatable {
         self.statementAccountIdentifier = statementAccountIdentifier
         self.statementStartDate = statementStartDate
         self.statementEndDate = statementEndDate
+        self.insertedRecordIDs = insertedRecordIDs
     }
 }
 
@@ -91,7 +94,8 @@ public final class ImportedTransactionService {
             skippedCount: skippedCount,
             statementAccountIdentifier: statement.accountIdentifier,
             statementStartDate: statement.statementStartDate,
-            statementEndDate: statement.statementEndDate
+            statementEndDate: statement.statementEndDate,
+            insertedRecordIDs: unseenRecords.map(\.id)
         )
     }
 

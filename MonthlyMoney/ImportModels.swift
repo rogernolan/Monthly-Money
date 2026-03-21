@@ -24,4 +24,5 @@ struct ImportedTransactionImportResult: Equatable {
     let statementAccountIdentifier: String
     let statementStartDate: Date
     let statementEndDate: Date
+    let insertedRecordIDs: [UUID]
 }
