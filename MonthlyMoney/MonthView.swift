@@ -19,7 +19,7 @@ enum MonthItemFilterRules {
         case .credits:
             return items.filter { $0.type == .credit }
         case .pending:
-            return items.filter { !$0.isPaid }
+            return items.filter { !$0.isPaid && $0.amount != 0 }
         }
     }
 }

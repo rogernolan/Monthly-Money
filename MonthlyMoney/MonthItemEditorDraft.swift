@@ -68,7 +68,7 @@ struct MonthItemEditorDraft {
     }
 
     var canSave: Bool {
-        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && amount > 0
+        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var amount: Decimal {
