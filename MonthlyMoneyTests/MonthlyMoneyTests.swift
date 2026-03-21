@@ -18,6 +18,16 @@ final class MonthlyMoneyTests: XCTestCase {
         print("TEST END: \(name) @ \(Date())")
     }
 
+    private func nextMonth(after month: YearMonth) -> YearMonth {
+        var year = month.year
+        var value = month.month + 1
+        if value > 12 {
+            value = 1
+            year += 1
+        }
+        return YearMonth(year: year, month: value)
+    }
+
     func testBootstrapCreatesLocalBudgetAndLoadsCurrentMonth() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -29,6 +39,30 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(state.monthItems.isEmpty)
         XCTAssertTrue(state.canNavigateToNextMonth)
         XCTAssertEqual(state.primaryBankName, "Nationwide")
+    }
+
+    func testCanNavigateToNextMonthWhenCurrentMonthIsEmpty() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertFalse(state.isSelectedMonthInFuture)
+        XCTAssertTrue(state.monthItems.isEmpty)
+        XCTAssertTrue(state.canNavigateToNextMonth)
+    }
+
+    func testCannotNavigateToNextMonthWhenFutureMonthIsEmpty() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.selectedMonth = nextMonth(after: state.selectedMonth)
+        try state.refresh()
+
+        XCTAssertTrue(state.isSelectedMonthInFuture)
+        XCTAssertTrue(state.monthItems.isEmpty)
+        XCTAssertFalse(state.canNavigateToNextMonth)
     }
 
     func testDailyBudgetAccountSettingPersistsOnActiveBudget() async throws {

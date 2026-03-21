@@ -672,7 +672,7 @@ final class AppState: ObservableObject {
     }
 
     var canNavigateToNextMonth: Bool {
-        !monthItems.isEmpty
+        !isSelectedMonthInFuture || !monthItems.isEmpty
     }
 
     var canPopulateSelectedMonthFromPrevious: Bool {
