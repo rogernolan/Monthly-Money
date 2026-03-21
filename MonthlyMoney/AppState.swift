@@ -896,18 +896,48 @@ final class AppState: ObservableObject {
         copiesToNextMonthAutomatically: Bool,
         notes: String
     ) {
+        update(
+            item: item,
+            label: label,
+            matchingString: item.matchingString,
+            amount: amount,
+            dueDay: dueDay,
+            dueText: dueText,
+            type: type,
+            copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
+            notes: notes
+        )
+    }
+
+    func update(
+        item: PlannedItem,
+        label: String,
+        matchingString: String? = nil,
+        amount: Decimal,
+        dueDay: Int?,
+        dueText: String?,
+        type: PlannedItemType,
+        copiesToNextMonthAutomatically: Bool,
+        notes: String
+    ) {
         guard canEdit(item: item) else { return }
         item.label = label
+        item.matchingString = normalizeMatchingString(matchingString)
         item.amount = amount
         item.dueDay = dueDay
         item.dueText = dueText
         item.type = type
         item.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         item.notes = notes
+        let originalSource = item.source
+        if originalSource == .importedUnplanned {
+            item.source = .manual
+        }
         do {
             try repository.savePlannedItem(item)
             try refresh()
         } catch {
+            item.source = originalSource
             print("Edit failed: \(error)")
         }
     }
@@ -916,6 +946,7 @@ final class AppState: ObservableObject {
     func createEntry(
         type: PlannedItemType,
         label: String = "",
+        matchingString: String? = nil,
         amount: Decimal = 0,
         dueDay: Int?,
         copiesToNextMonthAutomatically: Bool = true,
@@ -932,6 +963,7 @@ final class AppState: ObservableObject {
                 type: type,
                 label: label,
                 amount: amount,
+                matchingString: normalizeMatchingString(matchingString),
                 dueDay: dueDay,
                 dueText: nil,
                 isPaid: false,
@@ -1001,6 +1033,11 @@ final class AppState: ObservableObject {
 
     private func canEdit(month: YearMonth) -> Bool {
         month >= currentYearMonth
+    }
+
+    private func normalizeMatchingString(_ value: String?) -> String? {
+        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     private func effectiveOpeningBalance(for month: YearMonth) -> Decimal {

@@ -40,6 +40,7 @@ enum MonthDueSelection: Hashable {
 
 struct MonthItemEditorDraft {
     var label: String
+    var matchingString: String
     var entryKind: MonthEntryKind
     var amountText: String
     var dueSelection: MonthDueSelection
@@ -48,6 +49,7 @@ struct MonthItemEditorDraft {
 
     init(item: PlannedItem) {
         label = item.label
+        matchingString = item.matchingString ?? ""
         entryKind = item.type == .credit ? .credit : .debit
         amountText = NSDecimalNumber(decimal: item.amount).stringValue
         dueSelection = MonthDueSelection(item.dueDay)
@@ -57,6 +59,7 @@ struct MonthItemEditorDraft {
 
     init(newType: PlannedItemType, dueDay: Int?) {
         label = ""
+        matchingString = ""
         entryKind = newType == .credit ? .credit : .debit
         amountText = "0"
         dueSelection = MonthDueSelection(dueDay)

@@ -556,6 +556,11 @@ private struct MonthItemEditorView: View {
                 TextField("Name", text: $draft.label)
                     .disabled(!isEditable)
 
+                TextField("Statement keywords", text: $draft.matchingString)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .disabled(!isEditable)
+
                 Picker("Type", selection: $draft.entryKind) {
                     ForEach(MonthEntryKind.allCases) { kind in
                         Text(kind.title).tag(kind)
@@ -611,6 +616,7 @@ private struct MonthItemEditorView: View {
             state.update(
                 item: item,
                 label: draft.label,
+                matchingString: draft.matchingString,
                 amount: draft.amount,
                 dueDay: draft.dueSelection.value,
                 dueText: nil,
@@ -624,6 +630,7 @@ private struct MonthItemEditorView: View {
         if state.createEntry(
             type: draft.resolvedType(),
             label: draft.label,
+            matchingString: draft.matchingString,
             amount: draft.amount,
             dueDay: draft.dueSelection.value,
             copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,

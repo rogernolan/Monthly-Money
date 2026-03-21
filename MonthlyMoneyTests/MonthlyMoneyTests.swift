@@ -1472,6 +1472,121 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testUpdatingMonthItemPersistsMatchingStringAndAllowsClearing() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Council tax",
+            amount: 1200,
+            dueDay: 10,
+            isPaid: false
+        )
+        try repository.createPlannedItem(item)
+
+        state.update(
+            item: item,
+            label: "Council tax",
+            matchingString: "Statement keywords",
+            amount: 1200,
+            dueDay: 10,
+            dueText: nil,
+            type: .fixedDebit,
+            copiesToNextMonthAutomatically: true,
+            notes: ""
+        )
+
+        let savedWithMatchingString = try XCTUnwrap(
+            try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == item.id })
+        )
+        XCTAssertEqual(savedWithMatchingString.matchingString, "Statement keywords")
+
+        state.update(
+            item: item,
+            label: "Council tax",
+            matchingString: nil,
+            amount: 1200,
+            dueDay: 10,
+            dueText: nil,
+            type: .fixedDebit,
+            copiesToNextMonthAutomatically: true,
+            notes: ""
+        )
+
+        let clearedMatchingString = try XCTUnwrap(
+            try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == item.id })
+        )
+        XCTAssertNil(clearedMatchingString.matchingString)
+    }
+
+    func testCreatingMonthItemPersistsMatchingString() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let created = state.createEntry(
+            type: .fixedDebit,
+            label: "Parking",
+            matchingString: "Statement keywords",
+            amount: 12,
+            dueDay: 4
+        )
+
+        let saved = try XCTUnwrap(created)
+        XCTAssertEqual(saved.matchingString, "Statement keywords")
+        XCTAssertEqual(
+            try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == saved.id })?.matchingString,
+            "Statement keywords"
+        )
+    }
+
+    func testEditingImportedUnplannedItemPromotesSourceToManual() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Shop Purchase",
+            amount: 42,
+            matchingString: "shop",
+            dueDay: 14,
+            isPaid: true,
+            copiesToNextMonthAutomatically: false,
+            notes: "Imported"
+        )
+        try repository.createPlannedItem(item)
+
+        state.update(
+            item: item,
+            label: "Shop Purchase",
+            matchingString: "shop",
+            amount: 42,
+            dueDay: 14,
+            dueText: nil,
+            type: .fixedDebit,
+            copiesToNextMonthAutomatically: false,
+            notes: "Edited by user"
+        )
+
+        let saved = try XCTUnwrap(
+            try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == item.id })
+        )
+        XCTAssertEqual(saved.source, .manual)
+        XCTAssertEqual(saved.matchingString, "shop")
+        XCTAssertEqual(saved.notes, "Edited by user")
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,
@@ -1546,6 +1661,21 @@ final class MonthlyMoneyTests: XCTestCase {
 
         XCTAssertEqual(draft.entryKind, .debit)
         XCTAssertEqual(draft.amountText, "1200")
+    }
+
+    func testMonthItemEditorDraftInitialisesStatementKeywordsFromItem() {
+        let draft = MonthItemEditorDraft(
+            item: PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Rent",
+                amount: 1200,
+                matchingString: "monthly rent"
+            )
+        )
+
+        XCTAssertEqual(draft.matchingString, "monthly rent")
     }
 
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
