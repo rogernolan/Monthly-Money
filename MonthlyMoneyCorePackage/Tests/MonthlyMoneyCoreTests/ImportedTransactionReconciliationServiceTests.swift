@@ -13,14 +13,15 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
             type: .fixedDebit,
             label: "Council tax",
             amount: 1200,
-            matchingString: "council"
+            matchingString: "council",
+            dueDay: 12
         )
         try repository.createPlannedItem(plannedItem)
         let importedRecord = makeImportedRecord(
             budgetID: account.budgetID,
             accountID: account.id,
             externalTransactionID: "FITID-1",
-            postedAt: Self.date("2026-03-10T12:00:00.123Z"),
+            postedAt: Self.date("2026-03-11T12:00:00.123Z"),
             amount: -1200,
             payee: "COUNCIL TAX DIRECT DEBIT",
             transactionType: "DIRECTDEBIT"
@@ -53,14 +54,15 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
             monthKey: YearMonth(year: 2026, month: 3),
             type: .fixedDebit,
             label: "Council tax",
-            amount: 1200
+            amount: 1200,
+            dueDay: 10
         )
         try repository.createPlannedItem(plannedItem)
         let importedRecord = makeImportedRecord(
             budgetID: account.budgetID,
             accountID: account.id,
             externalTransactionID: "FITID-2",
-            postedAt: Self.date("2026-03-11T08:00:00.000Z"),
+            postedAt: Self.date("2026-03-12T08:00:00.000Z"),
             amount: -1200,
             payee: "Council tax payment",
             transactionType: "DIRECTDEBIT"
@@ -147,6 +149,126 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(importedUnplannedItems.count, 1)
         XCTAssertEqual(records.count, 1)
         XCTAssertEqual(records.first?.appliedPlannedItemID, importedUnplannedItems.first?.id)
+    }
+
+    func testReconciliationReappliesLinkedImportedUnplannedItemWhenUntickedAndReimported() throws {
+        let repository = makeRepository()
+        let account = try makeAccount(in: repository, name: "Nationwide")
+        let importedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-5",
+            postedAt: Self.date("2026-03-16T09:30:00.000Z"),
+            amount: -31.25,
+            payee: "Coffee Shop",
+            transactionType: "POS"
+        )
+        try repository.createImportedTransactionRecord(importedRecord)
+
+        let service = ImportedTransactionReconciliationService(repository: repository)
+        _ = try service.reconcile(account: account)
+
+        let createdPlannedItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.source == .importedUnplanned })
+        )
+        createdPlannedItem.isPaid = false
+        try repository.savePlannedItem(createdPlannedItem)
+
+        let result = try service.reconcile(account: account)
+
+        let refreshedItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.id == createdPlannedItem.id })
+        )
+        let refreshedRecord = try XCTUnwrap(
+            repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == importedRecord.id })
+        )
+
+        XCTAssertEqual(result.matchedCount, 1)
+        XCTAssertEqual(result.createdCount, 0)
+        XCTAssertTrue(refreshedItem.isPaid)
+        XCTAssertEqual(refreshedRecord.appliedPlannedItemID, refreshedItem.id)
+        XCTAssertEqual(
+            try repository.plannedItems(for: YearMonth(year: 2026, month: 3)).filter { $0.source == .importedUnplanned }.count,
+            1
+        )
+    }
+
+    func testReconciliationDoesNotMatchPlannedItemWhenAmountIsOutsideTolerance() throws {
+        let repository = makeRepository()
+        let account = try makeAccount(in: repository, name: "Nationwide")
+        let plannedItem = PlannedItem(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Mall",
+            amount: 100,
+            matchingString: "mall",
+            dueDay: 12
+        )
+        try repository.createPlannedItem(plannedItem)
+        let importedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-6",
+            postedAt: Self.date("2026-03-12T10:00:00.000Z"),
+            amount: -130,
+            payee: "MALL purchase",
+            transactionType: "POS"
+        )
+        try repository.createImportedTransactionRecord(importedRecord)
+
+        let result = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
+
+        let refreshedPlannedItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.id == plannedItem.id })
+        )
+        let importedUnplannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+            .filter { $0.source == .importedUnplanned }
+
+        XCTAssertEqual(result.matchedCount, 0)
+        XCTAssertEqual(result.createdCount, 1)
+        XCTAssertFalse(refreshedPlannedItem.isPaid)
+        XCTAssertEqual(importedUnplannedItems.count, 1)
+    }
+
+    func testReconciliationDoesNotMatchPlannedItemWhenDateIsOutsideTolerance() throws {
+        let repository = makeRepository()
+        let account = try makeAccount(in: repository, name: "Nationwide")
+        let plannedItem = PlannedItem(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Train ticket",
+            amount: 25,
+            matchingString: "train",
+            dueDay: 10
+        )
+        try repository.createPlannedItem(plannedItem)
+        let importedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-7",
+            postedAt: Self.date("2026-03-16T10:00:00.000Z"),
+            amount: -25,
+            payee: "TRAIN fare",
+            transactionType: "POS"
+        )
+        try repository.createImportedTransactionRecord(importedRecord)
+
+        let result = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
+
+        let refreshedPlannedItem = try XCTUnwrap(
+            repository.plannedItems(for: YearMonth(year: 2026, month: 3)).first(where: { $0.id == plannedItem.id })
+        )
+        let importedUnplannedItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+            .filter { $0.source == .importedUnplanned }
+
+        XCTAssertEqual(result.matchedCount, 0)
+        XCTAssertEqual(result.createdCount, 1)
+        XCTAssertFalse(refreshedPlannedItem.isPaid)
+        XCTAssertEqual(importedUnplannedItems.count, 1)
     }
 
     func testReconciliationCanBeLimitedToSpecificImportedRecords() throws {

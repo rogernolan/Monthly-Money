@@ -15,6 +15,8 @@ public struct ImportedTransactionReconciliationResult: Equatable {
 public final class ImportedTransactionReconciliationService {
     private let repository: AccountRepository
     private let calendar: Calendar
+    private static let amountTolerance = Decimal(string: "0.05")!
+    private static let dayTolerance = 3
 
     public init(
         repository: AccountRepository,
@@ -62,6 +64,11 @@ public final class ImportedTransactionReconciliationService {
                 continue
             }
 
+            if try reconcileLinkedPlannedItem(for: record) {
+                matchedCount += 1
+                continue
+            }
+
             if try reconcilePlannedItem(for: record, using: monthItems) {
                 matchedCount += 1
                 continue
@@ -79,10 +86,6 @@ public final class ImportedTransactionReconciliationService {
     }
 
     private func reconcileExistingTransactionLink(for record: ImportedTransactionRecord) throws -> Bool {
-        if let appliedPlannedItemID = record.appliedPlannedItemID {
-            return try repository.hasPlannedItem(id: appliedPlannedItemID)
-        }
-
         if let createdTransactionID = record.createdTransactionID,
            try transactionExists(id: createdTransactionID, accountID: record.accountID) {
             return true
@@ -97,19 +100,30 @@ public final class ImportedTransactionReconciliationService {
         return false
     }
 
-    private func reconcilePlannedItem(for record: ImportedTransactionRecord, using plannedItems: [PlannedItem]) throws -> Bool {
-        if let appliedPlannedItemID = record.appliedPlannedItemID {
-            return try repository.hasPlannedItem(id: appliedPlannedItemID)
+    private func reconcileLinkedPlannedItem(for record: ImportedTransactionRecord) throws -> Bool {
+        guard let appliedPlannedItemID = record.appliedPlannedItemID,
+              let linkedItem = try repository.plannedItem(id: appliedPlannedItemID) else {
+            return false
         }
 
+        linkedItem.isPaid = true
+        linkedItem.amount = abs(record.amount)
+        try repository.savePlannedItem(linkedItem)
+
+        record.appliedPlannedItemID = linkedItem.id
+        try repository.saveImportedTransactionRecord(record)
+        return true
+    }
+
+    private func reconcilePlannedItem(for record: ImportedTransactionRecord, using plannedItems: [PlannedItem]) throws -> Bool {
         let monthKey = monthKey(for: record.postedAt)
         let candidates = plannedItems
             .filter { $0.accountID == record.accountID }
             .filter { $0.monthKey == monthKey.rawValue }
             .filter { !$0.isPaid }
-            .filter { Self.matches(importedPayee: record.payee, plannedItem: $0) }
+            .filter { Self.matches(importedRecord: record, plannedItem: $0, calendar: calendar) }
 
-        guard let match = Self.bestMatch(from: candidates, importedPayee: record.payee) else {
+        guard let match = Self.bestMatch(from: candidates, importedRecord: record, calendar: calendar) else {
             return false
         }
 
@@ -123,11 +137,6 @@ public final class ImportedTransactionReconciliationService {
     }
 
     private func reconcileImportedUnplannedItem(for record: ImportedTransactionRecord, account: Account) throws -> Bool {
-        if let appliedPlannedItemID = record.appliedPlannedItemID,
-           try repository.hasPlannedItem(id: appliedPlannedItemID) {
-            return false
-        }
-
         let plannedItem = PlannedItem(
             budgetID: account.budgetID,
             accountID: account.id,
@@ -166,42 +175,69 @@ public final class ImportedTransactionReconciliationService {
         return YearMonth(year: components.year ?? 2000, month: components.month ?? 1)
     }
 
-    private static func matches(importedPayee: String, plannedItem: PlannedItem) -> Bool {
-        let imported = normalize(importedPayee)
-        let matcher = normalize(plannedMatcher(for: plannedItem))
-        guard !imported.isEmpty, !matcher.isEmpty else { return false }
-        return imported.contains(matcher) || matcher.contains(imported)
+    private static func matches(importedRecord: ImportedTransactionRecord, plannedItem: PlannedItem, calendar: Calendar) -> Bool {
+        guard textMatches(importedPayee: importedRecord.payee, plannedItem: plannedItem) else { return false }
+        guard amountMatches(importedAmount: abs(importedRecord.amount), plannedItem: plannedItem) else { return false }
+        guard dueDayMatches(importedDate: importedRecord.postedAt, plannedItem: plannedItem, calendar: calendar) else { return false }
+        return true
     }
 
-    private static func bestMatch(from plannedItems: [PlannedItem], importedPayee: String) -> PlannedItem? {
+    private static func bestMatch(
+        from plannedItems: [PlannedItem],
+        importedRecord: ImportedTransactionRecord,
+        calendar: Calendar
+    ) -> PlannedItem? {
         let sorted = plannedItems.sorted { lhs, rhs in
-            let lhsScore = matchScore(importedPayee: importedPayee, plannedItem: lhs)
-            let rhsScore = matchScore(importedPayee: importedPayee, plannedItem: rhs)
-            if lhsScore != rhsScore {
-                return lhsScore < rhsScore
+            let lhsScore = matchScore(importedRecord: importedRecord, plannedItem: lhs, calendar: calendar)
+            let rhsScore = matchScore(importedRecord: importedRecord, plannedItem: rhs, calendar: calendar)
+            if lhsScore.amountDelta != rhsScore.amountDelta {
+                return lhsScore.amountDelta < rhsScore.amountDelta
             }
-            let lhsDueDay = lhs.dueDay ?? Int.max
-            let rhsDueDay = rhs.dueDay ?? Int.max
-            if lhsDueDay != rhsDueDay {
-                return lhsDueDay < rhsDueDay
+            if lhsScore.dayDelta != rhsScore.dayDelta {
+                return lhsScore.dayDelta < rhsScore.dayDelta
             }
             return lhs.id.uuidString < rhs.id.uuidString
         }
         return sorted.first
     }
 
-    private static func matchScore(importedPayee: String, plannedItem: PlannedItem) -> Int {
-        let imported = normalize(importedPayee)
-        let matcher = normalize(plannedMatcher(for: plannedItem))
-        if imported == matcher { return 0 }
-        if imported.contains(matcher) { return 1 }
-        if matcher.contains(imported) { return 2 }
-        return 3
+    private static func matchScore(
+        importedRecord: ImportedTransactionRecord,
+        plannedItem: PlannedItem,
+        calendar: Calendar
+    ) -> (amountDelta: Decimal, dayDelta: Int) {
+        (
+            amountDelta: abs(abs(importedRecord.amount) - plannedItem.amount),
+            dayDelta: abs(dayComponent(for: importedRecord.postedAt, calendar: calendar) - (plannedItem.dueDay ?? Int.max))
+        )
     }
 
     private static func plannedMatcher(for plannedItem: PlannedItem) -> String {
         let trimmed = plannedItem.matchingString?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? plannedItem.label : trimmed
+    }
+
+    private static func textMatches(importedPayee: String, plannedItem: PlannedItem) -> Bool {
+        let imported = normalize(importedPayee)
+        let matcher = normalize(plannedMatcher(for: plannedItem))
+        guard !imported.isEmpty, !matcher.isEmpty else { return false }
+        return imported.contains(matcher)
+    }
+
+    private static func amountMatches(importedAmount: Decimal, plannedItem: PlannedItem) -> Bool {
+        let delta = abs(importedAmount - plannedItem.amount)
+        let allowedDelta = plannedItem.amount * amountTolerance
+        return delta <= allowedDelta
+    }
+
+    private static func dueDayMatches(importedDate: Date, plannedItem: PlannedItem, calendar: Calendar) -> Bool {
+        guard let plannedDueDay = plannedItem.dueDay else { return false }
+        let importedDay = dayComponent(for: importedDate, calendar: calendar)
+        return abs(importedDay - plannedDueDay) <= dayTolerance
+    }
+
+    private static func dayComponent(for date: Date, calendar: Calendar) -> Int {
+        calendar.component(.day, from: date)
     }
 
     private static func plannedItemType(for amount: Decimal) -> PlannedItemType {

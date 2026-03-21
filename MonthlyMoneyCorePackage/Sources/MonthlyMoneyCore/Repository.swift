@@ -305,6 +305,13 @@ public final class AccountRepository {
         try privateStore.fetchPlannedItem(id: id) != nil || sharedStore.fetchPlannedItem(id: id) != nil
     }
 
+    public func plannedItem(id: UUID) throws -> PlannedItem? {
+        if let privateItem = try privateStore.fetchPlannedItem(id: id) {
+            return privateItem
+        }
+        return try sharedStore.fetchPlannedItem(id: id)
+    }
+
     public func wheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
         guard let budget = try activeBudget(),
               let store = try storeHoldingBudget(id: budget.id) else {
