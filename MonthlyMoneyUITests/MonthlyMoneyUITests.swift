@@ -54,9 +54,7 @@ final class MonthlyMoneyUITests: XCTestCase {
         XCTAssertTrue(chipValue(in: app, id: "wom-chip-pending-total-value").exists)
         XCTAssertTrue(chipValue(in: app, id: "wom-chip-remaining-average-value").exists)
 
-        XCTAssertTrue(app.staticTexts["Car insurance"].exists)
-        XCTAssertTrue(app.staticTexts["Christmas"].exists)
-        XCTAssertTrue(app.staticTexts["J Birthday"].exists)
+        XCTAssertTrue(app.staticTexts["No items"].exists)
 
         let pendingFilter = app.buttons["Pending"].firstMatch
         XCTAssertTrue(pendingFilter.exists)

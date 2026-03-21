@@ -304,20 +304,12 @@ final class AppState: ObservableObject {
             try migrateLegacyOwnerIdentifiersIfNeeded()
 
             if try repository.accounts().isEmpty {
-                let account = try repository.createAccount(
+                _ = try repository.createAccount(
                     name: "Nationwide",
                     role: .regular,
                     type: .current,
                     ownerParticipantID: currentParticipantID
                 )
-                primaryBankBalances[selectedMonth.rawValue] = 397
-                try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
-                try ensureWheelOfMoneyHasSeedData()
-                try ensureNextMonthCopiedFromCurrent(accountID: account.id)
-            } else if let account = try repository.accounts().first {
-                try ensureCurrentMonthHasSeedData(accountID: account.id)
-                try ensureWheelOfMoneyHasSeedData()
-                try ensureNextMonthCopiedFromCurrent(accountID: account.id)
             }
             try refresh()
         } catch {
@@ -355,16 +347,12 @@ final class AppState: ObservableObject {
     private func restoreLocalBudgetIfNeeded() throws {
         guard try repository.activeBudget() == nil else { return }
 
-        let account = try repository.createAccount(
+        _ = try repository.createAccount(
             name: "Nationwide",
             role: .regular,
             type: .current,
             ownerParticipantID: currentParticipantID
         )
-        primaryBankBalances[selectedMonth.rawValue] = 397
-        try seedDefaultsFromSheet(accountID: account.id, month: selectedMonth)
-        try ensureWheelOfMoneyHasSeedData()
-        try ensureNextMonthCopiedFromCurrent(accountID: account.id)
     }
 
     var usesSeparateAccountForDailyBudget: Bool {
@@ -1084,73 +1072,6 @@ final class AppState: ObservableObject {
         return YearMonth(year: year, month: value)
     }
 
-    private func ensureCurrentMonthHasSeedData(accountID: UUID) throws {
-        let current = currentYearMonth
-        let currentItems = try repository.plannedItems(for: current)
-            .filter { $0.accountID == accountID }
-        guard currentItems.isEmpty else { return }
-
-        let previous = previousMonth(of: current)
-        let previousItems = try repository.plannedItems(for: previous)
-            .filter { $0.accountID == accountID }
-
-        if previousItems.isEmpty {
-            selectedMonth = current
-            try seedDefaultsFromSheet(accountID: accountID, month: current)
-            return
-        }
-
-        try copyItems(previousItems, to: current)
-    }
-
-    private func ensureNextMonthCopiedFromCurrent(accountID: UUID) throws {
-        let current = currentYearMonth
-        let next = nextMonth(of: current)
-
-        let nextItems = try repository.plannedItems(for: next)
-            .filter { $0.accountID == accountID }
-        guard nextItems.isEmpty else { return }
-
-        let currentItems = try repository.plannedItems(for: current)
-            .filter { $0.accountID == accountID }
-        guard !currentItems.isEmpty else { return }
-
-        try copyItems(currentItems, to: next)
-    }
-
-    private func ensureWheelOfMoneyHasSeedData() throws {
-        guard try repository.wheelOfMoneyItems().isEmpty else { return }
-
-        try repository.createWheelOfMoneyItem(
-            WheelOfMoneyItem(
-                budgetID: UUID(),
-                title: "Car insurance",
-                amount: 900,
-                month: WheelOfMoneyMonth.march.rawValue
-            )
-        )
-        try repository.createWheelOfMoneyItem(
-            WheelOfMoneyItem(
-                budgetID: UUID(),
-                title: "Christmas",
-                amount: 1000,
-                month: WheelOfMoneyMonth.december.rawValue
-            )
-        )
-        try repository.createWheelOfMoneyItem(
-            WheelOfMoneyItem(
-                budgetID: UUID(),
-                title: "J Birthday",
-                amount: 150,
-                month: WheelOfMoneyMonth.may.rawValue
-            )
-        )
-
-        if autoGenerateWoMSavingsEveryMonth {
-            try ensureGeneratedWheelOfMoneySavingsItems()
-        }
-    }
-
     private func ensureGeneratedWheelOfMoneySavingsItems() throws {
         guard let budget = try repository.activeBudget() else { return }
 
@@ -1242,140 +1163,6 @@ final class AppState: ObservableObject {
 
         localBudget.ownerParticipantID = currentParticipantID
         try repository.saveBudget(localBudget)
-    }
-    private func seedDefaultsFromSheet(accountID: UUID, month: YearMonth) throws {
-        func money(_ value: String) -> Decimal {
-            Decimal(string: value) ?? 0
-        }
-
-        let febDebitDefaults: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)] = [
-            ("Sky", nil, money("29"), true, ""),
-            ("Savings standing order", nil, money("200"), true, ""),
-            ("Bank fees", 1, money("13"), true, ""),
-            ("Council tax", 1, money("347"), true, "Not Feb and march"),
-            ("Novagas", 3, money("200"), true, ""),
-            ("EE mobile", 3, money("39"), true, ""),
-            ("Apple media etc", 4, money("32.95"), true, ""),
-            ("PDSA", 4, money("10"), true, ""),
-            ("Octopus Electricity", 6, money("90"), true, ""),
-            ("Gardener 1", 7, money("40"), true, ""),
-            ("Water", 7, money("26"), true, ""),
-            ("Guide Dogs", 8, money("17"), true, ""),
-            ("Petrol", 11, money("120"), true, "Diesel"),
-            ("BT Broadband", 13, money("32.99"), true, ""),
-            ("ManyPets Flynnsurance", 13, money("68"), true, ""),
-            ("Peloton membership", 18, money("40"), false, ""),
-            ("Dogfood", 8, money("110"), false, ""),
-            ("Gardener 2", 21, money("40"), false, "")
-        ]
-
-        let febCreditDefaults: [(label: String, amount: Decimal, isPaid: Bool)] = [
-            ("Salary J", money("1047.59"), true),
-            ("Salary R", money("1047.588"), true),
-            ("From savings", money("2500"), true),
-            ("Pension", money("0"), false)
-        ]
-
-        let febTransferDefaults: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)] = [
-            ("Living expenses", nil, money("2500"), true, "Transfer to joint Monzo"),
-            ("Jane pocket money", 1, money("200"), true, ""),
-            ("Rog pocket money", 1, money("200"), true, ""),
-            ("To savings", nil, money("0"), false, ""),
-            ("Credit card", 1, money("0"), false, "Paid from savings")
-        ]
-
-        let january = previousMonth(of: month)
-        primaryBankBalances[january.rawValue] = 575
-
-        let janDebitDefaults: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)] = [
-            ("Sky", nil, money("29"), true, ""),
-            ("Dogfood", 8, money("110"), true, ""),
-            ("Bank fees", 1, money("13"), true, ""),
-            ("Council tax", 1, money("347"), true, "Not Feb and march"),
-            ("Savings standing order", nil, money("200"), true, ""),
-            ("Novagas", 3, money("200"), true, ""),
-            ("EE mobile", 3, money("39"), true, ""),
-            ("Apple media etc", 4, money("32.95"), true, ""),
-            ("PDSA", 4, money("10"), true, ""),
-            ("Peloton membership", 5, money("40"), true, ""),
-            ("Octopus Electricity", 6, money("90"), true, ""),
-            ("Gardener 1", 7, money("40"), true, ""),
-            ("Water", 7, money("26"), true, ""),
-            ("Guide Dogs", 8, money("17"), true, ""),
-            ("Petrol", 11, money("120"), true, "Diesel"),
-            ("Gardener 2", 21, money("40"), false, ""),
-            ("BT Broadband", 13, money("32.99"), false, ""),
-            ("ManyPets Flynnsurance", 13, money("70"), false, "")
-        ]
-
-        let janCreditDefaults: [(label: String, amount: Decimal, isPaid: Bool)] = [
-            ("Salary J", money("1047.59"), true),
-            ("Salary R", money("1047.588"), true),
-            ("From savings", money("2500"), true),
-            ("Pension", money("0"), false)
-        ]
-
-        let janTransferDefaults: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)] = [
-            ("Living expenses", nil, money("2000"), true, "Transfer to joint Monzo"),
-            ("Jane pocket money", 1, money("200"), true, ""),
-            ("Rog pocket money", 1, money("200"), true, ""),
-            ("To savings", nil, money("0"), false, ""),
-            ("Credit card", 1, money("0"), false, "Paid from savings")
-        ]
-
-        try seedPlannedItems(accountID: accountID, month: month, debits: febDebitDefaults, credits: febCreditDefaults, transfers: febTransferDefaults)
-        try seedPlannedItems(accountID: accountID, month: january, debits: janDebitDefaults, credits: janCreditDefaults, transfers: janTransferDefaults)
-    }
-
-    private func seedPlannedItems(
-        accountID: UUID,
-        month: YearMonth,
-        debits: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)],
-        credits: [(label: String, amount: Decimal, isPaid: Bool)],
-        transfers: [(label: String, dueDay: Int?, amount: Decimal, isPaid: Bool, notes: String)]
-    ) throws {
-        for item in debits {
-            try repository.createPlannedItem(
-                PlannedItem(
-                    accountID: accountID,
-                    monthKey: month,
-                    type: .fixedDebit,
-                    label: item.label,
-                    amount: item.amount,
-                    dueDay: item.dueDay,
-                    isPaid: item.isPaid,
-                    notes: item.notes
-                )
-            )
-        }
-
-        for item in credits {
-            try repository.createPlannedItem(
-                PlannedItem(
-                    accountID: accountID,
-                    monthKey: month,
-                    type: .credit,
-                    label: item.label,
-                    amount: item.amount,
-                    isPaid: item.isPaid
-                )
-            )
-        }
-
-        for item in transfers {
-            try repository.createPlannedItem(
-                PlannedItem(
-                    accountID: accountID,
-                    monthKey: month,
-                    type: .transfer,
-                    label: item.label,
-                    amount: item.amount,
-                    dueDay: item.dueDay,
-                    isPaid: item.isPaid,
-                    notes: item.notes
-                )
-            )
-        }
     }
 
     private func shareErrorMessage(for error: Error) -> String {
