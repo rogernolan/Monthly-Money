@@ -108,6 +108,7 @@ final class ImportedTransactionReconciliationService {
 
         linkedItem.isPaid = true
         linkedItem.amount = abs(record.amount)
+        linkedItem.dueDay = Self.dayComponent(for: record.postedAt, calendar: calendar)
         try repository.savePlannedItem(linkedItem)
 
         record.appliedPlannedItemID = linkedItem.id
@@ -129,6 +130,7 @@ final class ImportedTransactionReconciliationService {
 
         match.isPaid = true
         match.amount = abs(record.amount)
+        match.dueDay = Self.dayComponent(for: record.postedAt, calendar: calendar)
         try repository.savePlannedItem(match)
 
         record.appliedPlannedItemID = match.id
@@ -146,6 +148,7 @@ final class ImportedTransactionReconciliationService {
             label: record.payee,
             amount: abs(record.amount),
             matchingString: record.payee,
+            dueDay: Self.dayComponent(for: record.postedAt, calendar: calendar),
             isPaid: true,
             copiesToNextMonthAutomatically: false
         )

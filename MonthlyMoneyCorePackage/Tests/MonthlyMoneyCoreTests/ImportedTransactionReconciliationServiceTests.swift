@@ -42,6 +42,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertTrue(reconciledItem.isPaid)
         XCTAssertEqual(reconciledItem.source, plannedItem.source)
         XCTAssertEqual(reconciledItem.amount, 1200)
+        XCTAssertEqual(reconciledItem.dueDay, 11)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, reconciledItem.id)
     }
 
@@ -119,6 +120,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(createdPlannedItem.type, .fixedDebit)
         XCTAssertTrue(createdPlannedItem.isPaid)
         XCTAssertEqual(createdPlannedItem.source, .importedUnplanned)
+        XCTAssertEqual(createdPlannedItem.dueDay, 12)
         XCTAssertFalse(createdPlannedItem.copiesToNextMonthAutomatically)
         XCTAssertEqual(reconciledRecord.appliedPlannedItemID, createdPlannedItem.id)
         XCTAssertNil(reconciledRecord.createdTransactionID)
@@ -186,6 +188,7 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(result.matchedCount, 1)
         XCTAssertEqual(result.createdCount, 0)
         XCTAssertTrue(refreshedItem.isPaid)
+        XCTAssertEqual(refreshedItem.dueDay, 16)
         XCTAssertEqual(refreshedRecord.appliedPlannedItemID, refreshedItem.id)
         XCTAssertEqual(
             try repository.plannedItems(for: YearMonth(year: 2026, month: 3)).filter { $0.source == .importedUnplanned }.count,
