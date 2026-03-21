@@ -24,7 +24,33 @@ enum MonthItemFilterRules {
     }
 }
 
+enum MonthItemSortRules {
+    static func sortedItems(_ items: [PlannedItem], paydayDay: Int) -> [PlannedItem] {
+        items.sorted { lhs, rhs in
+            let leftKey = sortKey(for: lhs, paydayDay: paydayDay)
+            let rightKey = sortKey(for: rhs, paydayDay: paydayDay)
+            if leftKey != rightKey { return leftKey < rightKey }
+            return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
+        }
+    }
+
+    private static func sortKey(for item: PlannedItem, paydayDay: Int) -> Int {
+        guard let dueDay = item.dueDay else { return Int.max }
+        let normalizedPayday = min(max(paydayDay, 1), 31)
+        if dueDay >= normalizedPayday {
+            return dueDay - normalizedPayday
+        }
+        return (31 - normalizedPayday + 1) + (dueDay - 1)
+    }
+}
+
 enum MonthItemRowContent {
+    static func amountFootnote(for item: PlannedItem) -> String? {
+        guard item.source == .importedUnplanned else { return nil }
+        guard item.type == .fixedDebit || item.type == .transfer else { return nil }
+        return "unplanned"
+    }
+
     static func metadataLines(for item: PlannedItem) -> [String] {
         var lines = [dueText(for: item)]
         let trimmedNotes = item.notes.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -440,8 +466,16 @@ struct MonthView: View {
                             Text(item.label.isEmpty ? " " : item.label)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                            Text(AppState.currency(item.amount))
-                                .fontWeight(.semibold)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(AppState.currency(item.amount))
+                                    .fontWeight(.semibold)
+
+                                if let footnote = MonthItemRowContent.amountFootnote(for: item) {
+                                    Text(footnote)
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
+                                }
+                            }
 
                             Button {
                                 state.setPaid(item: item, paid: !item.isPaid)
@@ -497,12 +531,7 @@ struct MonthView: View {
     }
 
     private func sorted(_ items: [PlannedItem]) -> [PlannedItem] {
-        items.sorted { lhs, rhs in
-            let leftDay = lhs.dueDay ?? 0
-            let rightDay = rhs.dueDay ?? 0
-            if leftDay != rightDay { return leftDay < rightDay }
-            return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
-        }
+        MonthItemSortRules.sortedItems(items, paydayDay: state.dailyBudgetPaydayDay)
     }
 
     private func isOverdue(_ item: PlannedItem) -> Bool {

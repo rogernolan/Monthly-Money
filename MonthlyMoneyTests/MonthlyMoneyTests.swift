@@ -476,6 +476,22 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testMonthItemSortOrdersDueDaysFromPayday() {
+        let month = YearMonth(year: 2026, month: 3)
+        let accountID = UUID()
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Before payday", amount: 10, dueDay: 24),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Payday", amount: 10, dueDay: 25),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Month end", amount: 10, dueDay: 31),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "After wrap", amount: 10, dueDay: 1)
+        ]
+
+        XCTAssertEqual(
+            MonthItemSortRules.sortedItems(items, paydayDay: 25).map(\.label),
+            ["Payday", "Month end", "After wrap", "Before payday"]
+        )
+    }
+
     func testDefaultPersistencePlanUsesCloudBackedPrivateStoreAndSharedStore() {
         let plan = MonthlyMoneyPersistencePlan.defaultPlan()
 
@@ -1778,6 +1794,37 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(MonthItemRowContent.metadataLines(for: item), ["Floating"])
+    }
+
+    func testMonthItemRowShowsUnplannedIndicatorForImportedUnplannedItems() {
+        let outgoingUnplannedItem = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Coffee",
+            amount: 4.50
+        )
+        let creditUnplannedItem = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .credit,
+            source: .importedUnplanned,
+            label: "Refund",
+            amount: 12
+        )
+        let manualItem = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            source: .manual,
+            label: "Rent",
+            amount: 1200
+        )
+
+        XCTAssertEqual(MonthItemRowContent.amountFootnote(for: outgoingUnplannedItem), "unplanned")
+        XCTAssertNil(MonthItemRowContent.amountFootnote(for: creditUnplannedItem))
+        XCTAssertNil(MonthItemRowContent.amountFootnote(for: manualItem))
     }
 
     func testMonthItemRowDoesNotHighlightOverdueForZeroAmount() {
