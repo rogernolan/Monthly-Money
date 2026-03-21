@@ -242,6 +242,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.dailyBudgetAmount = budget.dailyBudgetAmount
             existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
             existing.dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
+            existing.autoGenerateWoMSavingsEveryMonth = budget.autoGenerateWoMSavingsEveryMonth
             existing.monthBalancesPayload = budget.monthBalancesPayload
         } else {
             modelContext.insert(budget)
