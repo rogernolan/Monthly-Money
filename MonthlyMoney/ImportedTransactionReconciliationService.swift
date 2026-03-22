@@ -51,7 +51,7 @@ final class ImportedTransactionReconciliationService {
         account: Account,
         importedRecords: [ImportedTransactionRecord]
     ) throws -> ImportedTransactionReconciliationResult {
-        let monthKeys = Set(importedRecords.map { monthKey(for: $0.postedAt).rawValue })
+        let monthKeys = Set(try importedRecords.map { try monthKey(for: $0.postedAt).rawValue })
         let monthItems = try repository.plannedItems(for: nil)
             .filter { $0.accountID == account.id }
             .filter { monthKeys.contains($0.monthKey) }
@@ -117,7 +117,7 @@ final class ImportedTransactionReconciliationService {
     }
 
     private func reconcilePlannedItem(for record: ImportedTransactionRecord, using plannedItems: [PlannedItem]) throws -> Bool {
-        let monthKey = monthKey(for: record.postedAt)
+        let monthKey = try monthKey(for: record.postedAt)
         let candidates = plannedItems
             .filter { $0.accountID == record.accountID }
             .filter { $0.monthKey == monthKey.rawValue }
@@ -142,7 +142,7 @@ final class ImportedTransactionReconciliationService {
         let plannedItem = PlannedItem(
             budgetID: account.budgetID,
             accountID: account.id,
-            monthKey: monthKey(for: record.postedAt),
+            monthKey: try monthKey(for: record.postedAt),
             type: Self.plannedItemType(for: record.amount),
             source: .importedUnplanned,
             label: record.payee,
@@ -173,9 +173,40 @@ final class ImportedTransactionReconciliationService {
         }
     }
 
-    private func monthKey(for date: Date) -> YearMonth {
-        let components = calendar.dateComponents([.year, .month], from: date)
-        return YearMonth(year: components.year ?? 2000, month: components.month ?? 1)
+    private func monthKey(for date: Date) throws -> YearMonth {
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        let year = components.year ?? 2000
+        let month = components.month ?? 1
+        let paydayDay = (try repository.activeBudget()?.dailyBudgetPaydayDay) ?? 1
+        return Self.budgetMonthKey(
+            year: year,
+            month: month,
+            day: components.day ?? 1,
+            paydayDay: paydayDay,
+            calendar: calendar,
+            referenceDate: date
+        )
+    }
+
+    static func budgetMonthKey(
+        year: Int,
+        month: Int,
+        day: Int,
+        paydayDay: Int,
+        calendar: Calendar,
+        referenceDate: Date
+    ) -> YearMonth {
+        let daysInMonth = calendar.range(of: .day, in: .month, for: referenceDate)?.count ?? 31
+        let normalizedPayday = min(max(paydayDay, 1), daysInMonth)
+
+        guard day >= normalizedPayday else {
+            return YearMonth(year: year, month: month)
+        }
+
+        if month == 12 {
+            return YearMonth(year: year + 1, month: 1)
+        }
+        return YearMonth(year: year, month: month + 1)
     }
 
     private static func matches(importedRecord: ImportedTransactionRecord, plannedItem: PlannedItem, calendar: Calendar) -> Bool {

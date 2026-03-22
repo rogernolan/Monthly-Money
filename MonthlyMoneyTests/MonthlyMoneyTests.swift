@@ -988,6 +988,34 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertNotNil(fetched.first?.createdTransactionID)
     }
 
+    func testImportedTransactionBudgetMonthMovesToNextMonthOnOrAfterPayday() {
+        XCTAssertEqual(
+            ImportedTransactionReconciliationService.budgetMonthKey(
+                year: 2026,
+                month: 1,
+                day: 29,
+                paydayDay: 28,
+                calendar: Self.utcCalendar,
+                referenceDate: Self.date(year: 2026, month: 1, day: 29)
+            ),
+            YearMonth(year: 2026, month: 2)
+        )
+    }
+
+    func testImportedTransactionBudgetMonthStaysInCurrentMonthBeforePayday() {
+        XCTAssertEqual(
+            ImportedTransactionReconciliationService.budgetMonthKey(
+                year: 2026,
+                month: 1,
+                day: 27,
+                paydayDay: 28,
+                calendar: Self.utcCalendar,
+                referenceDate: Self.date(year: 2026, month: 1, day: 27)
+            ),
+            YearMonth(year: 2026, month: 1)
+        )
+    }
+
     func testCoreDataAccountDataStoreBackfillsBudgetRelationshipsForExistingDependents() throws {
         let container = NSPersistentContainer(
             name: "MonthlyMoneyCoreData",
