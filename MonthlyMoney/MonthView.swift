@@ -25,22 +25,30 @@ enum MonthItemFilterRules {
 }
 
 enum MonthItemSortRules {
-    static func sortedItems(_ items: [PlannedItem], paydayDay: Int) -> [PlannedItem] {
+    static func sortedItems(_ items: [PlannedItem], paydayDay: Int, month: YearMonth) -> [PlannedItem] {
         items.sorted { lhs, rhs in
-            let leftKey = sortKey(for: lhs, paydayDay: paydayDay)
-            let rightKey = sortKey(for: rhs, paydayDay: paydayDay)
+            let leftKey = sortKey(for: lhs, paydayDay: paydayDay, month: month)
+            let rightKey = sortKey(for: rhs, paydayDay: paydayDay, month: month)
             if leftKey != rightKey { return leftKey < rightKey }
             return lhs.label.localizedCaseInsensitiveCompare(rhs.label) == .orderedAscending
         }
     }
 
-    private static func sortKey(for item: PlannedItem, paydayDay: Int) -> Int {
+    private static func sortKey(for item: PlannedItem, paydayDay: Int, month: YearMonth) -> Int {
         guard let dueDay = item.dueDay else { return Int.max }
-        let normalizedPayday = min(max(paydayDay, 1), 31)
+        let normalizedPayday = min(max(paydayDay, 1), daysInMonth(for: month))
         if dueDay >= normalizedPayday {
             return dueDay - normalizedPayday
         }
-        return (31 - normalizedPayday + 1) + (dueDay - 1)
+        return (daysInMonth(for: month) - normalizedPayday + 1) + (dueDay - 1)
+    }
+
+    private static func daysInMonth(for month: YearMonth) -> Int {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let components = DateComponents(year: month.year, month: month.month, day: 1)
+        let monthStart = calendar.date(from: components)
+        return monthStart.flatMap { calendar.range(of: .day, in: .month, for: $0)?.count } ?? 31
     }
 }
 
@@ -531,7 +539,7 @@ struct MonthView: View {
     }
 
     private func sorted(_ items: [PlannedItem]) -> [PlannedItem] {
-        MonthItemSortRules.sortedItems(items, paydayDay: state.dailyBudgetPaydayDay)
+        MonthItemSortRules.sortedItems(items, paydayDay: state.dailyBudgetPaydayDay, month: state.selectedMonth)
     }
 
     private func isOverdue(_ item: PlannedItem) -> Bool {

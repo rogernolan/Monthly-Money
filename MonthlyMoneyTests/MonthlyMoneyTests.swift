@@ -648,8 +648,23 @@ final class MonthlyMoneyTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            MonthItemSortRules.sortedItems(items, paydayDay: 25).map(\.label),
+            MonthItemSortRules.sortedItems(items, paydayDay: 25, month: month).map(\.label),
             ["Payday", "Month end", "After wrap", "Before payday"]
+        )
+    }
+
+    func testMonthItemSortClampsPaydayToMonthLength() {
+        let month = YearMonth(year: 2026, month: 2)
+        let accountID = UUID()
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Before payday", amount: 10, dueDay: 27),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Payday", amount: 10, dueDay: 28),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "After wrap", amount: 10, dueDay: 1)
+        ]
+
+        XCTAssertEqual(
+            MonthItemSortRules.sortedItems(items, paydayDay: 31, month: month).map(\.label),
+            ["Payday", "After wrap", "Before payday"]
         )
     }
 

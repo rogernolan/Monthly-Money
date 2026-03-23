@@ -996,7 +996,8 @@ final class AppState: ObservableObject {
                 !item.isPaid &&
                 item.source != .importedUnplanned
             },
-            paydayDay: dailyBudgetPaydayDay
+            paydayDay: dailyBudgetPaydayDay,
+            month: selectedMonth
         )
     }
 
