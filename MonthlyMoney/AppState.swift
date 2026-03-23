@@ -1036,6 +1036,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    func linkedImportedPayee(for item: PlannedItem) -> String? {
+        guard let linkedRecord = try? repository.importedTransactionRecords(accountIDs: [item.accountID])
+            .first(where: { $0.appliedPlannedItemID == item.id }) else {
+            return nil
+        }
+
+        let trimmed = linkedRecord.payee.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     func shiftMonth(by delta: Int) {
         guard delta <= 0 || canNavigateToNextMonth else { return }
         var year = selectedMonth.year

@@ -640,6 +640,22 @@ private struct MonthItemEditorView: View {
                 TextEditor(text: $draft.notes)
                     .frame(minHeight: 160)
                     .disabled(!isEditable)
+
+                if let editableItem,
+                   let statementText = state.linkedImportedPayee(for: editableItem) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Shown on bank statement as")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        Text(statementText)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
             }
         }
         .navigationTitle(draft.label.isEmpty ? "Entry" : draft.label)

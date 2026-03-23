@@ -2146,6 +2146,40 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(savedTarget.matchingString, "supermarket")
     }
 
+    func testLinkedImportedPayeeReturnsStatementTextForMatchedItem() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Groceries",
+            amount: 54,
+            dueDay: 9,
+            isPaid: true
+        )
+        try repository.createPlannedItem(item)
+        try repository.createImportedTransactionRecord(
+            ImportedTransactionRecord(
+                accountID: account.id,
+                sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
+                sourceAccountIdentifier: "****81197",
+                externalTransactionID: "FITID-STATEMENT-TEXT",
+                postedAt: Self.date(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 9),
+                amount: -54,
+                payee: "TESCO STORES 1234",
+                transactionType: "POS",
+                rawSourcePayload: "{}",
+                appliedPlannedItemID: item.id
+            )
+        )
+
+        XCTAssertEqual(state.linkedImportedPayee(for: item), "TESCO STORES 1234")
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,
