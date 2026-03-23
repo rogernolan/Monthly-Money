@@ -29,6 +29,7 @@ final class NationwideOFXImporter {
         let accountIdentifier = try accountFrom.text(named: "ACCTID")
         let statementStartDate = try Self.parseOFXDate(transactionList.text(named: "DTSTART"))
         let statementEndDate = try Self.parseOFXDate(transactionList.text(named: "DTEND"))
+        let ledgerBalance = try Self.parseLedgerBalance(from: statement)
 
         var transactions: [NationwideOFXTransaction] = []
         for transactionNode in transactionList.children(named: "STMTTRN") {
@@ -66,6 +67,7 @@ final class NationwideOFXImporter {
             currencyCode: currencyCode,
             statementStartDate: statementStartDate,
             statementEndDate: statementEndDate,
+            ledgerBalance: ledgerBalance,
             transactions: transactions
         )
     }
@@ -171,6 +173,14 @@ final class NationwideOFXImporter {
             return "{}"
         }
         return string
+    }
+
+    private static func parseLedgerBalance(from statement: OFXTreeBuilder.Node) throws -> Decimal? {
+        guard let ledgerBalanceNode = statement.children.first(where: { $0.name == "LEDGERBAL" }) else {
+            return nil
+        }
+        let balanceText = try ledgerBalanceNode.text(named: "BALAMT")
+        return try parseAmount(balanceText)
     }
 }
 

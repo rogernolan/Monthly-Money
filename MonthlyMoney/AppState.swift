@@ -480,11 +480,27 @@ final class AppState: ObservableObject {
             account: account,
             importedRecordIDs: importResult.insertedRecordIDs
         )
+        applyImportedStatementBalanceIfPresent(statement)
         try refresh()
         print(
             "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
         )
         return (importResult: importResult, reconciliationResult: reconciliationResult)
+    }
+
+    private func applyImportedStatementBalanceIfPresent(_ statement: NationwideOFXStatement) {
+        guard let ledgerBalance = statement.ledgerBalance else { return }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let balanceMonth = ImportedTransactionReconciliationService.budgetMonthKey(
+            year: calendar.component(.year, from: statement.statementEndDate),
+            month: calendar.component(.month, from: statement.statementEndDate),
+            day: calendar.component(.day, from: statement.statementEndDate),
+            paydayDay: paydayDay,
+            calendar: calendar,
+            referenceDate: statement.statementEndDate
+        )
+        primaryBankBalances[balanceMonth.rawValue] = ledgerBalance
     }
 
     func sharingPresentationDidFail(message: String) {

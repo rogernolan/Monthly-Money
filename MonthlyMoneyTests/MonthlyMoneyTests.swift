@@ -1058,6 +1058,29 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testImportOFXDataUpdatesPrimaryBankBalanceFromStatementLedgerBalance() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+        let balanceMonth = YearMonth(year: 2026, month: 4)
+
+        await state.bootstrapIfNeeded()
+        state.selectedMonth = balanceMonth
+        let account = try XCTUnwrap(try repository.accounts().first)
+
+        _ = try state.importOFXData(
+            Self.makeOFXData(
+                postedDate: "20260302000000",
+                transactionAmount: "-12.34",
+                ledgerBalance: "1234.56"
+            ),
+            fileName: "statement.ofx",
+            into: account.id
+        )
+
+        XCTAssertEqual(state.primaryBankBalances[balanceMonth.rawValue], Decimal(string: "1234.56"))
+        XCTAssertEqual(state.primaryBankBalance, Decimal(string: "1234.56"))
+    }
+
     func testCoreDataAccountDataStoreBackfillsBudgetRelationshipsForExistingDependents() throws {
         let container = NSPersistentContainer(
             name: "MonthlyMoneyCoreData",
@@ -2476,6 +2499,51 @@ final class MonthlyMoneyTests: XCTestCase {
             day: day,
             hour: 12
         ))!
+    }
+
+    private static func makeOFXData(
+        postedDate: String,
+        transactionAmount: String,
+        ledgerBalance: String? = nil
+    ) -> Data {
+        let ledgerBalanceBlock = ledgerBalance.map {
+            """
+            <LEDGERBAL>
+              <BALAMT>\($0)</BALAMT>
+              <DTASOF>\(postedDate)</DTASOF>
+            </LEDGERBAL>
+            """
+        } ?? ""
+
+        let ofx = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <OFX>
+          <BANKMSGSRSV1>
+            <STMTTRNRS>
+              <STMTRS>
+                <CURDEF>GBP</CURDEF>
+                <BANKACCTFROM>
+                  <ACCTID>****81197</ACCTID>
+                </BANKACCTFROM>
+                <BANKTRANLIST>
+                  <DTSTART>20260301000000</DTSTART>
+                  <DTEND>20260331235959</DTEND>
+                  <STMTTRN>
+                    <TRNTYPE>DEBIT</TRNTYPE>
+                    <DTPOSTED>\(postedDate)</DTPOSTED>
+                    <TRNAMT>\(transactionAmount)</TRNAMT>
+                    <FITID>FITID-1</FITID>
+                    <NAME>Card Payment</NAME>
+                  </STMTTRN>
+                </BANKTRANLIST>
+                \(ledgerBalanceBlock)
+              </STMTRS>
+            </STMTTRNRS>
+          </BANKMSGSRSV1>
+        </OFX>
+        """
+
+        return Data(ofx.utf8)
     }
 
     private func makeTestBudgetShareSession(budgetID: UUID) -> BudgetShareSession {

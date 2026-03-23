@@ -5,6 +5,7 @@ struct NationwideOFXStatement: Equatable {
     let currencyCode: String
     let statementStartDate: Date
     let statementEndDate: Date
+    let ledgerBalance: Decimal?
     let transactions: [NationwideOFXTransaction]
 }
 
