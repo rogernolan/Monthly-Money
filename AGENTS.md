@@ -14,6 +14,7 @@ Implement the data layer + sharing/migration architecture:
 ## Constraints
 - Use Decimal for all money. Never Double.
 - Keep the changes small and test-driven.
+- Any data model change must include an explicit migration.
 - After each milestone: build + run tests.
 
 ## Deliverables
