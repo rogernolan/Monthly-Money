@@ -2331,6 +2331,7 @@ final class MonthlyMoneyTests: XCTestCase {
             dueDay: 7,
             dueText: nil,
             isPaid: false,
+            copiesToNextMonthAutomatically: false,
             notes: "Call to confirm meter reading"
         )
 
@@ -2354,6 +2355,22 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(MonthItemRowContent.metadataLines(for: item), ["Floating"])
+    }
+
+    func testMonthItemRowMetadataLinesShowCopyIndicatorForRecurringItems() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 28,
+            dueText: nil,
+            isPaid: false,
+            copiesToNextMonthAutomatically: true
+        )
+
+        XCTAssertEqual(MonthItemRowContent.metadataLines(for: item), ["28th"])
     }
 
     func testMonthItemRowShowsUnplannedIndicatorForImportedUnplannedItems() {

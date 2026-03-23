@@ -69,7 +69,9 @@ enum MonthItemRowContent {
     }
 
     static func dueText(for item: PlannedItem) -> String {
-        if let day = item.dueDay { return ordinal(day) }
+        if let day = item.dueDay {
+            return ordinal(day)
+        }
         if let dueText = item.dueText, !dueText.isEmpty { return dueText }
         return "Floating"
     }
@@ -507,10 +509,19 @@ struct MonthView: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             let metadataLines = MonthItemRowContent.metadataLines(for: item)
-                            ForEach(Array(metadataLines.enumerated()), id: \.offset) { _, line in
-                                Text(line)
+                            ForEach(Array(metadataLines.enumerated()), id: \.offset) { index, line in
+                                if index == 0 && item.copiesToNextMonthAutomatically {
+                                    HStack(spacing: 4) {
+                                        Text(line)
+                                        Image(systemName: "arrow.right")
+                                    }
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
+                                } else {
+                                    Text(line)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                         }
                     }
