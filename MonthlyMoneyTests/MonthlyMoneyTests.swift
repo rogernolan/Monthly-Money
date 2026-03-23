@@ -2267,7 +2267,7 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(draft.matchingString, "monthly rent")
-        XCTAssertTrue(draft.isUnplanned)
+        XCTAssertFalse(draft.isPlanned)
     }
 
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {

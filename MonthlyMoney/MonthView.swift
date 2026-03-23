@@ -621,7 +621,7 @@ private struct MonthItemEditorView: View {
                 }
                 .disabled(!isEditable)
 
-                Toggle("Unplanned", isOn: $draft.isUnplanned)
+                Toggle("Planned", isOn: $draft.isPlanned)
                     .disabled(!isEditable)
 
                 Toggle("Copy to next month automatically", isOn: $draft.copiesToNextMonthAutomatically)
@@ -703,7 +703,7 @@ private struct MonthItemEditorView: View {
     }
 
     private var sourceOverride: PlannedItemSource {
-        if draft.isUnplanned {
+        if !draft.isPlanned {
             return .importedUnplanned
         }
         guard let editableItem else {
