@@ -902,6 +902,7 @@ final class AppState: ObservableObject {
         dueDay: Int?,
         dueText: String?,
         type: PlannedItemType,
+        sourceOverride: PlannedItemSource? = nil,
         copiesToNextMonthAutomatically: Bool,
         notes: String
     ) {
@@ -915,9 +916,10 @@ final class AppState: ObservableObject {
         item.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         item.notes = notes
         let originalSource = item.source
-        if originalSource == .importedUnplanned {
-            item.source = .manual
-        }
+        item.source = resolvedUpdatedSource(
+            originalSource: originalSource,
+            sourceOverride: sourceOverride
+        )
         do {
             try repository.savePlannedItem(item)
             try refresh()
@@ -934,6 +936,7 @@ final class AppState: ObservableObject {
         matchingString: String? = nil,
         amount: Decimal = 0,
         dueDay: Int?,
+        source: PlannedItemSource = .manual,
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
     ) -> PlannedItem? {
@@ -946,6 +949,7 @@ final class AppState: ObservableObject {
                 accountID: account.id,
                 monthKey: selectedMonth,
                 type: type,
+                source: source,
                 label: label,
                 amount: amount,
                 matchingString: normalizeMatchingString(matchingString),
@@ -961,6 +965,74 @@ final class AppState: ObservableObject {
         } catch {
             print("Create entry failed: \(error)")
             return nil
+        }
+    }
+
+    func manualMatchCandidates(for sourceItem: PlannedItem) -> [PlannedItem] {
+        guard sourceItem.source == .importedUnplanned,
+              sourceItem.resolvedMonthKey == selectedMonth else {
+            return []
+        }
+
+        return MonthItemSortRules.sortedItems(
+            monthItems.filter { item in
+                item.id != sourceItem.id &&
+                !item.isPaid &&
+                item.source != .importedUnplanned
+            },
+            paydayDay: dailyBudgetPaydayDay
+        )
+    }
+
+    @discardableResult
+    func matchImportedUnplannedItem(_ sourceItem: PlannedItem, to targetItem: PlannedItem) throws -> PlannedItem? {
+        guard canEdit(item: sourceItem),
+              sourceItem.source == .importedUnplanned,
+              sourceItem.id != targetItem.id,
+              sourceItem.accountID == targetItem.accountID,
+              sourceItem.resolvedMonthKey == targetItem.resolvedMonthKey,
+              targetItem.source != .importedUnplanned else {
+            return nil
+        }
+
+        let originalTargetAmount = targetItem.amount
+        let originalTargetDueDay = targetItem.dueDay
+        let originalTargetDueText = targetItem.dueText
+        let originalTargetIsPaid = targetItem.isPaid
+        let originalTargetMatchingString = targetItem.matchingString
+        let originalTargetSource = targetItem.source
+
+        let accountIDs = Set([sourceItem.accountID])
+        let importedRecords = try repository.importedTransactionRecords(accountIDs: accountIDs)
+        let linkedRecords = importedRecords.filter { $0.appliedPlannedItemID == sourceItem.id }
+        let fallbackMatchingString = normalizeMatchingString(sourceItem.matchingString) ?? sourceItem.label
+
+        targetItem.amount = sourceItem.amount
+        targetItem.dueDay = sourceItem.dueDay
+        targetItem.dueText = sourceItem.dueText
+        targetItem.isPaid = true
+        targetItem.source = originalTargetSource == .importedUnplanned ? .manual : originalTargetSource
+        if normalizeMatchingString(targetItem.matchingString) == nil {
+            targetItem.matchingString = fallbackMatchingString
+        }
+
+        do {
+            try repository.savePlannedItem(targetItem)
+            for record in linkedRecords {
+                record.appliedPlannedItemID = targetItem.id
+                try repository.saveImportedTransactionRecord(record)
+            }
+            try repository.deletePlannedItem(id: sourceItem.id)
+            try refresh()
+            return try repository.plannedItem(id: targetItem.id)
+        } catch {
+            targetItem.amount = originalTargetAmount
+            targetItem.dueDay = originalTargetDueDay
+            targetItem.dueText = originalTargetDueText
+            targetItem.isPaid = originalTargetIsPaid
+            targetItem.matchingString = originalTargetMatchingString
+            targetItem.source = originalTargetSource
+            throw error
         }
     }
 
@@ -1027,6 +1099,19 @@ final class AppState: ObservableObject {
     private func normalizeMatchingString(_ value: String?) -> String? {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private func resolvedUpdatedSource(
+        originalSource: PlannedItemSource,
+        sourceOverride: PlannedItemSource?
+    ) -> PlannedItemSource {
+        if let sourceOverride {
+            return sourceOverride
+        }
+        if originalSource == .importedUnplanned {
+            return .manual
+        }
+        return originalSource
     }
 
     private func effectiveOpeningBalance(for month: YearMonth) -> Decimal {

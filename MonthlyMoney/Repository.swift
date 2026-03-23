@@ -313,11 +313,14 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.accountID = item.accountID
                 existing.monthKey = item.monthKey
                 existing.type = item.type
+                existing.source = item.source
                 existing.label = item.label
+                existing.matchingString = item.matchingString
                 existing.amount = item.amount
                 existing.dueDay = item.dueDay
                 existing.dueText = item.dueText
                 existing.isPaid = item.isPaid
+                existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes
             } else {
                 modelContext.insert(item)
@@ -385,6 +388,8 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.transactionType = record.transactionType
                 existing.rawSourcePayload = record.rawSourcePayload
                 existing.importedAt = record.importedAt
+                existing.appliedPlannedItemID = record.appliedPlannedItemID
+                existing.createdTransactionID = record.createdTransactionID
             } else {
                 modelContext.insert(record)
             }

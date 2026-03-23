@@ -570,16 +570,17 @@ struct MonthView: View {
 private struct MonthItemEditorView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.dismiss) private var dismiss
-    private let item: PlannedItem?
+    @State private var editingItem: PlannedItem?
     @State private var draft: MonthItemEditorDraft
+    @State private var activeMatchSourceItem: PlannedItem?
 
     init(item: PlannedItem) {
-        self.item = item
+        _editingItem = State(initialValue: item)
         _draft = State(initialValue: MonthItemEditorDraft(item: item))
     }
 
     init(newType: PlannedItemType, dueDay: Int?) {
-        item = nil
+        _editingItem = State(initialValue: nil)
         _draft = State(initialValue: MonthItemEditorDraft(newType: newType, dueDay: dueDay))
     }
 
@@ -620,8 +621,19 @@ private struct MonthItemEditorView: View {
                 }
                 .disabled(!isEditable)
 
+                Toggle("Unplanned", isOn: $draft.isUnplanned)
+                    .disabled(!isEditable)
+
                 Toggle("Copy to next month automatically", isOn: $draft.copiesToNextMonthAutomatically)
                     .disabled(!isEditable)
+            }
+
+            if let editableItem, editableItem.source == .importedUnplanned, isEditable {
+                Section("Matching") {
+                    Button("Match to planned item") {
+                        activeMatchSourceItem = editableItem
+                    }
+                }
             }
 
             Section("Notes") {
@@ -633,6 +645,13 @@ private struct MonthItemEditorView: View {
         .navigationTitle(draft.label.isEmpty ? "Entry" : draft.label)
         .onChange(of: draft.amountText) { _, _ in
             draft.normalizeAmountInput()
+        }
+        .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
+            MonthItemManualMatchPickerView(sourceItem: sourceItem) { matchedItem in
+                editingItem = matchedItem
+                draft = MonthItemEditorDraft(item: matchedItem)
+            }
+            .environmentObject(state)
         }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {
@@ -663,8 +682,22 @@ private struct MonthItemEditorView: View {
         !state.isSelectedMonthInPast
     }
 
+    private var editableItem: PlannedItem? {
+        editingItem
+    }
+
+    private var sourceOverride: PlannedItemSource {
+        if draft.isUnplanned {
+            return .importedUnplanned
+        }
+        guard let editableItem else {
+            return .manual
+        }
+        return editableItem.source == .copiedFromPreviousMonth ? .copiedFromPreviousMonth : .manual
+    }
+
     private func save() {
-        if let item {
+        if let item = editableItem {
             state.update(
                 item: item,
                 label: draft.label,
@@ -673,6 +706,7 @@ private struct MonthItemEditorView: View {
                 dueDay: draft.dueSelection.value,
                 dueText: nil,
                 type: draft.resolvedType(existingItemType: item.type),
+                sourceOverride: sourceOverride,
                 copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
@@ -685,10 +719,62 @@ private struct MonthItemEditorView: View {
             matchingString: draft.matchingString,
             amount: draft.amount,
             dueDay: draft.dueSelection.value,
+            source: sourceOverride,
             copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
             notes: draft.notes
         ) != nil {
             dismiss()
+        }
+    }
+}
+
+private struct MonthItemManualMatchPickerView: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    let sourceItem: PlannedItem
+    let onMatched: (PlannedItem) -> Void
+
+    var body: some View {
+        List {
+            ForEach(state.manualMatchCandidates(for: sourceItem)) { candidate in
+                Button {
+                    match(sourceItem: sourceItem, to: candidate)
+                } label: {
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(candidate.label)
+                            Text(MonthItemRowContent.dueText(for: candidate))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Text(AppState.currency(candidate.amount))
+                            .foregroundStyle(candidate.type == .credit ? .green : .primary)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Match to planned item")
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+        }
+    }
+
+    private func match(sourceItem: PlannedItem, to candidate: PlannedItem) {
+        do {
+            if let matchedItem = try state.matchImportedUnplannedItem(sourceItem, to: candidate) {
+                onMatched(matchedItem)
+                dismiss()
+            }
+        } catch {
+            print("Manual match failed: \(error)")
         }
     }
 }

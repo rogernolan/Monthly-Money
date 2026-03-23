@@ -44,6 +44,7 @@ struct MonthItemEditorDraft {
     var entryKind: MonthEntryKind
     var amountText: String
     var dueSelection: MonthDueSelection
+    var isUnplanned: Bool
     var copiesToNextMonthAutomatically: Bool
     var notes: String
 
@@ -53,6 +54,7 @@ struct MonthItemEditorDraft {
         entryKind = item.type == .credit ? .credit : .debit
         amountText = NSDecimalNumber(decimal: item.amount).stringValue
         dueSelection = MonthDueSelection(item.dueDay)
+        isUnplanned = item.source == .importedUnplanned
         copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
         notes = item.notes
     }
@@ -63,6 +65,7 @@ struct MonthItemEditorDraft {
         entryKind = newType == .credit ? .credit : .debit
         amountText = "0"
         dueSelection = MonthDueSelection(dueDay)
+        isUnplanned = false
         copiesToNextMonthAutomatically = true
         notes = ""
     }

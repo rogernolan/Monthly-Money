@@ -988,6 +988,48 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertNotNil(fetched.first?.createdTransactionID)
     }
 
+    func testProductionRepositoryPersistsImportedTransactionLinkUpdates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
+            plan: .defaultPlan(baseDirectory: directory),
+            schema: Self.makeSchema()
+        )
+        Self.retainHostedTestObject(repository)
+
+        let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+        let targetItem = PlannedItem(
+            accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false
+        )
+        try repository.createPlannedItem(targetItem)
+
+        let record = ImportedTransactionRecord(
+            accountID: account.id,
+            sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
+            sourceAccountIdentifier: "****81197",
+            externalTransactionID: "FITID-LINK",
+            postedAt: Self.date(year: 2026, month: 3, day: 2),
+            amount: -1200,
+            payee: "Rent",
+            transactionType: "DIRECTDEBIT",
+            rawSourcePayload: "{}"
+        )
+        try repository.createImportedTransactionRecord(record)
+
+        record.appliedPlannedItemID = targetItem.id
+        try repository.saveImportedTransactionRecord(record)
+
+        let savedRecord = try repository.importedTransactionRecords(accountIDs: [account.id]).first(where: { $0.id == record.id })
+        XCTAssertEqual(savedRecord?.appliedPlannedItemID, targetItem.id)
+    }
+
     func testImportedTransactionBudgetMonthMovesToNextMonthOnOrAfterPayday() {
         XCTAssertEqual(
             ImportedTransactionReconciliationService.budgetMonthKey(
@@ -1901,6 +1943,209 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(saved.notes, "Edited by user")
     }
 
+    func testEditingCopiedItemPreservesCopiedSource() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .copiedFromPreviousMonth,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            isPaid: false
+        )
+        try repository.createPlannedItem(item)
+
+        state.update(
+            item: item,
+            label: "Rent",
+            matchingString: nil,
+            amount: 1200,
+            dueDay: 1,
+            dueText: nil,
+            type: .fixedDebit,
+            sourceOverride: .copiedFromPreviousMonth,
+            copiesToNextMonthAutomatically: true,
+            notes: ""
+        )
+
+        let saved = try XCTUnwrap(
+            try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == item.id })
+        )
+        XCTAssertEqual(saved.source, .copiedFromPreviousMonth)
+    }
+
+    func testManualMatchCandidatesExcludePaidAndImportedUnplannedItems() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let source = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Source",
+            amount: 20,
+            dueDay: 4,
+            isPaid: true,
+            copiesToNextMonthAutomatically: false
+        )
+        let eligible = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Eligible",
+            amount: 20,
+            dueDay: 5,
+            isPaid: false
+        )
+        let paid = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Paid",
+            amount: 30,
+            dueDay: 6,
+            isPaid: true
+        )
+        let importedUnplanned = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Imported unplanned",
+            amount: 40,
+            dueDay: 7,
+            isPaid: false,
+            copiesToNextMonthAutomatically: false
+        )
+        try repository.createPlannedItem(source)
+        try repository.createPlannedItem(eligible)
+        try repository.createPlannedItem(paid)
+        try repository.createPlannedItem(importedUnplanned)
+        try state.refresh()
+
+        XCTAssertEqual(
+            state.manualMatchCandidates(for: source).map(\.label),
+            ["Eligible"]
+        )
+    }
+
+    func testManualMatchMovesImportToTargetAndDeletesSourceItem() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let source = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Coffee shop",
+            amount: 14.50,
+            dueDay: 17,
+            isPaid: true,
+            copiesToNextMonthAutomatically: false
+        )
+        let target = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Eating out",
+            amount: 12,
+            matchingString: nil,
+            dueDay: 5,
+            isPaid: false
+        )
+        try repository.createPlannedItem(source)
+        try repository.createPlannedItem(target)
+        let importRecord = ImportedTransactionRecord(
+            accountID: account.id,
+            sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
+            sourceAccountIdentifier: "****81197",
+            externalTransactionID: "FITID-MANUAL-MATCH",
+            postedAt: Self.date(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 17),
+            amount: -14.50,
+            payee: "Coffee shop",
+            transactionType: "POS",
+            rawSourcePayload: "{}",
+            appliedPlannedItemID: source.id
+        )
+        try repository.createImportedTransactionRecord(importRecord)
+        try state.refresh()
+
+        let matchedItem = try XCTUnwrap(state.matchImportedUnplannedItem(source, to: target))
+
+        let savedTarget = try XCTUnwrap(try repository.plannedItem(id: matchedItem.id))
+        let records = try repository.importedTransactionRecords(accountIDs: [account.id])
+
+        XCTAssertEqual(savedTarget.id, target.id)
+        XCTAssertEqual(savedTarget.amount, 14.50)
+        XCTAssertEqual(savedTarget.dueDay, 17)
+        XCTAssertEqual(savedTarget.matchingString, "Coffee shop")
+        XCTAssertTrue(savedTarget.isPaid)
+        XCTAssertEqual(records.first?.appliedPlannedItemID, target.id)
+        XCTAssertFalse(try repository.hasPlannedItem(id: source.id))
+    }
+
+    func testManualMatchPreservesExistingMatchingString() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let source = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            source: .importedUnplanned,
+            label: "Tesco",
+            amount: 54,
+            dueDay: 9,
+            isPaid: true,
+            copiesToNextMonthAutomatically: false
+        )
+        let target = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Groceries",
+            amount: 50,
+            matchingString: "supermarket",
+            dueDay: 2,
+            isPaid: false
+        )
+        try repository.createPlannedItem(source)
+        try repository.createPlannedItem(target)
+        try repository.createImportedTransactionRecord(
+            ImportedTransactionRecord(
+                accountID: account.id,
+                sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
+                sourceAccountIdentifier: "****81197",
+                externalTransactionID: "FITID-MANUAL-MATCH-KEEP",
+                postedAt: Self.date(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 9),
+                amount: -54,
+                payee: "Tesco",
+                transactionType: "POS",
+                rawSourcePayload: "{}",
+                appliedPlannedItemID: source.id
+            )
+        )
+
+        _ = try state.matchImportedUnplannedItem(source, to: target)
+
+        let savedTarget = try XCTUnwrap(try repository.plannedItem(id: target.id))
+        XCTAssertEqual(savedTarget.matchingString, "supermarket")
+    }
+
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
         let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: 2026,
@@ -1980,6 +2225,7 @@ final class MonthlyMoneyTests: XCTestCase {
                 accountID: UUID(),
                 monthKey: YearMonth(year: 2026, month: 3),
                 type: .fixedDebit,
+                source: .importedUnplanned,
                 label: "Rent",
                 amount: 1200,
                 matchingString: "monthly rent"
@@ -1987,6 +2233,7 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(draft.matchingString, "monthly rent")
+        XCTAssertTrue(draft.isUnplanned)
     }
 
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
