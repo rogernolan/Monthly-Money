@@ -12,17 +12,33 @@ private enum ImportDestination {
     case daily
 }
 
-private enum ImportFormat {
+enum ImportFormat {
     case ofx
     case qif
+
+    static func from(fileName: String) -> ImportFormat? {
+        switch URL(fileURLWithPath: fileName).pathExtension.lowercased() {
+        case "ofx":
+            return .ofx
+        case "qif":
+            return .qif
+        default:
+            return nil
+        }
+    }
+}
+
+enum SupportedImportTypes {
+    static let ofx = UTType(filenameExtension: "ofx") ?? .data
+    static let qif = UTType(filenameExtension: "qif") ?? .plainText
+    static let all: [UTType] = [ofx, qif]
 }
 
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
-    @State private var isPresentingOFXImporter = false
+    @State private var isPresentingStatementImporter = false
     @State private var pendingImportedStatementFile: PendingImportedStatementFile?
     @State private var pendingImportDestination: ImportDestination = .monthly
-    @State private var pendingImportFormat: ImportFormat = .ofx
     @State private var importErrorMessage: String?
     @State private var importSuccessMessage: String?
 
@@ -72,12 +88,8 @@ struct SettingsView: View {
 
             if state.usesSeparateAccountForDailyBudget {
                 Section("Import to monthly account") {
-                    Button("Import OFX") {
-                        startImport(.monthly, format: .ofx)
-                    }
-
-                    Button("Import QIF") {
-                        startImport(.monthly, format: .qif)
+                    Button("Import statement") {
+                        startImport(.monthly)
                     }
 
                     Text("Import a Nationwide OFX statement or Monzo-style QIF file into the selected account.")
@@ -86,12 +98,8 @@ struct SettingsView: View {
                 }
 
                 Section("Import to daily account") {
-                    Button("Import OFX") {
-                        startImport(.daily, format: .ofx)
-                    }
-
-                    Button("Import QIF") {
-                        startImport(.daily, format: .qif)
+                    Button("Import statement") {
+                        startImport(.daily)
                     }
 
                     Text("OFX updates the hidden daily account balance and transactions. QIF imports daily transactions only.")
@@ -100,12 +108,8 @@ struct SettingsView: View {
                 }
             } else {
                 Section("Import") {
-                    Button("Import OFX") {
-                        startImport(.monthly, format: .ofx)
-                    }
-
-                    Button("Import QIF") {
-                        startImport(.monthly, format: .qif)
+                    Button("Import statement") {
+                        startImport(.monthly)
                     }
 
                     Text("Import a Nationwide OFX statement or Monzo-style QIF file into the selected account.")
@@ -148,8 +152,8 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .fileImporter(
-            isPresented: $isPresentingOFXImporter,
-            allowedContentTypes: [.data, .plainText],
+            isPresented: $isPresentingStatementImporter,
+            allowedContentTypes: SupportedImportTypes.all,
             allowsMultipleSelection: false
         ) { result in
             switch result {
@@ -159,6 +163,10 @@ struct SettingsView: View {
                     do {
                         let data = try await AppState.loadImportedOFXFile(from: url)
                         await MainActor.run {
+                            guard let format = ImportFormat.from(fileName: url.lastPathComponent) else {
+                                importErrorMessage = "Unsupported import file type. Choose an .ofx or .qif file."
+                                return
+                            }
                             switch pendingImportDestination {
                             case .monthly:
                                 guard !state.accounts.isEmpty else {
@@ -169,7 +177,7 @@ struct SettingsView: View {
                                 let pendingFile = PendingImportedStatementFile(
                                     data: data,
                                     fileName: url.lastPathComponent,
-                                    format: pendingImportFormat
+                                    format: format
                                 )
                                 if state.accounts.count == 1, let account = state.accounts.first {
                                     importLoadedMonthlyStatement(pendingFile, into: account)
@@ -181,12 +189,11 @@ struct SettingsView: View {
                                     PendingImportedStatementFile(
                                         data: data,
                                         fileName: url.lastPathComponent,
-                                        format: pendingImportFormat
+                                        format: format
                                     )
                                 )
                             }
                             pendingImportDestination = .monthly
-                            pendingImportFormat = .ofx
                         }
                     } catch {
                         await MainActor.run {
@@ -198,7 +205,7 @@ struct SettingsView: View {
                 if (error as? CocoaError)?.code == .userCancelled {
                     return
                 }
-                importErrorMessage = "Failed to choose OFX file: \(error.localizedDescription)"
+                importErrorMessage = "Failed to choose statement file: \(error.localizedDescription)"
             }
         }
         .confirmationDialog(
@@ -270,10 +277,9 @@ struct SettingsView: View {
         }
     }
 
-    private func startImport(_ destination: ImportDestination, format: ImportFormat) {
+    private func startImport(_ destination: ImportDestination) {
         pendingImportDestination = destination
-        pendingImportFormat = format
-        isPresentingOFXImporter = true
+        isPresentingStatementImporter = true
     }
 
     private func importLoadedMonthlyStatement(_ pendingFile: PendingImportedStatementFile, into account: Account) {

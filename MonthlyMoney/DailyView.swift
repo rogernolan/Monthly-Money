@@ -347,7 +347,7 @@ private struct DailyBalanceChartView: View {
             .lineStyle(StrokeStyle(lineWidth: 2))
         }
         .chartXScale(domain: DailyBalanceChartStyle.domain(for: cycleMetrics))
-        .chartYScale(domain: yDomain)
+        .chartYScale(domain: DailyBalanceChartStyle.yDomain(points: points, fallbackBalance: cycleMetrics.currentDailyBudget))
         .chartXAxis {
             AxisMarks(values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine()
@@ -380,22 +380,6 @@ private struct DailyBalanceChartView: View {
         .accessibilityValue(chartAccessibilityValue)
     }
 
-    private var yDomain: ClosedRange<Double> {
-        let yValues = points.map(\.balanceValue)
-        guard let minY = yValues.min(), let maxY = yValues.max() else {
-            let baseline = NSDecimalNumber(decimal: cycleMetrics.currentDailyBudget).doubleValue
-            return (baseline - 1)...(baseline + 1)
-        }
-
-        if minY == maxY {
-            let padding = max(abs(minY) * 0.05, 25)
-            return (minY - padding)...(maxY + padding)
-        }
-
-        let padding = max((maxY - minY) * 0.12, 25)
-        return (minY - padding)...(maxY + padding)
-    }
-
     private var chartAccessibilityValue: String {
         guard let first = points.first, let last = points.last else {
             return "No data"
@@ -412,6 +396,22 @@ enum DailyBalanceChartStyle {
 
     static func domain(for metrics: DailyBudgetCycleMetrics) -> ClosedRange<Date> {
         metrics.previousPayday...metrics.nextPayday
+    }
+
+    static func yDomain(points: [DailyBalanceChartPoint], fallbackBalance: Decimal) -> ClosedRange<Double> {
+        let yValues = points.map(\.balanceValue)
+        guard let maxY = yValues.max() else {
+            let baseline = max(0, NSDecimalNumber(decimal: fallbackBalance).doubleValue)
+            return 0...max(baseline + 1, 1)
+        }
+
+        if yValues.count == 1 || yValues.min() == maxY {
+            let padding = max(abs(maxY) * 0.05, 25)
+            return 0...max(maxY + padding, 1)
+        }
+
+        let padding = max(maxY * 0.12, 25)
+        return 0...max(maxY + padding, 1)
     }
 
     static func dayLabel(for date: Date) -> String {

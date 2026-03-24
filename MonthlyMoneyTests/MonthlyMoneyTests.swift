@@ -4,6 +4,7 @@ import SwiftData
 import XCTest
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 @testable import MonthlyMoney
 
 @MainActor
@@ -741,6 +742,19 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(DailyBalanceChartStyle.showsPointMarkers)
     }
 
+    func testDailyBalanceChartYDomainUsesZeroAsLowerBound() {
+        let domain = DailyBalanceChartStyle.yDomain(
+            points: [
+                DailyBalanceChartPoint(date: Self.date(year: 2026, month: 3, day: 28), balance: 120),
+                DailyBalanceChartPoint(date: Self.date(year: 2026, month: 3, day: 29), balance: 180)
+            ],
+            fallbackBalance: 100
+        )
+
+        XCTAssertEqual(domain.lowerBound, 0)
+        XCTAssertGreaterThan(domain.upperBound, 180)
+    }
+
     func testDailyLayoutUsesReducedChipHeightAndTighterChartSpacing() {
         XCTAssertEqual(DailyLayoutMetrics.chipMinHeight, 82)
         XCTAssertEqual(DailyLayoutMetrics.contentSpacing, 8)
@@ -749,6 +763,17 @@ final class MonthlyMoneyTests: XCTestCase {
     func testDailyNavigationUsesInlineTitleDisplay() {
         XCTAssertEqual(DailyNavigationStyle.title, "Daily")
         XCTAssertTrue(DailyNavigationStyle.usesInlineTitleDisplay)
+    }
+
+    func testImportFormatDetectsOfxAndQifExtensions() {
+        XCTAssertEqual(ImportFormat.from(fileName: "statement.ofx"), .ofx)
+        XCTAssertEqual(ImportFormat.from(fileName: "statement.QIF"), .qif)
+        XCTAssertNil(ImportFormat.from(fileName: "statement.txt"))
+    }
+
+    func testSupportedImportTypesIncludeOnlyOfxAndQif() {
+        let identifiers = Set<String>(SupportedImportTypes.all.map(\.identifier))
+        XCTAssertEqual(identifiers, Set<String>([SupportedImportTypes.ofx.identifier, SupportedImportTypes.qif.identifier]))
     }
 
     func testDailyBalanceChartRespectsPaydayCycleBoundaries() {

@@ -2,6 +2,7 @@ import Foundation
 
 final class ImportedTransactionService {
     static let nationwideOFXSourceKind = "nationwide_ofx"
+    static let monzoQIFSourceKind = "monzo_qif"
 
     private let repository: AccountRepository
     private let dateProvider: () -> Date
@@ -16,7 +17,8 @@ final class ImportedTransactionService {
 
     @discardableResult
     func `import`(
-        statement: NationwideOFXStatement,
+        statement: ImportedAccountStatement,
+        sourceKind: String,
         into account: Account
     ) throws -> ImportedTransactionImportResult {
         let existingRecords = try repository.importedTransactionRecords(accountIDs: [account.id])
@@ -30,7 +32,7 @@ final class ImportedTransactionService {
 
         for transaction in statement.transactions {
             let identityKey = Self.identityKey(
-                sourceKind: Self.nationwideOFXSourceKind,
+                sourceKind: sourceKind,
                 externalTransactionID: transaction.externalTransactionID
             )
             if seenIdentityKeys.contains(identityKey) {
@@ -43,7 +45,7 @@ final class ImportedTransactionService {
                 ImportedTransactionRecord(
                     budgetID: account.budgetID,
                     accountID: account.id,
-                    sourceKind: Self.nationwideOFXSourceKind,
+                    sourceKind: sourceKind,
                     sourceAccountIdentifier: statement.accountIdentifier,
                     externalTransactionID: transaction.externalTransactionID,
                     postedAt: transaction.postedAt,
