@@ -1395,6 +1395,20 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testImportedTransactionBudgetMonthStaysInCurrentMonthOnPayday() {
+        XCTAssertEqual(
+            ImportedTransactionReconciliationService.budgetMonthKey(
+                year: 2026,
+                month: 1,
+                day: 28,
+                paydayDay: 28,
+                calendar: Self.utcCalendar,
+                referenceDate: Self.date(year: 2026, month: 1, day: 28)
+            ),
+            YearMonth(year: 2026, month: 1)
+        )
+    }
+
     func testImportedTransactionBudgetMonthStaysInCurrentMonthBeforePayday() {
         XCTAssertEqual(
             ImportedTransactionReconciliationService.budgetMonthKey(
@@ -1406,6 +1420,20 @@ final class MonthlyMoneyTests: XCTestCase {
                 referenceDate: Self.date(year: 2026, month: 1, day: 27)
             ),
             YearMonth(year: 2026, month: 1)
+        )
+    }
+
+    func testImportedTransactionBudgetMonthStaysInCalendarMonthWhenPaydayIsFirst() {
+        XCTAssertEqual(
+            ImportedTransactionReconciliationService.budgetMonthKey(
+                year: 2026,
+                month: 3,
+                day: 21,
+                paydayDay: 1,
+                calendar: Self.utcCalendar,
+                referenceDate: Self.date(year: 2026, month: 3, day: 21)
+            ),
+            YearMonth(year: 2026, month: 3)
         )
     }
 

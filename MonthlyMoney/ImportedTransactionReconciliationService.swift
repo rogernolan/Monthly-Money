@@ -199,7 +199,12 @@ final class ImportedTransactionReconciliationService {
         let daysInMonth = calendar.range(of: .day, in: .month, for: referenceDate)?.count ?? 31
         let normalizedPayday = min(max(paydayDay, 1), daysInMonth)
 
-        guard day >= normalizedPayday else {
+        // A payday on the first means budget months align with calendar months.
+        guard normalizedPayday > 1 else {
+            return YearMonth(year: year, month: month)
+        }
+
+        guard day > normalizedPayday else {
             return YearMonth(year: year, month: month)
         }
 
