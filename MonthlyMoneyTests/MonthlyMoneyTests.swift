@@ -1409,6 +1409,165 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testMonzoQIFImporterParsesTransactions() throws {
+        let statement = try MonzoQIFImporter().parse(data: Self.makeQIFData())
+
+        XCTAssertEqual(statement.accountIdentifier, "monzo_qif")
+        XCTAssertEqual(statement.currencyCode, "GBP")
+        XCTAssertNil(statement.ledgerBalance)
+        XCTAssertEqual(statement.transactions.count, 2)
+        XCTAssertEqual(statement.statementStartDate, Self.date(year: 2026, month: 3, day: 2))
+        XCTAssertEqual(statement.statementEndDate, Self.date(year: 2026, month: 3, day: 29))
+        XCTAssertEqual(statement.transactions[0].postedAt, Self.date(year: 2026, month: 3, day: 2))
+        XCTAssertEqual(statement.transactions[0].amount, Decimal(string: "-12.34"))
+        XCTAssertEqual(statement.transactions[0].payee, "Monzo Card")
+        XCTAssertEqual(statement.transactions[0].transactionType, "DEBIT")
+        XCTAssertEqual(statement.transactions[1].postedAt, Self.date(year: 2026, month: 3, day: 29))
+        XCTAssertEqual(statement.transactions[1].amount, Decimal(string: "200.00"))
+        XCTAssertEqual(statement.transactions[1].payee, "Roger Nolan")
+        XCTAssertEqual(statement.transactions[1].transactionType, "CREDIT")
+    }
+
+    func testImportQIFDataIsIdempotentUsingDateAmountAndPayee() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+
+        let firstResult = try state.importQIFData(
+            Self.makeQIFData(),
+            fileName: "monzo.qif",
+            into: account.id
+        )
+        let secondResult = try state.importQIFData(
+            Self.makeQIFData(),
+            fileName: "monzo.qif",
+            into: account.id
+        )
+
+        XCTAssertEqual(firstResult.importResult.insertedCount, 2)
+        XCTAssertEqual(firstResult.importResult.skippedCount, 0)
+        XCTAssertEqual(secondResult.importResult.insertedCount, 0)
+        XCTAssertEqual(secondResult.importResult.skippedCount, 2)
+        XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [account.id]).count, 2)
+    }
+
+    func testImportDailyQIFDataDerivesCurrentBalanceFromStartingBudgetAndTransactions() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetAmount = Decimal(string: "1000")!
+
+        let result = try state.importDailyQIFData(
+            Self.makeQIFData(),
+            fileName: "monzo.qif"
+        )
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        let transactions = try repository.transactions(accountIDs: [hiddenAccount.id])
+
+        XCTAssertEqual(result.importResult.insertedCount, 2)
+        XCTAssertEqual(result.importResult.skippedCount, 0)
+        XCTAssertEqual(result.ignoredOutsideCurrentCycleCount, 0)
+        XCTAssertEqual(state.dailyBudgetSeparateAccountBalance, Decimal(string: "1187.66"))
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, Decimal(string: "1187.66"))
+        XCTAssertEqual(transactions.count, 2)
+        XCTAssertEqual(Set(transactions.map(\.monthKey)), [YearMonth(year: 2026, month: 3).rawValue, YearMonth(year: 2026, month: 4).rawValue])
+        XCTAssertEqual(state.dailyBalanceChartPoints.last?.balance, Decimal(string: "1187.66"))
+    }
+
+    func testImportDailyQIFDataReportsSkippedDuplicates() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        let first = try state.importDailyQIFData(Self.makeQIFData(), fileName: "monzo.qif")
+        let second = try state.importDailyQIFData(Self.makeQIFData(), fileName: "monzo.qif")
+
+        XCTAssertEqual(first.importResult.insertedCount, 2)
+        XCTAssertEqual(first.importResult.skippedCount, 0)
+        XCTAssertEqual(second.importResult.insertedCount, 0)
+        XCTAssertEqual(second.importResult.skippedCount, 2)
+    }
+
+    func testDerivedDailyBalanceRecalculatesWhenStartingBudgetChanges() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetAmount = Decimal(string: "1000")!
+
+        _ = try state.importDailyQIFData(Self.makeQIFData(), fileName: "monzo.qif")
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, Decimal(string: "1187.66"))
+
+        state.dailyBudgetAmount = Decimal(string: "900")!
+
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, Decimal(string: "1087.66"))
+        XCTAssertEqual(state.dailyBalanceChartPoints.last?.balance, Decimal(string: "1087.66"))
+    }
+
+    func testImportDailyQIFDataPreservesExplicitBalanceOverride() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = Decimal(string: "4321.09")!
+
+        _ = try state.importDailyQIFData(Self.makeQIFData(), fileName: "monzo.qif")
+
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, Decimal(string: "4321.09"))
+    }
+
+    func testImportDailyQIFDataIgnoresTransactionsOutsideCurrentCycle() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 24) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetPaydayDay = 28
+        state.dailyBudgetAmount = 1000
+
+        let result = try state.importDailyQIFData(Self.makeOutOfCycleQIFData(), fileName: "monzo.qif")
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        let transactions = try repository.transactions(accountIDs: [hiddenAccount.id])
+        let importedRecords = try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id])
+
+        XCTAssertEqual(result.importResult.insertedCount, 0)
+        XCTAssertEqual(result.importResult.skippedCount, 0)
+        XCTAssertEqual(result.ignoredOutsideCurrentCycleCount, 2)
+        XCTAssertTrue(transactions.isEmpty)
+        XCTAssertTrue(importedRecords.isEmpty)
+        XCTAssertEqual(state.dailyBudgetCurrentBalance, 1000)
+    }
+
     func testImportOFXDataUpdatesPrimaryBankBalanceFromStatementLedgerBalance() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -3069,6 +3228,42 @@ final class MonthlyMoneyTests: XCTestCase {
         """
 
         return Data(ofx.utf8)
+    }
+
+    private static func makeQIFData() -> Data {
+        let qif = """
+        !Type:Bank
+        D02/03/2026
+        T-12.34
+        PMonzo Card
+        LEating out
+        MCoffee
+        ^
+        D29/03/2026
+        T200.00
+        PRoger Nolan
+        LTransfers
+        MPOCKET MONEY
+        ^
+        """
+
+        return Data(qif.utf8)
+    }
+
+    private static func makeOutOfCycleQIFData() -> Data {
+        let qif = """
+        !Type:Bank
+        D02/12/2025
+        T-12.34
+        PMonzo Card
+        ^
+        D28/02/2026
+        T200.00
+        PRoger Nolan
+        ^
+        """
+
+        return Data(qif.utf8)
     }
 
     private func makeTestBudgetShareSession(budgetID: UUID) -> BudgetShareSession {

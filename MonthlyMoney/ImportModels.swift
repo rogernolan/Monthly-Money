@@ -1,15 +1,15 @@
 import Foundation
 
-struct NationwideOFXStatement: Equatable {
+struct ImportedAccountStatement: Equatable {
     let accountIdentifier: String
     let currencyCode: String
     let statementStartDate: Date
     let statementEndDate: Date
     let ledgerBalance: Decimal?
-    let transactions: [NationwideOFXTransaction]
+    let transactions: [ImportedAccountTransaction]
 }
 
-struct NationwideOFXTransaction: Equatable {
+struct ImportedAccountTransaction: Equatable {
     let externalTransactionID: String
     let postedAt: Date
     let amount: Decimal
@@ -17,6 +17,11 @@ struct NationwideOFXTransaction: Equatable {
     let transactionType: String
     let rawSourcePayload: String
 }
+
+typealias NationwideOFXStatement = ImportedAccountStatement
+typealias NationwideOFXTransaction = ImportedAccountTransaction
+typealias MonzoQIFStatement = ImportedAccountStatement
+typealias MonzoQIFTransaction = ImportedAccountTransaction
 
 struct ImportedTransactionImportResult: Equatable {
     let parsedCount: Int
@@ -26,4 +31,9 @@ struct ImportedTransactionImportResult: Equatable {
     let statementStartDate: Date
     let statementEndDate: Date
     let insertedRecordIDs: [UUID]
+}
+
+struct DailyImportedStatementResult: Equatable {
+    let importResult: ImportedTransactionImportResult
+    let ignoredOutsideCurrentCycleCount: Int
 }

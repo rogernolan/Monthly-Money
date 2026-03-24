@@ -160,7 +160,10 @@ struct DailyView: View {
         ) {
             if state.usesSeparateAccountForDailyBudget {
                 EditableMoneyChipValue(
-                    value: $state.dailyBudgetSeparateAccountBalance,
+                    value: Binding(
+                        get: { state.dailyBudgetSeparateAccountBalance },
+                        set: { state.dailyBudgetSeparateAccountBalance = $0 }
+                    ),
                     fontSize: ChipTypography.dailyValueFontSize(for: horizontalSizeClass),
                     focus: $focusedEditableChipID,
                     focusID: "daily-current-balance",

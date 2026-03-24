@@ -115,8 +115,13 @@ enum DailyOFXImportError: LocalizedError, Equatable {
 private struct PersistedMonthBalances: Codable, Equatable {
     var openingBalances: [String: String]
     var primaryBankBalances: [String: String]
+    var dailyBudgetSeparateAccountBalanceOverride: String?
 
-    static let empty = PersistedMonthBalances(openingBalances: [:], primaryBankBalances: [:])
+    static let empty = PersistedMonthBalances(
+        openingBalances: [:],
+        primaryBankBalances: [:],
+        dailyBudgetSeparateAccountBalanceOverride: nil
+    )
 }
 
 private enum PersistedMonthBalancesCodec {
@@ -128,10 +133,17 @@ private enum PersistedMonthBalancesCodec {
         return decoded
     }
 
-    static func encode(openingBalances: [String: Decimal], primaryBankBalances: [String: Decimal]) -> String {
+    static func encode(
+        openingBalances: [String: Decimal],
+        primaryBankBalances: [String: Decimal],
+        dailyBudgetSeparateAccountBalanceOverride: Decimal?
+    ) -> String {
         let payload = PersistedMonthBalances(
             openingBalances: openingBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue },
-            primaryBankBalances: primaryBankBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue }
+            primaryBankBalances: primaryBankBalances.mapValues { NSDecimalNumber(decimal: $0).stringValue },
+            dailyBudgetSeparateAccountBalanceOverride: dailyBudgetSeparateAccountBalanceOverride.map {
+                NSDecimalNumber(decimal: $0).stringValue
+            }
         )
         guard let data = try? JSONEncoder().encode(payload),
               let json = String(data: data, encoding: .utf8) else {
@@ -337,7 +349,7 @@ final class AppState: ObservableObject {
     @Published var cashBalance: Decimal = 0
     @Published var fxBalance: Decimal = 0
     @Published var paydayDay: Int = 1
-    @Published var dailyBudgetSeparateAccountBalance: Decimal = 0 {
+    @Published private var explicitDailyBudgetSeparateAccountBalanceOverride: Decimal? {
         didSet { persistBudgetStateIfNeeded() }
     }
 
@@ -464,16 +476,41 @@ final class AppState: ObservableObject {
             return
         }
 
-        let currentCycleMonth = currentDailyCycleMonthKey()
+        let cycleBounds = currentDailyCycleDateRange()
         let transactions = try repository.transactions(accountIDs: [hiddenAccount.id])
-        for transaction in transactions where transaction.monthKey != currentCycleMonth.rawValue {
-            try repository.deleteTransaction(id: transaction.id)
+        for transaction in transactions {
+            guard let postedAt = transaction.sourcePostedAt else {
+                try repository.deleteTransaction(id: transaction.id)
+                continue
+            }
+            let day = Self.fixedDailyCycleCalendar.startOfDay(for: postedAt)
+            guard day >= cycleBounds.startInclusive, day < cycleBounds.endExclusive else {
+                try repository.deleteTransaction(id: transaction.id)
+                continue
+            }
         }
 
         let importedRecords = try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id])
-        for record in importedRecords where dailyBudgetMonthKey(for: record.postedAt) != currentCycleMonth {
-            try repository.deleteImportedTransactionRecord(id: record.id)
+        for record in importedRecords {
+            let day = Self.fixedDailyCycleCalendar.startOfDay(for: record.postedAt)
+            guard day >= cycleBounds.startInclusive, day < cycleBounds.endExclusive else {
+                try repository.deleteImportedTransactionRecord(id: record.id)
+                continue
+            }
         }
+    }
+
+    private func currentDailyCycleDateRange() -> (startInclusive: Date, endExclusive: Date) {
+        let calendar = Self.fixedDailyCycleCalendar
+        let boundaries = DailyBudgetCycleCalculator.cycleBoundaries(
+            today: nowProvider(),
+            paydayDay: dailyBudgetPaydayDay,
+            calendar: calendar
+        )
+        return (
+            startInclusive: calendar.startOfDay(for: boundaries.previousPayday),
+            endExclusive: calendar.startOfDay(for: boundaries.nextPayday)
+        )
     }
 
     var usesSeparateAccountForDailyBudget: Bool {
@@ -509,8 +546,17 @@ final class AppState: ObservableObject {
     var persistedMonthBalancePayload: String {
         PersistedMonthBalancesCodec.encode(
             openingBalances: openingBalances,
-            primaryBankBalances: primaryBankBalances
+            primaryBankBalances: primaryBankBalances,
+            dailyBudgetSeparateAccountBalanceOverride: explicitDailyBudgetSeparateAccountBalanceOverride
         )
+    }
+
+    var dailyBudgetSeparateAccountBalance: Decimal {
+        get { explicitDailyBudgetSeparateAccountBalanceOverride ?? derivedDailyBudgetSeparateAccountBalance }
+        set {
+            explicitDailyBudgetSeparateAccountBalanceOverride = newValue
+            objectWillChange.send()
+        }
     }
 
     var privateStoreSyncMode: StoreSyncMode {
@@ -581,7 +627,7 @@ final class AppState: ObservableObject {
 
             return try Data(contentsOf: url)
         }.value
-        print("[OFXImport] loaded file '\(url.lastPathComponent)' (\(data.count) bytes)")
+        print("[Import] loaded file '\(url.lastPathComponent)' (\(data.count) bytes)")
         return data
     }
 
@@ -596,7 +642,11 @@ final class AppState: ObservableObject {
         }
 
         let statement = try NationwideOFXImporter().parse(data: data)
-        let importResult = try ImportedTransactionService(repository: repository).import(statement: statement, into: account)
+        let importResult = try ImportedTransactionService(repository: repository).import(
+            statement: statement,
+            sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
+            into: account
+        )
         let reconciliationResult = try ImportedTransactionReconciliationService(repository: repository).reconcile(
             account: account,
             importedRecordIDs: importResult.insertedRecordIDs
@@ -605,6 +655,33 @@ final class AppState: ObservableObject {
         try refresh()
         print(
             "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
+        )
+        return (importResult: importResult, reconciliationResult: reconciliationResult)
+    }
+
+    func importQIFData(
+        _ data: Data,
+        fileName: String,
+        into accountID: UUID
+    ) throws -> (importResult: ImportedTransactionImportResult, reconciliationResult: ImportedTransactionReconciliationResult) {
+        let availableAccounts = try repository.accounts()
+        guard let account = availableAccounts.first(where: { $0.id == accountID }) else {
+            throw RepositoryError.accountNotFound
+        }
+
+        let statement = try MonzoQIFImporter().parse(data: data)
+        let importResult = try ImportedTransactionService(repository: repository).import(
+            statement: statement,
+            sourceKind: ImportedTransactionService.monzoQIFSourceKind,
+            into: account
+        )
+        let reconciliationResult = try ImportedTransactionReconciliationService(repository: repository).reconcile(
+            account: account,
+            importedRecordIDs: importResult.insertedRecordIDs
+        )
+        try refresh()
+        print(
+            "[QIFImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
         )
         return (importResult: importResult, reconciliationResult: reconciliationResult)
     }
@@ -630,6 +707,7 @@ final class AppState: ObservableObject {
 
         let importResult = try ImportedTransactionService(repository: repository).import(
             statement: statement,
+            sourceKind: ImportedTransactionService.nationwideOFXSourceKind,
             into: hiddenAccount
         )
         try createDailyImportedTransactions(
@@ -644,10 +722,68 @@ final class AppState: ObservableObject {
         return ledgerBalance
     }
 
+    func importDailyQIFData(
+        _ data: Data,
+        fileName: String
+    ) throws -> DailyImportedStatementResult {
+        guard let budget = try repository.activeBudget(),
+              budget.usesSeparateAccountForDailyBudget else {
+            throw DailyOFXImportError.dailyBudgetAccountUnavailable
+        }
+
+        try ensureHiddenDailyAccountIfNeeded()
+        guard let hiddenAccount = try repository.hiddenDailyAccount(for: budget) else {
+            throw DailyOFXImportError.dailyBudgetAccountUnavailable
+        }
+
+        let statement = try MonzoQIFImporter().parse(data: data)
+        let filtered = filterStatementToCurrentDailyCycle(statement)
+        let importResult = try ImportedTransactionService(repository: repository).import(
+            statement: filtered.statement,
+            sourceKind: ImportedTransactionService.monzoQIFSourceKind,
+            into: hiddenAccount
+        )
+        try createDailyImportedTransactions(
+            for: hiddenAccount,
+            importedRecordIDs: importResult.insertedRecordIDs
+        )
+        try refresh()
+        print(
+            "[QIFImport] imported file '\(fileName)' into daily account: parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), ignored outside cycle \(filtered.ignoredOutsideCurrentCycleCount)"
+        )
+        return DailyImportedStatementResult(
+            importResult: importResult,
+            ignoredOutsideCurrentCycleCount: filtered.ignoredOutsideCurrentCycleCount
+        )
+    }
+
     private func applyImportedStatementBalanceIfPresent(_ statement: NationwideOFXStatement) {
         guard let ledgerBalance = statement.ledgerBalance else { return }
         let balanceMonth = dailyBudgetMonthKey(for: statement.statementEndDate)
         primaryBankBalances[balanceMonth.rawValue] = ledgerBalance
+    }
+
+    private func filterStatementToCurrentDailyCycle(
+        _ statement: ImportedAccountStatement
+    ) -> (statement: ImportedAccountStatement, ignoredOutsideCurrentCycleCount: Int) {
+        let calendar = Self.fixedDailyCycleCalendar
+        let cycleBounds = currentDailyCycleDateRange()
+        let filteredTransactions = statement.transactions.filter { transaction in
+            let day = calendar.startOfDay(for: transaction.postedAt)
+            return day >= cycleBounds.startInclusive && day < cycleBounds.endExclusive
+        }
+
+        return (
+            statement: ImportedAccountStatement(
+                accountIdentifier: statement.accountIdentifier,
+                currencyCode: statement.currencyCode,
+                statementStartDate: statement.statementStartDate,
+                statementEndDate: statement.statementEndDate,
+                ledgerBalance: statement.ledgerBalance,
+                transactions: filteredTransactions
+            ),
+            ignoredOutsideCurrentCycleCount: max(0, statement.transactions.count - filteredTransactions.count)
+        )
     }
 
     func sharingPresentationDidFail(message: String) {
@@ -1368,6 +1504,28 @@ final class AppState: ObservableObject {
         return (try? repository.transactions(accountIDs: [hiddenAccount.id])) ?? []
     }
 
+    private var derivedDailyBudgetSeparateAccountBalance: Decimal {
+        dailyBudgetAmount + netDailyImportedTransactionsInCurrentCycle()
+    }
+
+    private func netDailyImportedTransactionsInCurrentCycle() -> Decimal {
+        let calendar = Self.fixedDailyCycleCalendar
+        let boundaries = DailyBudgetCycleCalculator.cycleBoundaries(
+            today: nowProvider(),
+            paydayDay: dailyBudgetPaydayDay,
+            calendar: calendar
+        )
+        let cycleStart = calendar.startOfDay(for: boundaries.previousPayday)
+        let cycleEnd = calendar.startOfDay(for: nowProvider())
+
+        return dailyBalanceChartTransactions().reduce(into: Decimal.zero) { total, transaction in
+            guard let postedAt = transaction.sourcePostedAt else { return }
+            let day = calendar.startOfDay(for: postedAt)
+            guard day >= cycleStart, day <= cycleEnd else { return }
+            total += transaction.amount
+        }
+    }
+
     private func dailyBudgetMonthKey(for date: Date) -> YearMonth {
         let calendar = Self.fixedDailyCycleCalendar
         let components = calendar.dateComponents([.year, .month, .day], from: date)
@@ -1436,7 +1594,7 @@ final class AppState: ObservableObject {
             isHydratingPersistedBudgetState = true
             openingBalances = [:]
             primaryBankBalances = [:]
-            dailyBudgetSeparateAccountBalance = 0
+            explicitDailyBudgetSeparateAccountBalanceOverride = nil
             isHydratingPersistedBudgetState = false
             return
         }
@@ -1445,7 +1603,11 @@ final class AppState: ObservableObject {
         isHydratingPersistedBudgetState = true
         openingBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.openingBalances)
         primaryBankBalances = PersistedMonthBalancesCodec.decimalMap(from: persisted.primaryBankBalances)
-        dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
+        explicitDailyBudgetSeparateAccountBalanceOverride = persisted.dailyBudgetSeparateAccountBalanceOverride.flatMap { Decimal(string: $0) }
+        if explicitDailyBudgetSeparateAccountBalanceOverride == nil,
+           budget.dailyBudgetSeparateAccountBalance != 0 {
+            explicitDailyBudgetSeparateAccountBalanceOverride = budget.dailyBudgetSeparateAccountBalance
+        }
         isHydratingPersistedBudgetState = false
     }
 
@@ -1454,7 +1616,7 @@ final class AppState: ObservableObject {
         do {
             guard let budget = try repository.activeBudget() else { return }
             budget.monthBalancesPayload = persistedMonthBalancePayload
-            budget.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
+            budget.dailyBudgetSeparateAccountBalance = explicitDailyBudgetSeparateAccountBalanceOverride ?? 0
             try repository.saveBudget(budget)
         } catch {
             print("Persist budget state failed: \(error)")
