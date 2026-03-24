@@ -36,10 +36,12 @@ protocol AccountDataStore {
     func fetchTransactions(accountIDs: Set<UUID>) throws -> [Transaction]
     func upsertTransactions(_ transactions: [Transaction]) throws
     func deleteTransactions(accountID: UUID) throws
+    func deleteTransaction(id: UUID) throws
 
     func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord]
     func upsertImportedTransactionRecords(_ records: [ImportedTransactionRecord]) throws
     func deleteImportedTransactionRecords(accountID: UUID) throws
+    func deleteImportedTransactionRecord(id: UUID) throws
 
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem]
     func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem?
@@ -164,6 +166,10 @@ final class InMemoryAccountDataStore: AccountDataStore {
         transactionsByID = transactionsByID.filter { $0.value.accountID != accountID }
     }
 
+    func deleteTransaction(id: UUID) throws {
+        transactionsByID[id] = nil
+    }
+
     func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
         Array(importedTransactionRecordsByID.values).filter { accountIDs.contains($0.accountID) }
     }
@@ -176,6 +182,10 @@ final class InMemoryAccountDataStore: AccountDataStore {
 
     func deleteImportedTransactionRecords(accountID: UUID) throws {
         importedTransactionRecordsByID = importedTransactionRecordsByID.filter { $0.value.accountID != accountID }
+    }
+
+    func deleteImportedTransactionRecord(id: UUID) throws {
+        importedTransactionRecordsByID[id] = nil
     }
 
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
@@ -244,6 +254,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
             existing.autoGenerateWoMSavingsEveryMonth = budget.autoGenerateWoMSavingsEveryMonth
             existing.monthBalancesPayload = budget.monthBalancesPayload
+            existing.hiddenDailyAccountID = budget.hiddenDailyAccountID
         } else {
             modelContext.insert(budget)
         }
@@ -366,6 +377,14 @@ final class SwiftDataAccountDataStore: AccountDataStore {
         try modelContext.save()
     }
 
+    func deleteTransaction(id: UUID) throws {
+        let descriptor = FetchDescriptor<Transaction>(predicate: #Predicate { $0.id == id })
+        if let transaction = try modelContext.fetch(descriptor).first {
+            modelContext.delete(transaction)
+            try modelContext.save()
+        }
+    }
+
     func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
         let accountIDList = Array(accountIDs)
         let descriptor = FetchDescriptor<ImportedTransactionRecord>(predicate: #Predicate { accountIDList.contains($0.accountID) })
@@ -401,6 +420,14 @@ final class SwiftDataAccountDataStore: AccountDataStore {
         let descriptor = FetchDescriptor<ImportedTransactionRecord>(predicate: #Predicate { $0.accountID == accountID })
         try modelContext.fetch(descriptor).forEach(modelContext.delete)
         try modelContext.save()
+    }
+
+    func deleteImportedTransactionRecord(id: UUID) throws {
+        let descriptor = FetchDescriptor<ImportedTransactionRecord>(predicate: #Predicate { $0.id == id })
+        if let record = try modelContext.fetch(descriptor).first {
+            modelContext.delete(record)
+            try modelContext.save()
+        }
     }
 
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] {
@@ -454,6 +481,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
 final class AccountRepository {
     private let privateStore: AccountDataStore
     private let sharedStore: AccountDataStore
+    private static let hiddenDailyAccountName = "Daily budget"
     let privateStoreSyncMode: StoreSyncMode
     let sharedStoreSyncMode: StoreSyncMode
     let privateStoreImplementationKind: DataStoreImplementationKind
@@ -624,6 +652,18 @@ final class AccountRepository {
         try touchBudget(id: account.budgetID, in: store)
     }
 
+    func deleteTransaction(id: UUID) throws {
+        if let transaction = try privateStore.fetchTransactions().first(where: { $0.id == id }) {
+            try privateStore.deleteTransaction(id: id)
+            try touchBudget(id: transaction.budgetID, in: privateStore)
+            return
+        }
+        if let transaction = try sharedStore.fetchTransactions().first(where: { $0.id == id }) {
+            try sharedStore.deleteTransaction(id: id)
+            try touchBudget(id: transaction.budgetID, in: sharedStore)
+        }
+    }
+
     func saveTransaction(_ transaction: Transaction) throws {
         try createTransaction(transaction)
     }
@@ -635,6 +675,18 @@ final class AccountRepository {
         record.budgetID = account.budgetID
         try store.upsertImportedTransactionRecords([record])
         try touchBudget(id: account.budgetID, in: store)
+    }
+
+    func deleteImportedTransactionRecord(id: UUID) throws {
+        if let record = try privateStore.fetchImportedTransactionRecords(accountIDs: Set(privateStore.fetchAccounts().map(\.id))).first(where: { $0.id == id }) {
+            try privateStore.deleteImportedTransactionRecord(id: id)
+            try touchBudget(id: record.budgetID, in: privateStore)
+            return
+        }
+        if let record = try sharedStore.fetchImportedTransactionRecords(accountIDs: Set(sharedStore.fetchAccounts().map(\.id))).first(where: { $0.id == id }) {
+            try sharedStore.deleteImportedTransactionRecord(id: id)
+            try touchBudget(id: record.budgetID, in: sharedStore)
+        }
     }
 
     func saveImportedTransactionRecord(_ record: ImportedTransactionRecord) throws {
@@ -654,7 +706,42 @@ final class AccountRepository {
     func accounts() throws -> [Account] {
         guard let budget = try activeBudget() else { return [] }
         guard let store = try storeHoldingBudget(id: budget.id) else { return [] }
-        return try store.fetchAccounts().filter { $0.budgetID == budget.id }
+        let hiddenDailyAccountID = budget.hiddenDailyAccountID
+        let allAccounts = try store.fetchAccounts()
+        var visibleAccounts: [Account] = []
+        visibleAccounts.reserveCapacity(allAccounts.count)
+        for account in allAccounts where account.budgetID == budget.id && account.id != hiddenDailyAccountID {
+            visibleAccounts.append(account)
+        }
+        return visibleAccounts
+    }
+
+    func hiddenDailyAccount(for budget: Budget) throws -> Account? {
+        guard budget.usesSeparateAccountForDailyBudget else { return nil }
+        guard let hiddenDailyAccountID = budget.hiddenDailyAccountID,
+              let store = try storeHoldingBudget(id: budget.id) else {
+            return nil
+        }
+        return try store.fetchAccount(id: hiddenDailyAccountID)
+    }
+
+    func ensureHiddenDailyAccount(for budget: Budget) throws -> Account? {
+        guard budget.usesSeparateAccountForDailyBudget else { return nil }
+        if let hiddenDailyAccount = try hiddenDailyAccount(for: budget) {
+            return hiddenDailyAccount
+        }
+        guard let store = try storeHoldingBudget(id: budget.id) else { return nil }
+        let account = Account(
+            budgetID: budget.id,
+            name: Self.hiddenDailyAccountName,
+            role: .regular,
+            type: .current,
+            ownerParticipantID: budget.ownerParticipantID
+        )
+        try store.upsertAccount(account)
+        budget.hiddenDailyAccountID = account.id
+        try saveBudget(budget)
+        return account
     }
 
     func transactions(accountIDs: Set<UUID>) throws -> [Transaction] {

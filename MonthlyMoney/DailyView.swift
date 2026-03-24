@@ -1,3 +1,4 @@
+import Charts
 import SwiftUI
 
 enum DailyChipKind {
@@ -70,38 +71,58 @@ struct DailyView: View {
 
     var body: some View {
         ScrollView {
-            GeometryReader { proxy in
-                let cardWidth = max((proxy.size.width - 10) / 2, 0)
-                let metrics = state.dailyCycleMetrics
-                VStack(spacing: 10) {
-                    HStack(spacing: 10) {
-                        budgetChip
-                            .frame(width: cardWidth)
-                        dailyBudgetChip(metrics: metrics)
-                            .frame(width: cardWidth)
-                    }
+            let metrics = state.dailyCycleMetrics
+            let chartPoints = state.dailyBalanceChartPoints
+            VStack(spacing: DailyLayoutMetrics.contentSpacing) {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 10),
+                        GridItem(.flexible(), spacing: 10)
+                    ],
+                    spacing: 10
+                ) {
+                    budgetChip
+                    dailyBudgetChip(metrics: metrics)
+                    currentBalanceChip(metrics: metrics)
+                    aheadBehindChip(metrics: metrics)
+                    currentDailyBudgetChip(metrics: metrics)
+                    daysUntilPaydayChip(metrics: metrics)
+                }
 
-                    HStack(spacing: 10) {
-                        currentBalanceChip(metrics: metrics)
-                            .frame(width: cardWidth)
-                        aheadBehindChip(metrics: metrics)
-                            .frame(width: cardWidth)
-                    }
-
-                    HStack(spacing: 10) {
-                        currentDailyBudgetChip(metrics: metrics)
-                            .frame(width: cardWidth)
-                        daysUntilPaydayChip(metrics: metrics)
-                            .frame(width: cardWidth)
-                    }
+                if state.usesSeparateAccountForDailyBudget {
+                    dailyBalanceChartCard(points: chartPoints, metrics: metrics)
                 }
             }
-            .frame(height: 326)
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
         .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("Daily")
+        .navigationTitle(DailyNavigationStyle.title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func dailyBalanceChartCard(points: [DailyBalanceChartPoint], metrics: DailyBudgetCycleMetrics) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(DailyBalanceChartStyle.title)
+                .font(.headline)
+
+            DailyBalanceChartView(
+                points: points,
+                cycleMetrics: metrics
+            )
+            .frame(height: 190)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Color(uiColor: .secondarySystemGroupedBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(uiColor: .separator).opacity(0.18), lineWidth: 1)
+        )
     }
 
     private var budgetChip: some View {
@@ -211,7 +232,7 @@ struct DailyView: View {
         .foregroundStyle(palette.valueColor)
         .multilineTextAlignment(.trailing)
         .frame(maxWidth: .infinity, alignment: .topTrailing)
-        .frame(minHeight: 92, alignment: .topTrailing)
+        .frame(minHeight: DailyLayoutMetrics.chipMinHeight, alignment: .topTrailing)
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
         .background(
@@ -273,5 +294,150 @@ struct DailyView: View {
                 .green
             )
         }
+    }
+}
+
+enum DailyLayoutMetrics {
+    static let chipMinHeight: CGFloat = 82
+    static let contentSpacing: CGFloat = 8
+}
+
+enum DailyNavigationStyle {
+    static let title = "Daily"
+    static let usesInlineTitleDisplay = true
+}
+
+private struct DailyBalanceChartView: View {
+    let points: [DailyBalanceChartPoint]
+    let cycleMetrics: DailyBudgetCycleMetrics
+
+    var body: some View {
+        Chart(points) { point in
+            ForEach(DailyBalanceChartStyle.weekendGuideDates(from: cycleMetrics.previousPayday, to: cycleMetrics.nextPayday), id: \.self) { date in
+                RuleMark(x: .value("Weekend", date))
+                    .foregroundStyle(Color.secondary.opacity(0.24))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+            }
+
+            AreaMark(
+                x: .value("Day", point.date),
+                y: .value("Balance", point.balanceValue)
+            )
+            .interpolationMethod(DailyBalanceChartStyle.interpolationMethod)
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        Color.accentColor.opacity(0.25),
+                        Color.accentColor.opacity(0.05)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+
+            LineMark(
+                x: .value("Day", point.date),
+                y: .value("Balance", point.balanceValue)
+            )
+            .interpolationMethod(DailyBalanceChartStyle.interpolationMethod)
+            .foregroundStyle(Color.accentColor)
+            .lineStyle(StrokeStyle(lineWidth: 2))
+        }
+        .chartXScale(domain: DailyBalanceChartStyle.domain(for: cycleMetrics))
+        .chartYScale(domain: yDomain)
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine()
+                    .foregroundStyle(Color.secondary.opacity(0.12))
+                AxisTick()
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(DailyBalanceChartStyle.dayLabel(for: date))
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine()
+                    .foregroundStyle(Color.secondary.opacity(0.10))
+                AxisTick()
+                AxisValueLabel {
+                    if let y = value.as(Double.self) {
+                        Text(AppState.currency(NSDecimalNumber(value: y).decimalValue))
+                    }
+                }
+            }
+        }
+        .chartOverlay { _ in
+            Rectangle().fill(.clear)
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Payday cycle balance chart")
+        .accessibilityValue(chartAccessibilityValue)
+    }
+
+    private var yDomain: ClosedRange<Double> {
+        let yValues = points.map(\.balanceValue)
+        guard let minY = yValues.min(), let maxY = yValues.max() else {
+            let baseline = NSDecimalNumber(decimal: cycleMetrics.currentDailyBudget).doubleValue
+            return (baseline - 1)...(baseline + 1)
+        }
+
+        if minY == maxY {
+            let padding = max(abs(minY) * 0.05, 25)
+            return (minY - padding)...(maxY + padding)
+        }
+
+        let padding = max((maxY - minY) * 0.12, 25)
+        return (minY - padding)...(maxY + padding)
+    }
+
+    private var chartAccessibilityValue: String {
+        guard let first = points.first, let last = points.last else {
+            return "No data"
+        }
+        return "\(AppState.currency(first.balance)) to \(AppState.currency(last.balance))"
+    }
+}
+
+enum DailyBalanceChartStyle {
+    static let title = "Balance"
+    static let interpolationMethod: InterpolationMethod = .linear
+    static let showsAreaFill = true
+    static let showsPointMarkers = false
+
+    static func domain(for metrics: DailyBudgetCycleMetrics) -> ClosedRange<Date> {
+        metrics.previousPayday...metrics.nextPayday
+    }
+
+    static func dayLabel(for date: Date) -> String {
+        let day = fixedCalendar.component(.day, from: date)
+        return "\(day)"
+    }
+
+    static func weekendGuideDates(from start: Date, to end: Date) -> [Date] {
+        let normalizedStart = fixedCalendar.startOfDay(for: start)
+        let normalizedEnd = fixedCalendar.startOfDay(for: end)
+        var dates: [Date] = []
+        var day = normalizedStart
+
+        while day <= normalizedEnd {
+            if fixedCalendar.component(.weekday, from: day) == 6 {
+                dates.append(day)
+            }
+            guard let nextDay = fixedCalendar.date(byAdding: .day, value: 1, to: day) else {
+                break
+            }
+            day = fixedCalendar.startOfDay(for: nextDay)
+        }
+
+        return dates
+    }
+
+    private static var fixedCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
     }
 }

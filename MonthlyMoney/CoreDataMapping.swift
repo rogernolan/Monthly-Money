@@ -134,7 +134,8 @@ enum CoreDataModelBuilder {
             attribute("dailyBudgetPaydayDay", .integer16AttributeType, defaultValue: 1),
             attribute("dailyBudgetSeparateAccountBalance", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
             attribute("autoGenerateWoMSavingsEveryMonth", .booleanAttributeType, defaultValue: false),
-            attribute("monthBalancesPayload", .stringAttributeType, defaultValue: "{}")
+            attribute("monthBalancesPayload", .stringAttributeType, defaultValue: "{}"),
+            attribute("hiddenDailyAccountID", .UUIDAttributeType, isOptional: true)
         ]
         return entity
     }
@@ -281,6 +282,7 @@ enum CoreDataMapping {
         managedObject.setValue(budget.dailyBudgetSeparateAccountBalance as NSDecimalNumber, forKey: "dailyBudgetSeparateAccountBalance")
         managedObject.setValue(budget.autoGenerateWoMSavingsEveryMonth, forKey: "autoGenerateWoMSavingsEveryMonth")
         managedObject.setValue(budget.monthBalancesPayload, forKey: "monthBalancesPayload")
+        managedObject.setValue(budget.hiddenDailyAccountID, forKey: "hiddenDailyAccountID")
     }
 
     static func budget(from managedObject: NSManagedObject) -> Budget {
@@ -296,7 +298,8 @@ enum CoreDataMapping {
             dailyBudgetPaydayDay: Int(managedObject.value(forKey: "dailyBudgetPaydayDay") as? Int16 ?? 1),
             dailyBudgetSeparateAccountBalance: (managedObject.value(forKey: "dailyBudgetSeparateAccountBalance") as? NSDecimalNumber)?.decimalValue ?? 0,
             autoGenerateWoMSavingsEveryMonth: managedObject.value(forKey: "autoGenerateWoMSavingsEveryMonth") as? Bool ?? false,
-            monthBalancesPayload: managedObject.value(forKey: "monthBalancesPayload") as? String ?? "{}"
+            monthBalancesPayload: managedObject.value(forKey: "monthBalancesPayload") as? String ?? "{}",
+            hiddenDailyAccountID: managedObject.value(forKey: "hiddenDailyAccountID") as? UUID
         )
     }
 

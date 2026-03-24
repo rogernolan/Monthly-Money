@@ -393,6 +393,20 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try save()
     }
 
+    func deleteTransaction(id: UUID) throws {
+        if let transaction = try fetchFirst(entityName: CoreDataEntityName.transaction, id: id) {
+            context.delete(transaction)
+            try save()
+        }
+    }
+
+    func deleteImportedTransactionRecord(id: UUID) throws {
+        if let record = try fetchFirst(entityName: CoreDataEntityName.importedTransactionRecord, id: id) {
+            context.delete(record)
+            try save()
+        }
+    }
+
     private func save() throws {
         if context.hasChanges {
             try context.save()

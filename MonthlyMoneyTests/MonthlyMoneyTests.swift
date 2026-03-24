@@ -97,6 +97,111 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
     }
 
+    func testHiddenDailyAccountCanBeCreatedAndExcludedFromVisibleAccounts() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.name, "Budget")
+
+        budget.usesSeparateAccountForDailyBudget = true
+        try repository.saveBudget(budget)
+
+        let hiddenAccount = try XCTUnwrap(repository.ensureHiddenDailyAccount(for: budget))
+        let hiddenAccountAgain = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+
+        XCTAssertEqual(hiddenAccount.id, hiddenAccountAgain.id)
+        XCTAssertEqual(hiddenAccount.name, "Daily budget")
+        XCTAssertEqual(try repository.activeBudget()?.hiddenDailyAccountID, hiddenAccount.id)
+        let visibleAccountIDs = Set(try repository.accounts().map(\.id))
+        XCTAssertFalse(visibleAccountIDs.contains(hiddenAccount.id))
+        XCTAssertEqual(visibleAccountIDs.count, 1)
+    }
+
+    func testHiddenDailyAccountPersistsAcrossSwiftDataRepositoryRecreation() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let plan = MonthlyMoneyPersistencePlan(
+            privateStore: MonthlyMoneyStorePlan(
+                name: "PrivateStore",
+                url: directory.appendingPathComponent("PrivateStore.store"),
+                syncMode: .localOnly,
+                backend: .swiftData
+            ),
+            sharedStore: MonthlyMoneyStorePlan(
+                name: "SharedStore",
+                url: directory.appendingPathComponent("SharedStore.store"),
+                syncMode: .localOnly,
+                backend: .swiftData
+            )
+        )
+        let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
+            plan: plan,
+            schema: Self.makeSchema()
+        )
+        Self.retainHostedTestObject(repository)
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.usesSeparateAccountForDailyBudget = true
+        try repository.saveBudget(budget)
+        let hiddenAccount = try XCTUnwrap(repository.ensureHiddenDailyAccount(for: budget))
+
+        let reloadedRepository = try MonthlyMoneyPersistenceFactory.makeRepository(
+            plan: plan,
+            schema: Self.makeSchema()
+        )
+        Self.retainHostedTestObject(reloadedRepository)
+
+        let reloadedBudget = try XCTUnwrap(try reloadedRepository.activeBudget())
+        XCTAssertEqual(reloadedBudget.hiddenDailyAccountID, hiddenAccount.id)
+    }
+
+    func testRefreshCreatesHiddenDailyAccountForExistingSeparateDailyBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.usesSeparateAccountForDailyBudget = true
+        try repository.saveBudget(budget)
+
+        XCTAssertNil(try repository.hiddenDailyAccount(for: budget))
+
+        try state.refresh()
+
+        let refreshedBudget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: refreshedBudget))
+        XCTAssertEqual(refreshedBudget.hiddenDailyAccountID, hiddenAccount.id)
+        XCTAssertEqual(try repository.accounts().count, 1)
+    }
+
+    func testRefreshDoesNotDuplicateHiddenDailyAccountForExistingSeparateDailyBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.usesSeparateAccountForDailyBudget = true
+        try repository.saveBudget(budget)
+
+        try state.refresh()
+        let firstBudget = try XCTUnwrap(try repository.activeBudget())
+        let firstHiddenAccountID = try XCTUnwrap(repository.hiddenDailyAccount(for: firstBudget)?.id)
+
+        try state.refresh()
+
+        let refreshedBudget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(try repository.hiddenDailyAccount(for: refreshedBudget)?.id, firstHiddenAccountID)
+        XCTAssertEqual(try repository.accounts().count, 1)
+    }
+
     func testBudgetDefaultsWheelOfMoneySavingsGenerationToOff() {
         let budget = Budget(name: "Household", ownerParticipantID: "rog")
 
@@ -487,6 +592,237 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(metrics.expectedBalanceToday, 2000)
         XCTAssertEqual(metrics.aheadBehind, 500)
         XCTAssertEqual(metrics.currentDailyBudget, 125)
+    }
+
+    func testDailyBalanceChartReconstructsEarlierBalancesAcrossCycle() {
+        let calendar = Self.utcCalendar
+        let accountID = UUID()
+        let budgetID = UUID()
+        let points = DailyBalanceChartCalculator.points(
+            currentBalance: 200,
+            today: Self.date(year: 2026, month: 3, day: 12),
+            paydayDay: 10,
+            transactions: [
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 3),
+                    amount: -15,
+                    sourcePostedAt: Self.date(year: 2026, month: 3, day: 11)
+                ),
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 3),
+                    amount: 20,
+                    sourcePostedAt: Self.date(year: 2026, month: 3, day: 12)
+                )
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(points.map { calendar.component(.day, from: $0.date) }, [10, 11, 12])
+        XCTAssertEqual(points.map(\.balance), [195, 180, 200])
+    }
+
+    func testDailyBalanceChartHandlesEmptyHiddenAccountTransactions() {
+        let calendar = Self.utcCalendar
+        let points = DailyBalanceChartCalculator.points(
+            currentBalance: 123,
+            today: Self.date(year: 2026, month: 3, day: 12),
+            paydayDay: 10,
+            transactions: [],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(points.map { calendar.component(.day, from: $0.date) }, [10, 11, 12])
+        XCTAssertEqual(points.map(\.balance), [123, 123, 123])
+    }
+
+    func testDailyBalanceChartPointsAreEmptyWhenSeparateDailyAccountIsDisabled() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertFalse(state.usesSeparateAccountForDailyBudget)
+        XCTAssertTrue(state.dailyBalanceChartPoints.isEmpty)
+    }
+
+    func testDailyBalanceChartUsesFixedGregorianGMTCalendarForBucketing() async throws {
+        let repository = try makeRepository()
+        let now = Self.date(year: 2026, month: 4, day: 1)
+        let state = AppState(repository: repository, nowProvider: { now })
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = 100
+        state.dailyBudgetPaydayDay = 28
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        try repository.createTransaction(
+            Transaction(
+                budgetID: budget.id,
+                accountID: hiddenAccount.id,
+                monthKey: YearMonth(year: 2026, month: 4),
+                amount: -20,
+                note: "Late-night coffee",
+                sourcePostedAt: Self.date(year: 2026, month: 3, day: 31, hour: 23, minute: 30)
+            )
+        )
+
+        try state.refresh()
+
+        let londonCalendar: Calendar = {
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: "Europe/London") ?? .current
+            return calendar
+        }()
+
+        XCTAssertEqual(state.dailyBalanceChartPoints.map { londonCalendar.component(.day, from: $0.date) }, [28, 29, 30, 31, 1])
+        XCTAssertEqual(Self.utcCalendar.component(.hour, from: try XCTUnwrap(state.dailyBalanceChartPoints.last?.date)), 0)
+        XCTAssertEqual(state.dailyBalanceChartPoints.map(\.balance), [120, 120, 120, 100, 100])
+    }
+
+    func testDailyBalanceChartUsesLinearInterpolation() {
+        XCTAssertTrue(String(describing: DailyBalanceChartStyle.interpolationMethod).lowercased().contains("linear"))
+    }
+
+    func testDailyBalanceChartUsesBalanceTitle() {
+        XCTAssertEqual(DailyBalanceChartStyle.title, "Balance")
+    }
+
+    func testDailyBalanceChartDomainSpansEntirePaydayCycle() {
+        let cycleMetrics = DailyBudgetCycleMetrics(
+            previousPayday: Self.date(year: 2026, month: 3, day: 28),
+            nextPayday: Self.date(year: 2026, month: 4, day: 28),
+            cycleDays: 31,
+            elapsedDaysInCycle: 4,
+            remainingDaysToPayday: 27,
+            dailyBudget: 10,
+            expectedBalanceToday: 270,
+            aheadBehind: 0,
+            currentDailyBudget: 10
+        )
+
+        let domain = DailyBalanceChartStyle.domain(for: cycleMetrics)
+
+        XCTAssertEqual(domain.lowerBound, cycleMetrics.previousPayday)
+        XCTAssertEqual(domain.upperBound, cycleMetrics.nextPayday)
+    }
+
+    func testDailyBalanceChartDayLabelUsesFixedGregorianGMTCalendar() {
+        XCTAssertEqual(
+            DailyBalanceChartStyle.dayLabel(for: Self.date(year: 2026, month: 3, day: 31, hour: 23, minute: 30)),
+            "31"
+        )
+    }
+
+    func testDailyBalanceChartWeekendGuideDatesMarkFridaysAcrossCycle() {
+        let guideDates = DailyBalanceChartStyle.weekendGuideDates(
+            from: Self.date(year: 2026, month: 3, day: 28),
+            to: Self.date(year: 2026, month: 4, day: 28)
+        )
+
+        XCTAssertEqual(
+            guideDates,
+            [
+                Self.date(year: 2026, month: 4, day: 3, hour: 0, minute: 0),
+                Self.date(year: 2026, month: 4, day: 10, hour: 0, minute: 0),
+                Self.date(year: 2026, month: 4, day: 17, hour: 0, minute: 0),
+                Self.date(year: 2026, month: 4, day: 24, hour: 0, minute: 0)
+            ]
+        )
+    }
+
+    func testDailyBalanceChartPresentationKeepsAreaFillAndHidesPoints() {
+        XCTAssertTrue(DailyBalanceChartStyle.showsAreaFill)
+        XCTAssertFalse(DailyBalanceChartStyle.showsPointMarkers)
+    }
+
+    func testDailyLayoutUsesReducedChipHeightAndTighterChartSpacing() {
+        XCTAssertEqual(DailyLayoutMetrics.chipMinHeight, 82)
+        XCTAssertEqual(DailyLayoutMetrics.contentSpacing, 8)
+    }
+
+    func testDailyNavigationUsesInlineTitleDisplay() {
+        XCTAssertEqual(DailyNavigationStyle.title, "Daily")
+        XCTAssertTrue(DailyNavigationStyle.usesInlineTitleDisplay)
+    }
+
+    func testDailyBalanceChartRespectsPaydayCycleBoundaries() {
+        let calendar = Self.utcCalendar
+        let accountID = UUID()
+        let budgetID = UUID()
+        let points = DailyBalanceChartCalculator.points(
+            currentBalance: 100,
+            today: Self.date(year: 2026, month: 3, day: 2),
+            paydayDay: 28,
+            transactions: [
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 2),
+                    amount: -50,
+                    sourcePostedAt: Self.date(year: 2026, month: 2, day: 27)
+                ),
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 2),
+                    amount: -10,
+                    sourcePostedAt: Self.date(year: 2026, month: 2, day: 28)
+                ),
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 3),
+                    amount: -5,
+                    sourcePostedAt: Self.date(year: 2026, month: 3, day: 1)
+                ),
+                Transaction(
+                    budgetID: budgetID,
+                    accountID: accountID,
+                    monthKey: YearMonth(year: 2026, month: 3),
+                    amount: 20,
+                    sourcePostedAt: Self.date(year: 2026, month: 3, day: 2)
+                )
+            ],
+            calendar: calendar
+        )
+
+        XCTAssertEqual(points.map { calendar.component(.day, from: $0.date) }, [28, 1, 2])
+        XCTAssertEqual(points.map { calendar.component(.month, from: $0.date) }, [2, 3, 3])
+        XCTAssertEqual(points.map(\.balance), [85, 80, 100])
+    }
+
+    func testDailyBalanceChartPointsUseHiddenDailyAccountTransactions() async throws {
+        let repository = try makeRepository()
+        let fixedNow = Self.date(year: 2026, month: 3, day: 12)
+        let state = AppState(repository: repository, nowProvider: { fixedNow })
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = 200
+        state.dailyBudgetPaydayDay = 10
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        try repository.createTransaction(
+            Transaction(
+                budgetID: budget.id,
+                accountID: hiddenAccount.id,
+                monthKey: YearMonth(year: 2026, month: 4),
+                amount: -15,
+                note: "Coffee",
+                sourcePostedAt: Self.date(year: 2026, month: 3, day: 11)
+            )
+        )
+
+        try state.refresh()
+
+        XCTAssertEqual(state.dailyBalanceChartPoints.map(\.balance), [215, 200, 200])
     }
 
     func testDailyChipToneResolverUsesWhiteBudgetCardsAndComparisonColours() {
@@ -1094,6 +1430,151 @@ final class MonthlyMoneyTests: XCTestCase {
 
         XCTAssertEqual(state.primaryBankBalances[balanceMonth.rawValue], Decimal(string: "1234.56"))
         XCTAssertEqual(state.primaryBankBalance, Decimal(string: "1234.56"))
+    }
+
+    func testImportDailyOFXDataUpdatesDailySeparateAccountBalanceFromStatementLedgerBalance() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        XCTAssertEqual(state.dailyBudgetSeparateAccountBalance, 0)
+
+        _ = try state.importDailyOFXData(
+            Self.makeOFXData(
+                postedDate: "20260302000000",
+                transactionAmount: "-12.34",
+                ledgerBalance: "4321.09"
+            ),
+            fileName: "daily-statement.ofx"
+        )
+
+        XCTAssertEqual(state.dailyBudgetSeparateAccountBalance, Decimal(string: "4321.09"))
+        XCTAssertEqual(try repository.activeBudget()?.dailyBudgetSeparateAccountBalance, Decimal(string: "4321.09"))
+    }
+
+    func testImportDailyOFXDataStoresCurrentCycleTransactionsAndImportedRecords() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+
+        _ = try state.importDailyOFXData(
+            Self.makeOFXData(
+                postedDate: "20260302000000",
+                transactionAmount: "-12.34",
+                ledgerBalance: "4321.09"
+            ),
+            fileName: "daily-statement.ofx"
+        )
+
+        XCTAssertEqual(try repository.transactions(accountIDs: [hiddenAccount.id]).count, 1)
+        XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id]).count, 1)
+    }
+
+    func testImportDailyOFXDataIsIdempotentForHiddenDailyAccount() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        let data = Self.makeOFXData(
+            postedDate: "20260302000000",
+            transactionAmount: "-12.34",
+            ledgerBalance: "4321.09"
+        )
+
+        _ = try state.importDailyOFXData(data, fileName: "daily-statement.ofx")
+        _ = try state.importDailyOFXData(data, fileName: "daily-statement.ofx")
+
+        XCTAssertEqual(try repository.transactions(accountIDs: [hiddenAccount.id]).count, 1)
+        XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id]).count, 1)
+    }
+
+    func testRefreshClearsStaleHiddenDailyImportedDataWhenCycleMovesForward() async throws {
+        var now = Self.date(year: 2026, month: 1, day: 20)
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { now })
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetPaydayDay = 28
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        let data = Self.makeOFXData(
+            postedDate: "20260121000000",
+            transactionAmount: "-12.34",
+            ledgerBalance: "4321.09"
+        )
+
+        _ = try state.importDailyOFXData(data, fileName: "daily-statement.ofx")
+        XCTAssertEqual(try repository.transactions(accountIDs: [hiddenAccount.id]).count, 1)
+        XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id]).count, 1)
+
+        now = Self.date(year: 2026, month: 2, day: 1)
+        try state.refresh()
+
+        XCTAssertTrue(try repository.transactions(accountIDs: [hiddenAccount.id]).isEmpty)
+        XCTAssertTrue(try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id]).isEmpty)
+    }
+
+    func testImportDailyOFXDataDoesNotCreatePlannedItems() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        let hiddenAccount = try XCTUnwrap(repository.hiddenDailyAccount(for: budget))
+        let plannedItemsBefore = try repository.plannedItems(for: state.selectedMonth)
+
+        _ = try state.importDailyOFXData(
+            Self.makeOFXData(
+                postedDate: "20260302000000",
+                transactionAmount: "-12.34",
+                ledgerBalance: "4321.09"
+            ),
+            fileName: "daily-statement.ofx"
+        )
+
+        XCTAssertEqual(try repository.transactions(accountIDs: [hiddenAccount.id]).count, 1)
+        XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id]).count, 1)
+        XCTAssertEqual(try repository.plannedItems(for: state.selectedMonth), plannedItemsBefore)
+    }
+
+    func testImportDailyOFXDataWithoutLedgerBalanceThrowsReadableError() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.usesSeparateAccountForDailyBudget = true
+
+        do {
+            _ = try state.importDailyOFXData(
+                Self.makeOFXData(
+                    postedDate: "20260302000000",
+                    transactionAmount: "-12.34"
+                ),
+                fileName: "daily-statement.ofx"
+            )
+            XCTFail("Expected daily OFX import to throw when ledger balance is missing")
+        } catch let error as DailyOFXImportError {
+            XCTAssertEqual(error, .missingLedgerBalance)
+            XCTAssertEqual(
+                error.localizedDescription,
+                "The OFX file does not include a ledger balance, so the daily balance could not be updated."
+            )
+        }
     }
 
     func testCoreDataAccountDataStoreBackfillsBudgetRelationshipsForExistingDependents() throws {
@@ -2533,6 +3014,18 @@ final class MonthlyMoneyTests: XCTestCase {
         ))!
     }
 
+    private static func date(year: Int, month: Int, day: Int, hour: Int, minute: Int) -> Date {
+        utcCalendar.date(from: DateComponents(
+            calendar: utcCalendar,
+            timeZone: utcCalendar.timeZone,
+            year: year,
+            month: month,
+            day: day,
+            hour: hour,
+            minute: minute
+        ))!
+    }
+
     private static func makeOFXData(
         postedDate: String,
         transactionAmount: String,
@@ -2625,6 +3118,7 @@ private final class AwaitingAccountDataStoreSpy: AccountDataStore {
         try backingStore.upsertTransactions(transactions)
     }
     func deleteTransactions(accountID: UUID) throws { try backingStore.deleteTransactions(accountID: accountID) }
+    func deleteTransaction(id: UUID) throws { try backingStore.deleteTransaction(id: id) }
     func fetchImportedTransactionRecords(accountIDs: Set<UUID>) throws -> [ImportedTransactionRecord] {
         try backingStore.fetchImportedTransactionRecords(accountIDs: accountIDs)
     }
@@ -2634,6 +3128,7 @@ private final class AwaitingAccountDataStoreSpy: AccountDataStore {
     func deleteImportedTransactionRecords(accountID: UUID) throws {
         try backingStore.deleteImportedTransactionRecords(accountID: accountID)
     }
+    func deleteImportedTransactionRecord(id: UUID) throws { try backingStore.deleteImportedTransactionRecord(id: id) }
     func fetchWheelOfMoneyItems() throws -> [WheelOfMoneyItem] { try backingStore.fetchWheelOfMoneyItems() }
     func fetchWheelOfMoneyItem(id: UUID) throws -> WheelOfMoneyItem? { try backingStore.fetchWheelOfMoneyItem(id: id) }
     func fetchWheelOfMoneyItems(budgetID: UUID) throws -> [WheelOfMoneyItem] {

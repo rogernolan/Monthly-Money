@@ -10,6 +10,7 @@
 - A hidden/internal account can be represented with the current account model plus a small persisted discriminator or identifier. Validate this before wiring import behavior broadly.
 - The existing idempotent imported-record storage can be reused for daily-account imports without monthly reconciliation side effects. Validate with focused repository/import tests first.
 - Payday-cycle retention can be derived from the same calendar/payday logic already used elsewhere in the app. Validate with unit tests before adding cleanup to refresh/import flows.
+- Hidden daily-account records and imported transactions can follow the same single-share budget model and sync through the same private/shared store routing as other account-bound data. Validate with repository/store-selection coverage.
 
 **Tech Stack:** SwiftUI, SwiftData/Core Data hybrid persistence layer, XCTest, existing Nationwide OFX parser/import services.
 
@@ -60,6 +61,7 @@
 **Step 3: Write minimal implementation**
 - Add the explicit migration/bootstrap path required for the new persisted model shape.
 - Ensure repeated refresh/open calls do not duplicate the hidden account.
+- Ensure the hidden account is created in the correct store context so a shared budget shares it automatically.
 
 **Step 4: Run test to verify it passes**
 - Re-run the targeted migration/bootstrap test.
@@ -136,6 +138,7 @@
 
 **Step 1: Write the failing tests**
 - Add tests proving daily-account transaction import is idempotent and stored silently.
+- Add tests proving those imported records follow the same shared-budget sync/store routing as other account-scoped imported data.
 
 **Step 2: Run tests to verify they fail**
 - Run the targeted daily-import storage tests.
@@ -144,6 +147,7 @@
 **Step 3: Write minimal implementation**
 - Reuse/import the existing imported-record path for the hidden daily account.
 - Avoid monthly reconciliation for this path.
+- Keep imported daily records in the same shared/private store as the hidden daily account so one budget share carries all data.
 
 **Step 4: Run tests to verify they pass**
 - Re-run the targeted tests.
@@ -255,4 +259,3 @@
 **Step 4: Commit final verification/docs touch-up**
 - `git add /Users/rog/Development/MonthlyMoney/docs/plans/2026-03-24-daily-import-and-chart-design.md /Users/rog/Development/MonthlyMoney/docs/plans/2026-03-24-daily-import-and-chart.md`
 - `git commit -m "Document daily import and chart rollout"`
-

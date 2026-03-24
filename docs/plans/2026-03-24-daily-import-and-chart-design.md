@@ -28,11 +28,22 @@ The monthly and daily imports will share the existing OFX parsing infrastructure
 
 This keeps the existing monthly flow stable, gives the daily ledger a real account identity for idempotency, and prepares milestone 3’s chart without forcing daily data into month-planning models.
 
+## Sharing And Sync
+The hidden daily account is part of the same budget data set as everything else.
+
+Implications:
+- a single share shares monthly accounts, the hidden daily account, month items, transactions, and imported records together
+- daily-account imported transactions must sync between users the same way other account-scoped imported data already syncs
+- there is no separate sharing control or private-only storage path for the daily account
+
+This means the hidden daily account should follow the same store-selection and migration rules as any other account owned by the budget.
+
 ## Hidden Daily Account Model
 - The app will create a hidden/internal account record when separate daily account mode is turned on or when an existing budget with that setting is opened.
 - That hidden account is not shown in normal account selection UI.
 - It is the sole target for `Import OFX to daily account`.
 - Its imported transactions are stored silently for internal calculations and charting.
+- Its data syncs with the rest of the shared budget when the budget is shared.
 
 ## Import UX
 When `Use separate account for daily budget` is off:
@@ -93,6 +104,7 @@ If the chosen implementation needs new persisted fields on `Budget` or `Account`
 - Daily import must not accidentally flow into monthly reconciliation.
 - Payday-cycle cleanup must be deterministic and based on the same month-boundary logic used elsewhere in the app.
 - Milestone 3 charting needs the hidden daily ledger to be structurally sound before UI work begins.
+- Hidden daily-account data must land in the correct private/shared store so collaborators see the same imported daily ledger.
 
 ## Testing Strategy
 - Settings/UI tests for import section naming and visibility
@@ -101,4 +113,3 @@ If the chosen implementation needs new persisted fields on `Budget` or `Account`
 - Unit tests for idempotent daily import storage in milestone 2
 - Unit tests for payday-cycle cleanup of daily imported transactions
 - Unit tests for chart-series generation in milestone 3
-

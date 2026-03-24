@@ -6,10 +6,16 @@ private struct PendingImportedOFXFile {
     let fileName: String
 }
 
+private enum OFXImportDestination {
+    case monthly
+    case daily
+}
+
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
     @State private var isPresentingOFXImporter = false
     @State private var pendingImportedOFXFile: PendingImportedOFXFile?
+    @State private var pendingOFXImportDestination: OFXImportDestination = .monthly
     @State private var importErrorMessage: String?
     @State private var importSuccessMessage: String?
 
@@ -57,14 +63,36 @@ struct SettingsView: View {
                 .disabled(!state.canEditBudgetSettings)
             }
 
-            Section("Import") {
-                Button("Import OFX") {
-                    isPresentingOFXImporter = true
+            if state.usesSeparateAccountForDailyBudget {
+                Section("Import OFX to monthly account") {
+                    Button("Import OFX") {
+                        startOFXImport(.monthly)
+                    }
+
+                    Text("Import a Nationwide OFX statement into the selected account.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 }
 
-                Text("Import a Nationwide OFX statement into the selected account.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                Section("Import OFX to daily account") {
+                    Button("Import OFX") {
+                        startOFXImport(.daily)
+                    }
+
+                    Text("Update the hidden daily account balance from the OFX statement ledger balance.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Section("Import") {
+                    Button("Import OFX") {
+                        startOFXImport(.monthly)
+                    }
+
+                    Text("Import a Nationwide OFX statement into the selected account.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Sharing") {
@@ -112,20 +140,31 @@ struct SettingsView: View {
                     do {
                         let data = try await AppState.loadImportedOFXFile(from: url)
                         await MainActor.run {
-                            guard !state.accounts.isEmpty else {
-                                importErrorMessage = "Create an account before importing an OFX file."
-                                return
-                            }
+                            switch pendingOFXImportDestination {
+                            case .monthly:
+                                guard !state.accounts.isEmpty else {
+                                    importErrorMessage = "Create an account before importing an OFX file."
+                                    return
+                                }
 
-                            let pendingFile = PendingImportedOFXFile(
-                                data: data,
-                                fileName: url.lastPathComponent
-                            )
-                            if state.accounts.count == 1, let account = state.accounts.first {
-                                importLoadedOFX(pendingFile, into: account)
-                            } else {
-                                pendingImportedOFXFile = pendingFile
+                                let pendingFile = PendingImportedOFXFile(
+                                    data: data,
+                                    fileName: url.lastPathComponent
+                                )
+                                if state.accounts.count == 1, let account = state.accounts.first {
+                                    importLoadedMonthlyOFX(pendingFile, into: account)
+                                } else {
+                                    pendingImportedOFXFile = pendingFile
+                                }
+                            case .daily:
+                                importLoadedDailyOFX(
+                                    PendingImportedOFXFile(
+                                        data: data,
+                                        fileName: url.lastPathComponent
+                                    )
+                                )
                             }
+                            pendingOFXImportDestination = .monthly
                         }
                     } catch {
                         await MainActor.run {
@@ -155,7 +194,7 @@ struct SettingsView: View {
             ForEach(state.accounts, id: \.id) { account in
                 Button(account.name) {
                     guard let pendingImportedOFXFile else { return }
-                    importLoadedOFX(pendingImportedOFXFile, into: account)
+                    importLoadedMonthlyOFX(pendingImportedOFXFile, into: account)
                 }
             }
             Button("Cancel", role: .cancel) {
@@ -209,7 +248,12 @@ struct SettingsView: View {
         }
     }
 
-    private func importLoadedOFX(_ pendingFile: PendingImportedOFXFile, into account: Account) {
+    private func startOFXImport(_ destination: OFXImportDestination) {
+        pendingOFXImportDestination = destination
+        isPresentingOFXImporter = true
+    }
+
+    private func importLoadedMonthlyOFX(_ pendingFile: PendingImportedOFXFile, into account: Account) {
         pendingImportedOFXFile = nil
 
         Task {
@@ -221,6 +265,24 @@ struct SettingsView: View {
                 )
                 await MainActor.run {
                     importSuccessMessage = "Imported \(result.importResult.insertedCount) transactions, skipped \(result.importResult.skippedCount) duplicates, matched \(result.reconciliationResult.matchedCount) planned items, created \(result.reconciliationResult.createdCount) unplanned items."
+                }
+            } catch {
+                await MainActor.run {
+                    importErrorMessage = "Failed to import OFX file: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func importLoadedDailyOFX(_ pendingFile: PendingImportedOFXFile) {
+        Task {
+            do {
+                let balance = try state.importDailyOFXData(
+                    pendingFile.data,
+                    fileName: pendingFile.fileName
+                )
+                await MainActor.run {
+                    importSuccessMessage = "Updated daily balance to \(balance)."
                 }
             } catch {
                 await MainActor.run {

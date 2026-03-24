@@ -98,6 +98,20 @@ struct PendingSharedBudgetAdoption: Equatable {
     let budgetName: String
 }
 
+enum DailyOFXImportError: LocalizedError, Equatable {
+    case missingLedgerBalance
+    case dailyBudgetAccountUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .missingLedgerBalance:
+            return "The OFX file does not include a ledger balance, so the daily balance could not be updated."
+        case .dailyBudgetAccountUnavailable:
+            return "Enable \"Use separate account for daily budget\" before importing to the daily account."
+        }
+    }
+}
+
 private struct PersistedMonthBalances: Codable, Equatable {
     var openingBalances: [String: String]
     var primaryBankBalances: [String: String]
@@ -145,14 +159,31 @@ struct DailyBudgetCycleMetrics: Equatable {
     let currentDailyBudget: Decimal
 }
 
+struct DailyBalanceChartPoint: Identifiable, Equatable {
+    let date: Date
+    let balance: Decimal
+
+    var id: Date { date }
+
+    var balanceValue: Double {
+        NSDecimalNumber(decimal: balance).doubleValue
+    }
+}
+
+private enum DailyBudgetCalendarProvider {
+    static var fixedGregorianGMT: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar
+    }
+}
+
 enum DailyBudgetCycleCalculator {
-    static func metrics(
+    static func cycleBoundaries(
         today: Date,
         paydayDay: Int,
-        budget: Decimal,
-        currentBalance: Decimal,
         calendar: Calendar
-    ) -> DailyBudgetCycleMetrics {
+    ) -> (previousPayday: Date, nextPayday: Date) {
         let normalizedToday = calendar.startOfDay(for: today)
         let currentMonthPayday = paydayDate(
             relativeTo: normalizedToday,
@@ -161,26 +192,44 @@ enum DailyBudgetCycleCalculator {
             calendar: calendar
         )
 
-        let previousPayday: Date
-        let nextPayday: Date
-
         if normalizedToday >= currentMonthPayday {
-            previousPayday = currentMonthPayday
-            nextPayday = paydayDate(
-                relativeTo: normalizedToday,
-                monthOffset: 1,
-                paydayDay: paydayDay,
-                calendar: calendar
+            return (
+                previousPayday: currentMonthPayday,
+                nextPayday: paydayDate(
+                    relativeTo: normalizedToday,
+                    monthOffset: 1,
+                    paydayDay: paydayDay,
+                    calendar: calendar
+                )
             )
-        } else {
-            previousPayday = paydayDate(
+        }
+
+        return (
+            previousPayday: paydayDate(
                 relativeTo: normalizedToday,
                 monthOffset: -1,
                 paydayDay: paydayDay,
                 calendar: calendar
-            )
-            nextPayday = currentMonthPayday
-        }
+            ),
+            nextPayday: currentMonthPayday
+        )
+    }
+
+    static func metrics(
+        today: Date,
+        paydayDay: Int,
+        budget: Decimal,
+        currentBalance: Decimal,
+        calendar: Calendar
+    ) -> DailyBudgetCycleMetrics {
+        let boundaries = cycleBoundaries(
+            today: today,
+            paydayDay: paydayDay,
+            calendar: calendar
+        )
+        let previousPayday = boundaries.previousPayday
+        let nextPayday = boundaries.nextPayday
+        let normalizedToday = calendar.startOfDay(for: today)
 
         let cycleDays = calendar.dateComponents([.day], from: previousPayday, to: nextPayday).day ?? 1
         let elapsedDays = calendar.dateComponents([.day], from: previousPayday, to: normalizedToday).day ?? 0
@@ -218,6 +267,45 @@ enum DailyBudgetCycleCalculator {
             value: clampedDay - 1,
             to: monthStart
         ) ?? monthStart
+    }
+}
+
+enum DailyBalanceChartCalculator {
+    static func points(
+        currentBalance: Decimal,
+        today: Date,
+        paydayDay: Int,
+        transactions: [Transaction],
+        calendar: Calendar
+    ) -> [DailyBalanceChartPoint] {
+        let boundaries = DailyBudgetCycleCalculator.cycleBoundaries(
+            today: today,
+            paydayDay: paydayDay,
+            calendar: calendar
+        )
+        let cycleStart = calendar.startOfDay(for: boundaries.previousPayday)
+        let cycleEnd = calendar.startOfDay(for: today)
+        let netTransactionsByDay = transactions.reduce(into: [Date: Decimal]()) { result, transaction in
+            guard let postedAt = transaction.sourcePostedAt else { return }
+            let day = calendar.startOfDay(for: postedAt)
+            guard day >= cycleStart, day <= cycleEnd else { return }
+            result[day, default: .zero] += transaction.amount
+        }
+
+        var runningBalance = currentBalance
+        var day = cycleEnd
+        var points: [DailyBalanceChartPoint] = []
+
+        while day >= cycleStart {
+            points.append(DailyBalanceChartPoint(date: day, balance: runningBalance))
+            runningBalance -= netTransactionsByDay[day] ?? .zero
+            guard let previousDay = calendar.date(byAdding: .day, value: -1, to: day) else {
+                break
+            }
+            day = calendar.startOfDay(for: previousDay)
+        }
+
+        return points.reversed()
     }
 }
 
@@ -262,6 +350,7 @@ final class AppState: ObservableObject {
     private let shareBudgetAction: ShareBudgetAction
     private let currentParticipantIDProvider: CurrentParticipantIDProvider
     private let verifyBudgetUnsharedAction: VerifyBudgetUnsharedAction
+    private let nowProvider: () -> Date
     private var currentParticipantID: String
     private var isHydratingPersistedBudgetState = false
     private var dismissedSharedBudgetAdoptionIDs: Set<UUID> = []
@@ -276,14 +365,16 @@ final class AppState: ObservableObject {
         shareBudgetAction: @escaping ShareBudgetAction = { repository in
             let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
             return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
-        }
+        },
+        nowProvider: @escaping () -> Date = Date.init
     ) {
         self.repository = repository
         self.currentParticipantIDProvider = currentParticipantIDProvider
         self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
         self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
-        let now = Date()
+        self.nowProvider = nowProvider
+        let now = nowProvider()
         let calendar = Calendar.current
         self.selectedMonth = YearMonth(
             year: calendar.component(.year, from: now),
@@ -331,6 +422,8 @@ final class AppState: ObservableObject {
 
     func refresh() throws {
         try restoreLocalBudgetIfNeeded()
+        try ensureHiddenDailyAccountIfNeeded()
+        try cleanupHiddenDailyImportedDataIfNeeded()
         try loadPersistedBudgetState()
         accounts = try repository.accounts()
         monthItems = try repository.plannedItems(for: selectedMonth)
@@ -355,6 +448,34 @@ final class AppState: ObservableObject {
         )
     }
 
+    private func ensureHiddenDailyAccountIfNeeded() throws {
+        guard let budget = try repository.activeBudget(),
+              budget.usesSeparateAccountForDailyBudget else {
+            return
+        }
+
+        _ = try repository.ensureHiddenDailyAccount(for: budget)
+    }
+
+    private func cleanupHiddenDailyImportedDataIfNeeded() throws {
+        guard let budget = try repository.activeBudget(),
+              budget.usesSeparateAccountForDailyBudget,
+              let hiddenAccount = try repository.hiddenDailyAccount(for: budget) else {
+            return
+        }
+
+        let currentCycleMonth = currentDailyCycleMonthKey()
+        let transactions = try repository.transactions(accountIDs: [hiddenAccount.id])
+        for transaction in transactions where transaction.monthKey != currentCycleMonth.rawValue {
+            try repository.deleteTransaction(id: transaction.id)
+        }
+
+        let importedRecords = try repository.importedTransactionRecords(accountIDs: [hiddenAccount.id])
+        for record in importedRecords where dailyBudgetMonthKey(for: record.postedAt) != currentCycleMonth {
+            try repository.deleteImportedTransactionRecord(id: record.id)
+        }
+    }
+
     var usesSeparateAccountForDailyBudget: Bool {
         get { (try? repository.activeBudget()?.usesSeparateAccountForDailyBudget) ?? false }
         set {
@@ -363,7 +484,7 @@ final class AppState: ObservableObject {
                 guard let budget = try repository.activeBudget() else { return }
                 budget.usesSeparateAccountForDailyBudget = newValue
                 try repository.saveBudget(budget)
-                objectWillChange.send()
+                try refresh()
             } catch {
                 print("Update daily budget account setting failed: \(error)")
             }
@@ -488,18 +609,44 @@ final class AppState: ObservableObject {
         return (importResult: importResult, reconciliationResult: reconciliationResult)
     }
 
+    func importDailyOFXData(
+        _ data: Data,
+        fileName: String
+    ) throws -> Decimal {
+        guard let budget = try repository.activeBudget(),
+              budget.usesSeparateAccountForDailyBudget else {
+            throw DailyOFXImportError.dailyBudgetAccountUnavailable
+        }
+
+        try ensureHiddenDailyAccountIfNeeded()
+        guard let hiddenAccount = try repository.hiddenDailyAccount(for: budget) else {
+            throw DailyOFXImportError.dailyBudgetAccountUnavailable
+        }
+
+        let statement = try NationwideOFXImporter().parse(data: data)
+        guard let ledgerBalance = statement.ledgerBalance else {
+            throw DailyOFXImportError.missingLedgerBalance
+        }
+
+        let importResult = try ImportedTransactionService(repository: repository).import(
+            statement: statement,
+            into: hiddenAccount
+        )
+        try createDailyImportedTransactions(
+            for: hiddenAccount,
+            importedRecordIDs: importResult.insertedRecordIDs
+        )
+        dailyBudgetSeparateAccountBalance = ledgerBalance
+        try refresh()
+        print(
+            "[OFXImport] imported file '\(fileName)' into daily balance: ledger balance \(ledgerBalance)"
+        )
+        return ledgerBalance
+    }
+
     private func applyImportedStatementBalanceIfPresent(_ statement: NationwideOFXStatement) {
         guard let ledgerBalance = statement.ledgerBalance else { return }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        let balanceMonth = ImportedTransactionReconciliationService.budgetMonthKey(
-            year: calendar.component(.year, from: statement.statementEndDate),
-            month: calendar.component(.month, from: statement.statementEndDate),
-            day: calendar.component(.day, from: statement.statementEndDate),
-            paydayDay: paydayDay,
-            calendar: calendar,
-            referenceDate: statement.statementEndDate
-        )
+        let balanceMonth = dailyBudgetMonthKey(for: statement.statementEndDate)
         primaryBankBalances[balanceMonth.rawValue] = ledgerBalance
     }
 
@@ -606,11 +753,22 @@ final class AppState: ObservableObject {
 
     var dailyCycleMetrics: DailyBudgetCycleMetrics {
         DailyBudgetCycleCalculator.metrics(
-            today: Date(),
+            today: nowProvider(),
             paydayDay: dailyBudgetPaydayDay,
             budget: dailyBudgetAmount,
             currentBalance: dailyBudgetCurrentBalance,
             calendar: Calendar.current
+        )
+    }
+
+    var dailyBalanceChartPoints: [DailyBalanceChartPoint] {
+        guard usesSeparateAccountForDailyBudget else { return [] }
+        return DailyBalanceChartCalculator.points(
+            currentBalance: dailyBudgetCurrentBalance,
+            today: nowProvider(),
+            paydayDay: dailyBudgetPaydayDay,
+            transactions: dailyBalanceChartTransactions(),
+            calendar: Self.fixedDailyCycleCalendar
         )
     }
 
@@ -698,7 +856,7 @@ final class AppState: ObservableObject {
             return 1
         }
 
-        let today = Date()
+        let today = nowProvider()
         let currentDay = calendar.component(.day, from: today)
         let total = range.count
         if calendar.component(.year, from: today) == selectedMonth.year,
@@ -1102,7 +1260,7 @@ final class AppState: ObservableObject {
     }
 
     private var currentYearMonth: YearMonth {
-        let now = Date()
+        let now = nowProvider()
         let calendar = Calendar.current
         return YearMonth(
             year: calendar.component(.year, from: now),
@@ -1173,6 +1331,62 @@ final class AppState: ObservableObject {
             year -= 1
         }
         return YearMonth(year: year, month: value)
+    }
+
+    private func createDailyImportedTransactions(
+        for account: Account,
+        importedRecordIDs: [UUID]
+    ) throws {
+        guard !importedRecordIDs.isEmpty else { return }
+        let importedRecordIDSet = Set(importedRecordIDs)
+        let importedRecords = try repository.importedTransactionRecords(accountIDs: [account.id])
+            .filter { importedRecordIDSet.contains($0.id) }
+
+        for record in importedRecords {
+            let transaction = Transaction(
+                id: record.id,
+                budgetID: account.budgetID,
+                accountID: account.id,
+                monthKey: dailyBudgetMonthKey(for: record.postedAt),
+                amount: record.amount,
+                note: record.payee,
+                sourceKind: record.sourceKind,
+                sourceExternalTransactionID: record.externalTransactionID,
+                sourcePostedAt: record.postedAt
+            )
+            try repository.createTransaction(transaction)
+        }
+    }
+
+    private func dailyBalanceChartTransactions() -> [Transaction] {
+        guard let budget = try? repository.activeBudget(),
+              budget.usesSeparateAccountForDailyBudget,
+              let hiddenAccount = try? repository.hiddenDailyAccount(for: budget) else {
+            return []
+        }
+
+        return (try? repository.transactions(accountIDs: [hiddenAccount.id])) ?? []
+    }
+
+    private func dailyBudgetMonthKey(for date: Date) -> YearMonth {
+        let calendar = Self.fixedDailyCycleCalendar
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        return ImportedTransactionReconciliationService.budgetMonthKey(
+            year: components.year ?? 2000,
+            month: components.month ?? 1,
+            day: components.day ?? 1,
+            paydayDay: dailyBudgetPaydayDay,
+            calendar: calendar,
+            referenceDate: date
+        )
+    }
+
+    private func currentDailyCycleMonthKey() -> YearMonth {
+        dailyBudgetMonthKey(for: nowProvider())
+    }
+
+    private static var fixedDailyCycleCalendar: Calendar {
+        DailyBudgetCalendarProvider.fixedGregorianGMT
     }
 
     private func nextMonth(of month: YearMonth) -> YearMonth {

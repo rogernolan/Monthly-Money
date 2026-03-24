@@ -94,6 +94,7 @@ final class Budget {
     var dailyBudgetSeparateAccountBalance: Decimal = 0
     var autoGenerateWoMSavingsEveryMonth: Bool = false
     var monthBalancesPayload: String = "{}"
+    var hiddenDailyAccountID: UUID?
 
     init(
         id: UUID = UUID(),
@@ -107,7 +108,8 @@ final class Budget {
         dailyBudgetPaydayDay: Int = 1,
         dailyBudgetSeparateAccountBalance: Decimal = 0,
         autoGenerateWoMSavingsEveryMonth: Bool = false,
-        monthBalancesPayload: String = "{}"
+        monthBalancesPayload: String = "{}",
+        hiddenDailyAccountID: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -121,6 +123,7 @@ final class Budget {
         self.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
         self.autoGenerateWoMSavingsEveryMonth = autoGenerateWoMSavingsEveryMonth
         self.monthBalancesPayload = monthBalancesPayload
+        self.hiddenDailyAccountID = hiddenDailyAccountID
     }
 }
 
