@@ -640,14 +640,44 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(points.map(\.balance), [123, 123, 123])
     }
 
-    func testDailyBalanceChartPointsAreEmptyWhenSeparateDailyAccountIsDisabled() async throws {
+    func testDailyBalanceChartPointsUseCurrentBalanceWhenSeparateDailyAccountIsDisabled() async throws {
         let repository = try makeRepository()
-        let state = AppState(repository: repository)
+        let fixedNow = Self.date(year: 2026, month: 3, day: 12)
+        let state = AppState(repository: repository, nowProvider: { fixedNow })
 
         await state.bootstrapIfNeeded()
+        state.primaryBankBalance = 150
 
         XCTAssertFalse(state.usesSeparateAccountForDailyBudget)
-        XCTAssertTrue(state.dailyBalanceChartPoints.isEmpty)
+        XCTAssertEqual(state.dailyBalanceChartPoints.first?.balance, 150)
+        XCTAssertEqual(state.dailyBalanceChartPoints.last?.balance, 150)
+    }
+
+    func testDailyBalanceChartPointsUseVisibleAccountTransactionsWhenSeparateDailyAccountIsDisabled() async throws {
+        let repository = try makeRepository()
+        let fixedNow = Self.date(year: 2026, month: 3, day: 12)
+        let state = AppState(repository: repository, nowProvider: { fixedNow })
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 10
+        state.primaryBankBalance = 200
+
+        let account = try XCTUnwrap(try repository.accounts().first)
+        try repository.createPlannedItem(
+            PlannedItem(
+                accountID: account.id,
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Coffee",
+                amount: 15,
+                dueDay: 11,
+                isPaid: true
+            )
+        )
+
+        try state.refresh()
+
+        XCTAssertEqual(state.dailyBalanceChartPoints.map(\.balance), [215, 200, 200])
     }
 
     func testDailyBalanceChartUsesFixedGregorianGMTCalendarForBucketing() async throws {

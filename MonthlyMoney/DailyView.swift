@@ -89,7 +89,7 @@ struct DailyView: View {
                     daysUntilPaydayChip(metrics: metrics)
                 }
 
-                if state.usesSeparateAccountForDailyBudget {
+                if !state.dailyBalanceChartPoints.isEmpty {
                     dailyBalanceChartCard(points: chartPoints, metrics: metrics)
                 }
             }

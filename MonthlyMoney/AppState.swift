@@ -887,6 +887,10 @@ final class AppState: ObservableObject {
         usesSeparateAccountForDailyBudget ? dailyBudgetSeparateAccountBalance : projectedBalanceFromCurrentBalance
     }
 
+    var dailyBalanceChartCurrentBalance: Decimal {
+        usesSeparateAccountForDailyBudget ? dailyBudgetSeparateAccountBalance : primaryBankBalance
+    }
+
     var dailyCycleMetrics: DailyBudgetCycleMetrics {
         DailyBudgetCycleCalculator.metrics(
             today: nowProvider(),
@@ -898,9 +902,8 @@ final class AppState: ObservableObject {
     }
 
     var dailyBalanceChartPoints: [DailyBalanceChartPoint] {
-        guard usesSeparateAccountForDailyBudget else { return [] }
         return DailyBalanceChartCalculator.points(
-            currentBalance: dailyBudgetCurrentBalance,
+            currentBalance: dailyBalanceChartCurrentBalance,
             today: nowProvider(),
             paydayDay: dailyBudgetPaydayDay,
             transactions: dailyBalanceChartTransactions(),
@@ -1495,13 +1498,63 @@ final class AppState: ObservableObject {
     }
 
     private func dailyBalanceChartTransactions() -> [Transaction] {
-        guard let budget = try? repository.activeBudget(),
-              budget.usesSeparateAccountForDailyBudget,
-              let hiddenAccount = try? repository.hiddenDailyAccount(for: budget) else {
-            return []
+        if let budget = try? repository.activeBudget(),
+           budget.usesSeparateAccountForDailyBudget,
+           let hiddenAccount = try? repository.hiddenDailyAccount(for: budget) {
+            return (try? repository.transactions(accountIDs: [hiddenAccount.id])) ?? []
         }
 
-        return (try? repository.transactions(accountIDs: [hiddenAccount.id])) ?? []
+        return visibleAccountDailyBalanceChartTransactions()
+    }
+
+    private func visibleAccountDailyBalanceChartTransactions() -> [Transaction] {
+        guard let account = try? repository.accounts().first else { return [] }
+        let cycleMonthKey = currentDailyCycleMonthKey()
+        let items = (try? repository.plannedItems(for: cycleMonthKey)) ?? []
+
+        return items.compactMap { item in
+            guard item.accountID == account.id,
+                  item.isPaid,
+                  let postedAt = dailyChartPostedAt(for: item, in: cycleMonthKey) else {
+                return nil
+            }
+
+            return Transaction(
+                id: item.id,
+                budgetID: item.budgetID,
+                accountID: item.accountID,
+                monthKey: cycleMonthKey,
+                amount: dailyChartAmount(for: item),
+                note: item.label,
+                sourcePostedAt: postedAt
+            )
+        }
+    }
+
+    private func dailyChartAmount(for item: PlannedItem) -> Decimal {
+        switch item.type {
+        case .credit:
+            return item.amount
+        case .fixedDebit, .transfer:
+            return -item.amount
+        }
+    }
+
+    private func dailyChartPostedAt(for item: PlannedItem, in cycleMonth: YearMonth) -> Date? {
+        guard let dueDay = item.dueDay else { return nil }
+
+        let actualMonth: YearMonth
+        if dailyBudgetPaydayDay == 1 || dueDay <= dailyBudgetPaydayDay {
+            actualMonth = cycleMonth
+        } else {
+            actualMonth = previousMonth(of: cycleMonth)
+        }
+
+        var components = DateComponents()
+        components.year = actualMonth.year
+        components.month = actualMonth.month
+        components.day = dueDay
+        return Self.fixedDailyCycleCalendar.date(from: components)
     }
 
     private var derivedDailyBudgetSeparateAccountBalance: Decimal {
