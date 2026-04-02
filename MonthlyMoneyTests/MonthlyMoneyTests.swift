@@ -1698,6 +1698,31 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.primaryBankBalance, Decimal(string: "1234.56"))
     }
 
+    func testImportOFXDataOnPaydayCreatesMonthItemInCurrentMonth() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 28
+
+        let account = try XCTUnwrap(try repository.accounts().first)
+
+        _ = try state.importOFXData(
+            Self.makeOFXData(
+                postedDate: "20260328000000",
+                transactionAmount: "-12.34"
+            ),
+            fileName: "statement.ofx",
+            into: account.id
+        )
+
+        let marchItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
+        let aprilItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 4))
+
+        XCTAssertEqual(marchItems.filter { $0.label == "Card Payment" }.count, 1)
+        XCTAssertEqual(aprilItems.filter { $0.label == "Card Payment" }.count, 0)
+    }
+
     func testImportDailyOFXDataUpdatesDailySeparateAccountBalanceFromStatementLedgerBalance() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
