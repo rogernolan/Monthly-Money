@@ -362,6 +362,7 @@ final class AppState: ObservableObject {
     private let shareBudgetAction: ShareBudgetAction
     private let currentParticipantIDProvider: CurrentParticipantIDProvider
     private let verifyBudgetUnsharedAction: VerifyBudgetUnsharedAction
+    private let dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing
     private let nowProvider: () -> Date
     private var currentParticipantID: String
     private var isHydratingPersistedBudgetState = false
@@ -378,6 +379,7 @@ final class AppState: ObservableObject {
             let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
             return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
         },
+        dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing = DailyBudgetWatchSnapshotSyncer.shared,
         nowProvider: @escaping () -> Date = Date.init
     ) {
         self.repository = repository
@@ -385,6 +387,7 @@ final class AppState: ObservableObject {
         self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
         self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
+        self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer
         self.nowProvider = nowProvider
         let now = nowProvider()
         let calendar = Calendar.current
@@ -446,6 +449,7 @@ final class AppState: ObservableObject {
             primaryBankName = "Primary bank"
         }
         try updatePendingSharedBudgetAdoption()
+        publishDailyBudgetWatchSnapshot()
         objectWillChange.send()
     }
 
@@ -861,6 +865,7 @@ final class AppState: ObservableObject {
                 guard let budget = try repository.activeBudget() else { return }
                 budget.dailyBudgetAmount = newValue
                 try repository.saveBudget(budget)
+                publishDailyBudgetWatchSnapshot()
                 objectWillChange.send()
             } catch {
                 print("Update daily budget amount failed: \(error)")
@@ -876,6 +881,7 @@ final class AppState: ObservableObject {
                 guard let budget = try repository.activeBudget() else { return }
                 budget.dailyBudgetPaydayDay = min(max(newValue, 1), 31)
                 try repository.saveBudget(budget)
+                publishDailyBudgetWatchSnapshot()
                 objectWillChange.send()
             } catch {
                 print("Update daily budget payday failed: \(error)")
@@ -908,6 +914,16 @@ final class AppState: ObservableObject {
             paydayDay: dailyBudgetPaydayDay,
             transactions: dailyBalanceChartTransactions(),
             calendar: Self.fixedDailyCycleCalendar
+        )
+    }
+
+    var dailyBudgetWatchSnapshot: DailyBudgetWatchSnapshot {
+        DailyBudgetWatchSnapshotFactory.make(
+            dailyBudgetAmount: dailyBudgetAmount,
+            paydayDay: dailyBudgetPaydayDay,
+            usesSeparateAccount: usesSeparateAccountForDailyBudget,
+            currentBalance: dailyBudgetCurrentBalance,
+            metrics: dailyCycleMetrics
         )
     }
 
@@ -1671,9 +1687,14 @@ final class AppState: ObservableObject {
             budget.monthBalancesPayload = persistedMonthBalancePayload
             budget.dailyBudgetSeparateAccountBalance = explicitDailyBudgetSeparateAccountBalanceOverride ?? 0
             try repository.saveBudget(budget)
+            publishDailyBudgetWatchSnapshot()
         } catch {
             print("Persist budget state failed: \(error)")
         }
+    }
+
+    private func publishDailyBudgetWatchSnapshot() {
+        dailyBudgetWatchSnapshotSyncer.sync(dailyBudgetWatchSnapshot)
     }
 
     private func updatePendingSharedBudgetAdoption() throws {

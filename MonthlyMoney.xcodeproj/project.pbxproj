@@ -7,8 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0326AB391B4D3E03C1AB130E /* WatchDailyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */; };
+		4F4A590C597F4F0DB95DA5EB /* MonthlyMoneyWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		846E711EEE0666E173F28C47 /* MonthlyMoneyWatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */; };
+		8E6C1A2BF11A59771B93CBBC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F751E9ADC62F56B4DF1944E2 /* Foundation.framework */; };
 		C80560D72F505D310021D18F /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = C80560D62F505D270021D18F /* AGENTS.md */; };
 		C89FC5122F645FE300BA9102 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = C89FC5112F645FE300BA9102 /* AppIcon.icon */; };
+		E3970AE622FAD54105E4C2BB /* MonthlyMoneyWatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */; };
+		F74C8453686CA2762ED80D4E /* MonthlyMoneyWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,15 +32,42 @@
 			remoteGlobalIDString = C80560A62F505D1E0021D18F;
 			remoteInfo = MonthlyMoney;
 		};
+		F3845A4614B04742B1D5651F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C805609F2F505D1E0021D18F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAC9C5D58531A75049B05A38;
+			remoteInfo = MonthlyMoneyWatch;
+		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		7F6CD975D71B4414A0FF8BDD /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				4F4A590C597F4F0DB95DA5EB /* MonthlyMoneyWatch.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchDailyBudgetSnapshot.swift; path = WatchDailyBudgetSnapshot.swift; sourceTree = "<group>"; };
+		7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchView.swift; path = MonthlyMoneyWatchView.swift; sourceTree = "<group>"; };
+		85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchViewModel.swift; path = MonthlyMoneyWatchViewModel.swift; sourceTree = "<group>"; };
 		C80560A72F505D1E0021D18F /* MonthlyMoney.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonthlyMoney.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560B82F505D200021D18F /* MonthlyMoneyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560D62F505D270021D18F /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		C895F1FC2F58773C007AD83E /* HANDOFF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = HANDOFF.md; sourceTree = "<group>"; };
 		C89FC5112F645FE300BA9102 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
+		CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchApp.swift; path = MonthlyMoneyWatchApp.swift; sourceTree = "<group>"; };
+		D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonthlyMoneyWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F751E9ADC62F56B4DF1944E2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -58,17 +91,29 @@
 		};
 		C80560BB2F505D200021D18F /* MonthlyMoneyTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = MonthlyMoneyTests;
 			sourceTree = "<group>";
 		};
 		C80560C52F505D200021D18F /* MonthlyMoneyUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
 			path = MonthlyMoneyUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		781FE064F0C898EEEA611A95 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E6C1A2BF11A59771B93CBBC /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C80560A42F505D1E0021D18F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -93,6 +138,34 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0D40036B26E00CD7867FD50C /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				F751E9ADC62F56B4DF1944E2 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		9946E8A0B8D1E85F6E4B41A9 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				0D40036B26E00CD7867FD50C /* watchOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A6571033CDE154EE16335CA9 /* MonthlyMoneyWatch */ = {
+			isa = PBXGroup;
+			children = (
+				CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */,
+				7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */,
+				85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */,
+				7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */,
+			);
+			name = MonthlyMoneyWatch;
+			path = MonthlyMoneyWatch;
+			sourceTree = "<group>";
+		};
 		C805609E2F505D1E0021D18F = {
 			isa = PBXGroup;
 			children = (
@@ -103,6 +176,8 @@
 				C80560C52F505D200021D18F /* MonthlyMoneyUITests */,
 				C80560A82F505D1E0021D18F /* Products */,
 				C89FC5112F645FE300BA9102 /* AppIcon.icon */,
+				9946E8A0B8D1E85F6E4B41A9 /* Frameworks */,
+				A6571033CDE154EE16335CA9 /* MonthlyMoneyWatch */,
 			);
 			sourceTree = "<group>";
 		};
@@ -112,6 +187,7 @@
 				C80560A72F505D1E0021D18F /* MonthlyMoney.app */,
 				C80560B82F505D200021D18F /* MonthlyMoneyTests.xctest */,
 				C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */,
+				D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -119,6 +195,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		AAC9C5D58531A75049B05A38 /* MonthlyMoneyWatch */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 06E97C7A655F6E82416E90EB /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatch" */;
+			buildPhases = (
+				333A6381D738A3A308861AE5 /* Sources */,
+				781FE064F0C898EEEA611A95 /* Frameworks */,
+				9B1A017DC08A2E2FDF0AC398 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MonthlyMoneyWatch;
+			productName = MonthlyMoneyWatch;
+			productReference = D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */;
+			productType = "com.apple.product-type.application";
+		};
 		C80560A62F505D1E0021D18F /* MonthlyMoney */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = C80560CB2F505D200021D18F /* Build configuration list for PBXNativeTarget "MonthlyMoney" */;
@@ -126,17 +219,17 @@
 				C80560A32F505D1E0021D18F /* Sources */,
 				C80560A42F505D1E0021D18F /* Frameworks */,
 				C80560A52F505D1E0021D18F /* Resources */,
+				7F6CD975D71B4414A0FF8BDD /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				FD6D879DF9044B6A8D95FB0A /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C80560A92F505D1E0021D18F /* MonthlyMoney */,
 			);
 			name = MonthlyMoney;
-			packageProductDependencies = (
-			);
 			productName = MonthlyMoney;
 			productReference = C80560A72F505D1E0021D18F /* MonthlyMoney.app */;
 			productType = "com.apple.product-type.application";
@@ -158,8 +251,6 @@
 				C80560BB2F505D200021D18F /* MonthlyMoneyTests */,
 			);
 			name = MonthlyMoneyTests;
-			packageProductDependencies = (
-			);
 			productName = MonthlyMoneyTests;
 			productReference = C80560B82F505D200021D18F /* MonthlyMoneyTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -181,8 +272,6 @@
 				C80560C52F505D200021D18F /* MonthlyMoneyUITests */,
 			);
 			name = MonthlyMoneyUITests;
-			packageProductDependencies = (
-			);
 			productName = MonthlyMoneyUITests;
 			productReference = C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
@@ -227,11 +316,19 @@
 				C80560A62F505D1E0021D18F /* MonthlyMoney */,
 				C80560B72F505D200021D18F /* MonthlyMoneyTests */,
 				C80560C12F505D200021D18F /* MonthlyMoneyUITests */,
+				AAC9C5D58531A75049B05A38 /* MonthlyMoneyWatch */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		9B1A017DC08A2E2FDF0AC398 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C80560A52F505D1E0021D18F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -258,6 +355,17 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		333A6381D738A3A308861AE5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F74C8453686CA2762ED80D4E /* MonthlyMoneyWatchApp.swift in Sources */,
+				E3970AE622FAD54105E4C2BB /* MonthlyMoneyWatchView.swift in Sources */,
+				846E711EEE0666E173F28C47 /* MonthlyMoneyWatchViewModel.swift in Sources */,
+				0326AB391B4D3E03C1AB130E /* WatchDailyBudgetSnapshot.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C80560A32F505D1E0021D18F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -292,9 +400,53 @@
 			target = C80560A62F505D1E0021D18F /* MonthlyMoney */;
 			targetProxy = C80560C32F505D200021D18F /* PBXContainerItemProxy */;
 		};
+		FD6D879DF9044B6A8D95FB0A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAC9C5D58531A75049B05A38 /* MonthlyMoneyWatch */;
+			targetProxy = F3845A4614B04742B1D5651F /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		038122A4DD6C3EEE94218EA6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = MonthlyMoney;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.diffeng.MonthlyMoney;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp;
+				PRODUCT_NAME = MonthlyMoneyWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
+		319FB4E1076360D3D8E7F780 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = MonthlyMoney;
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.diffeng.MonthlyMoney;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp;
+				PRODUCT_NAME = MonthlyMoneyWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 		C80560CC2F505D200021D18F /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -573,6 +725,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		06E97C7A655F6E82416E90EB /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatch" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				319FB4E1076360D3D8E7F780 /* Release */,
+				038122A4DD6C3EEE94218EA6 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		C80560A22F505D1E0021D18F /* Build configuration list for PBXProject "MonthlyMoney" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

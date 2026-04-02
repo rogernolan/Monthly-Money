@@ -61,6 +61,14 @@ enum DailyPresentationContent {
     static func daysUntilPaydayTitle(paydayDay: Int) -> String {
         "Days until payday (\(MonthItemRowContent.ordinal(paydayDay)))"
     }
+
+    static func aheadBehindTitle(for value: Decimal) -> String {
+        value < 0 ? "Behind" : "Ahead"
+    }
+
+    static func aheadBehindValue(for value: Decimal) -> String {
+        AppState.currency(abs(value))
+    }
 }
 
 struct DailyView: View {
@@ -180,10 +188,10 @@ struct DailyView: View {
 
     private func aheadBehindChip(metrics: DailyBudgetCycleMetrics) -> some View {
         dailyChip(
-            title: "Ahead / behind",
+            title: DailyPresentationContent.aheadBehindTitle(for: metrics.aheadBehind),
             tone: DailyChipToneResolver.tone(for: .aheadBehind, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance)
         ) {
-            Text(AppState.currency(metrics.aheadBehind))
+            Text(DailyPresentationContent.aheadBehindValue(for: metrics.aheadBehind))
                 .font(.system(size: ChipTypography.dailyValueFontSize(for: horizontalSizeClass), weight: .semibold))
                 .accessibilityIdentifier("daily-chip-ahead-behind-value")
         }
