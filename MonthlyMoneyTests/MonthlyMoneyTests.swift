@@ -755,6 +755,30 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertGreaterThan(domain.upperBound, 180)
     }
 
+    func testEditableMoneyChipValueKeepsEmptyDraftWhileFocused() {
+        XCTAssertEqual(
+            EditableMoneyChipValue.displayText(
+                isFocused: true,
+                draft: "",
+                committedText: "123.45",
+                formattedValue: "GBP123.45"
+            ),
+            ""
+        )
+    }
+
+    func testEditableMoneyChipValueShowsCommittedTextWhenFocusedWithoutDraft() {
+        XCTAssertEqual(
+            EditableMoneyChipValue.displayText(
+                isFocused: true,
+                draft: nil,
+                committedText: "123.45",
+                formattedValue: "GBP123.45"
+            ),
+            "123.45"
+        )
+    }
+
     func testDailyLayoutUsesReducedChipHeightAndTighterChartSpacing() {
         XCTAssertEqual(DailyLayoutMetrics.chipMinHeight, 82)
         XCTAssertEqual(DailyLayoutMetrics.contentSpacing, 8)

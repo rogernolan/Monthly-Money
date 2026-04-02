@@ -24,7 +24,7 @@ struct EditableMoneyChipValue: View {
     let focusID: String
     let accessibilityIdentifier: String?
 
-    @State private var draft = ""
+    @State private var draft: String?
 
     private var layout: EditableMoneyChipLayout {
         EditableMoneyChipLayout(isEditing: isFocused)
@@ -47,10 +47,12 @@ struct EditableMoneyChipValue: View {
         ZStack(alignment: .trailing) {
             TextField("0", text: Binding(
                 get: {
-                    if isFocused {
-                        return draft.isEmpty ? committedText : draft
-                    }
-                    return AppState.currency(value)
+                    Self.displayText(
+                        isFocused: isFocused,
+                        draft: draft,
+                        committedText: committedText,
+                        formattedValue: AppState.currency(value)
+                    )
                 },
                 set: { newValue in
                     draft = newValue
@@ -102,9 +104,21 @@ struct EditableMoneyChipValue: View {
             if newValue == focusID {
                 draft = committedText
             } else {
-                draft = ""
+                draft = nil
             }
         }
+    }
+
+    static func displayText(
+        isFocused: Bool,
+        draft: String?,
+        committedText: String,
+        formattedValue: String
+    ) -> String {
+        if isFocused {
+            return draft ?? committedText
+        }
+        return formattedValue
     }
 
     private func plainString(from decimal: Decimal) -> String {
@@ -124,7 +138,7 @@ struct EditableMoneyChipValue: View {
 
     private func commitDraft() {
         value = Decimal(
-            string: sanitizedNumericString(from: draft),
+            string: sanitizedNumericString(from: draft ?? ""),
             locale: Locale.current
         ) ?? 0
     }
