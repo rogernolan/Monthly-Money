@@ -11,6 +11,7 @@
 		04335193EFD24AF39A4D0F26 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
 		31F41EF487745961DA374722 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
 		32D0D9536F62E507661DCB9E /* DailyBudgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F14A7DF746D28030B1E387 /* DailyBudgetSharedStorage.swift */; };
+		34A8FDE52D9F43C8A6249E11 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = C89FC5112F645FE300BA9102 /* AppIcon.icon */; };
 		383F179847CEA475E45D11CF /* MonthlyMoneyWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E1C6356E22100F619F59593E /* MonthlyMoneyWidgets.appex */; };
 		4F4A590C597F4F0DB95DA5EB /* MonthlyMoneyWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		544A60BAE59DFB02D4411601 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F751E9ADC62F56B4DF1944E2 /* Foundation.framework */; };
@@ -489,6 +490,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				34A8FDE52D9F43C8A6249E11 /* AppIcon.icon in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

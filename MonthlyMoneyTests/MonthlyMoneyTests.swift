@@ -19,6 +19,26 @@ final class MonthlyMoneyTests: XCTestCase {
         print("TEST END: \(name) @ \(Date())")
     }
 
+    func testWatchAppIconResourceIsBundledWithWatchTarget() throws {
+        let projectFile = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("MonthlyMoney.xcodeproj/project.pbxproj")
+        let project = try String(contentsOf: projectFile, encoding: .utf8)
+        let watchResourcesStart = try XCTUnwrap(
+            project.range(of: "\t\t9B1A017DC08A2E2FDF0AC398 /* Resources */ = {")?.lowerBound
+        )
+        let watchResourcesEnd = try XCTUnwrap(
+            project[watchResourcesStart...].range(of: "\t\t};")?.lowerBound
+        )
+        let watchResourcesSection = String(project[watchResourcesStart..<watchResourcesEnd])
+
+        XCTAssertTrue(
+            watchResourcesSection.contains("AppIcon.icon in Resources"),
+            "Expected the watch target resources build phase to include AppIcon.icon."
+        )
+    }
+
     private func nextMonth(after month: YearMonth) -> YearMonth {
         var year = month.year
         var value = month.month + 1
