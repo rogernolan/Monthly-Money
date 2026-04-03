@@ -7,11 +7,11 @@ final class DailyBudgetWatchSnapshotSyncer: NSObject, DailyBudgetWatchSnapshotSy
     private let encoder = JSONEncoder()
     private let defaults: UserDefaults
     private let session: WCSession?
-    private let defaultsKey = "dailyBudgetWatchSnapshot"
+    private let defaultsKey = DailyBudgetSharedStorage.watchSnapshotKey
     private var latestSnapshotData: Data?
 
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults = DailyBudgetSharedStorage.sharedDefaults ?? .standard,
         session: WCSession? = WCSession.isSupported() ? .default : nil
     ) {
         self.defaults = defaults

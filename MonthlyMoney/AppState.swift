@@ -363,6 +363,7 @@ final class AppState: ObservableObject {
     private let currentParticipantIDProvider: CurrentParticipantIDProvider
     private let verifyBudgetUnsharedAction: VerifyBudgetUnsharedAction
     private let dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing
+    private let dailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing
     private let nowProvider: () -> Date
     private var currentParticipantID: String
     private var isHydratingPersistedBudgetState = false
@@ -380,6 +381,7 @@ final class AppState: ObservableObject {
             return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
         },
         dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing = DailyBudgetWatchSnapshotSyncer.shared,
+        dailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing = DailyBudgetWidgetSnapshotSyncer.shared,
         nowProvider: @escaping () -> Date = Date.init
     ) {
         self.repository = repository
@@ -388,6 +390,7 @@ final class AppState: ObservableObject {
         self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
         self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer
+        self.dailyBudgetWidgetSnapshotSyncer = dailyBudgetWidgetSnapshotSyncer
         self.nowProvider = nowProvider
         let now = nowProvider()
         let calendar = Calendar.current
@@ -922,6 +925,13 @@ final class AppState: ObservableObject {
             dailyBudgetAmount: dailyBudgetAmount,
             paydayDay: dailyBudgetPaydayDay,
             usesSeparateAccount: usesSeparateAccountForDailyBudget,
+            currentBalance: dailyBudgetCurrentBalance,
+            metrics: dailyCycleMetrics
+        )
+    }
+
+    var dailyBudgetWidgetSnapshot: DailyBudgetWidgetSnapshot {
+        DailyBudgetWidgetSnapshotFactory.make(
             currentBalance: dailyBudgetCurrentBalance,
             metrics: dailyCycleMetrics
         )
@@ -1695,6 +1705,7 @@ final class AppState: ObservableObject {
 
     private func publishDailyBudgetWatchSnapshot() {
         dailyBudgetWatchSnapshotSyncer.sync(dailyBudgetWatchSnapshot)
+        dailyBudgetWidgetSnapshotSyncer.sync(dailyBudgetWidgetSnapshot)
     }
 
     private func updatePendingSharedBudgetAdoption() throws {

@@ -1,7 +1,7 @@
 import Foundation
 
 enum WatchDailyBudgetSnapshotKey {
-    static let applicationContextKey = "dailyBudgetWatchSnapshot"
+    static let applicationContextKey = DailyBudgetSharedStorage.watchSnapshotKey
 }
 
 enum WatchDailyBudgetChipTone: String, Codable {
@@ -26,7 +26,7 @@ struct WatchDailyBudgetSnapshotStore {
     private let defaults: UserDefaults
     private let decoder = JSONDecoder()
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = DailyBudgetSharedStorage.sharedDefaults ?? .standard) {
         self.defaults = defaults
     }
 
@@ -39,5 +39,38 @@ struct WatchDailyBudgetSnapshotStore {
 
     func save(_ data: Data) {
         defaults.set(data, forKey: WatchDailyBudgetSnapshotKey.applicationContextKey)
+    }
+}
+
+extension DailyBudgetWidgetSnapshot {
+    init?(watchSnapshot: WatchDailyBudgetSnapshot) {
+        guard watchSnapshot.chips.count >= 5 else { return nil }
+
+        self.init(
+            updatedAt: watchSnapshot.updatedAt,
+            chips: [
+                DailyBudgetWidgetChipSnapshot(
+                    title: watchSnapshot.chips[3].title,
+                    value: watchSnapshot.chips[3].value,
+                    tone: Self.tone(from: watchSnapshot.chips[3].tone)
+                ),
+                DailyBudgetWidgetChipSnapshot(
+                    title: watchSnapshot.chips[4].title,
+                    value: watchSnapshot.chips[4].value,
+                    tone: Self.tone(from: watchSnapshot.chips[4].tone)
+                )
+            ]
+        )
+    }
+
+    private static func tone(from tone: WatchDailyBudgetChipTone) -> DailyBudgetWidgetChipTone {
+        switch tone {
+        case .negative:
+            return .negative
+        case .neutral, .plain:
+            return .neutral
+        case .positive:
+            return .positive
+        }
     }
 }

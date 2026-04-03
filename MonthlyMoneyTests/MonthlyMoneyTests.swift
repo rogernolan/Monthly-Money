@@ -703,8 +703,29 @@ final class MonthlyMoneyTests: XCTestCase {
         ])
         XCTAssertEqual(snapshot.chips[0].value, AppState.currency(310))
         XCTAssertEqual(snapshot.chips[2].value, AppState.currency(200))
-        XCTAssertEqual(snapshot.chips[3].value, AppState.currency(110))
+        XCTAssertEqual(snapshot.chips[3].value, AppState.currency(90))
         XCTAssertEqual(snapshot.chips[5].value, "29")
+    }
+
+    func testDailyBudgetWidgetSnapshotContainsAheadBehindAndCurrentDay() async throws {
+        let repository = try makeRepository()
+        let fixedNow = Self.date(year: 2026, month: 3, day: 12)
+        let state = AppState(repository: repository, nowProvider: { fixedNow })
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetAmount = 310
+        state.dailyBudgetPaydayDay = 10
+        state.primaryBankBalance = 200
+
+        let snapshot = state.dailyBudgetWidgetSnapshot
+
+        XCTAssertEqual(snapshot.chips.count, 2)
+        XCTAssertEqual(snapshot.chips.map(\.title), [
+            "Behind",
+            "Current Day"
+        ])
+        XCTAssertEqual(snapshot.chips[0].value, AppState.currency(90))
+        XCTAssertEqual(snapshot.chips[1].value, AppState.currency(6.90))
     }
 
     func testDailyPresentationContentUsesAheadBehindLabelAndAbsoluteValue() {
@@ -732,6 +753,25 @@ final class MonthlyMoneyTests: XCTestCase {
 
         XCTAssertEqual(syncSpy.snapshots.count, 2)
         XCTAssertEqual(syncSpy.snapshots.last?.chips.count, 6)
+    }
+
+    func testRefreshPublishesDailyBudgetWidgetSnapshot() async throws {
+        let repository = try makeRepository()
+        let syncSpy = DailyBudgetWidgetSnapshotSyncSpy()
+        let state = AppState(
+            repository: repository,
+            dailyBudgetWidgetSnapshotSyncer: syncSpy
+        )
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertEqual(syncSpy.snapshots.count, 1)
+        XCTAssertEqual(syncSpy.snapshots.last?.chips.count, 2)
+
+        try state.refresh()
+
+        XCTAssertEqual(syncSpy.snapshots.count, 2)
+        XCTAssertEqual(syncSpy.snapshots.last?.chips.count, 2)
     }
 
     func testDailyBalanceChartUsesFixedGregorianGMTCalendarForBucketing() async throws {
@@ -3342,6 +3382,14 @@ final class MonthlyMoneyTests: XCTestCase {
         private(set) var snapshots: [DailyBudgetWatchSnapshot] = []
 
         func sync(_ snapshot: DailyBudgetWatchSnapshot) {
+            snapshots.append(snapshot)
+        }
+    }
+
+    private final class DailyBudgetWidgetSnapshotSyncSpy: DailyBudgetWidgetSnapshotSyncing {
+        private(set) var snapshots: [DailyBudgetWidgetSnapshot] = []
+
+        func sync(_ snapshot: DailyBudgetWidgetSnapshot) {
             snapshots.append(snapshot)
         }
     }

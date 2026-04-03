@@ -8,16 +8,44 @@
 
 /* Begin PBXBuildFile section */
 		0326AB391B4D3E03C1AB130E /* WatchDailyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */; };
+		04335193EFD24AF39A4D0F26 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
+		31F41EF487745961DA374722 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
+		32D0D9536F62E507661DCB9E /* DailyBudgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38F14A7DF746D28030B1E387 /* DailyBudgetSharedStorage.swift */; };
+		383F179847CEA475E45D11CF /* MonthlyMoneyWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = E1C6356E22100F619F59593E /* MonthlyMoneyWidgets.appex */; };
 		4F4A590C597F4F0DB95DA5EB /* MonthlyMoneyWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		544A60BAE59DFB02D4411601 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F751E9ADC62F56B4DF1944E2 /* Foundation.framework */; };
+		58EB56DEB65E79BF64A59553 /* DailyBudgetWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 023DED4428C1CCEAD81BC98D /* DailyBudgetWidgetSnapshot.swift */; };
+		714C29CFA77F1AE12AA340AA /* DailyBudgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D9A8DA246A50726C3AEEF9 /* DailyBudgetSharedStorage.swift */; };
+		7935611AB2CD5013B3A4D96C /* DailyBudgetWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 023DED4428C1CCEAD81BC98D /* DailyBudgetWidgetSnapshot.swift */; };
 		846E711EEE0666E173F28C47 /* MonthlyMoneyWatchViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */; };
 		8E6C1A2BF11A59771B93CBBC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F751E9ADC62F56B4DF1944E2 /* Foundation.framework */; };
+		BB6EA2B183AEFA8729CB0BA3 /* DailyBudgetWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = F70913CFE326DE41435F2992 /* DailyBudgetWidgetSnapshot.swift */; };
 		C80560D72F505D310021D18F /* AGENTS.md in Resources */ = {isa = PBXBuildFile; fileRef = C80560D62F505D270021D18F /* AGENTS.md */; };
 		C89FC5122F645FE300BA9102 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = C89FC5112F645FE300BA9102 /* AppIcon.icon */; };
+		CE4F59FC5F2A30DA822D23BC /* DailyBudgetSharedStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3D9A8DA246A50726C3AEEF9 /* DailyBudgetSharedStorage.swift */; };
+		DEE5CFC4B6129C50ECEAF0AC /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = C3C7243E491541D13F7D70D1 /* Foundation.framework */; };
 		E3970AE622FAD54105E4C2BB /* MonthlyMoneyWatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */; };
+		E49B5168330F361F3E9B9B56 /* MonthlyMoneyWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97A3005EBD2C8471A889DC25 /* MonthlyMoneyWidgetsBundle.swift */; };
+		E9AB7103DF6993EB1B0FD72D /* MonthlyMoneyWatchWidgets.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 618369B1E98949C1B3018E49 /* MonthlyMoneyWatchWidgets.appex */; };
 		F74C8453686CA2762ED80D4E /* MonthlyMoneyWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */; };
+		FA08CF2565A4FBFBBD04ABC2 /* MonthlyMoneyWatchWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17FB523F2BF874060FEB6EA /* MonthlyMoneyWatchWidgetsBundle.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		1511DA0A10DB4C80BD3C7E00 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C805609F2F505D1E0021D18F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8714318E1AFFD5BCEEC1FB87;
+			remoteInfo = MonthlyMoneyWidgets;
+		};
+		701C5D12E885EBC3006AF776 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C805609F2F505D1E0021D18F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = CBB3D1B96AF634459C566984;
+			remoteInfo = MonthlyMoneyWatchWidgets;
+		};
 		C80560B92F505D200021D18F /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C805609F2F505D1E0021D18F /* Project object */;
@@ -42,6 +70,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		475E500A366BBE981E008159 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				E9AB7103DF6993EB1B0FD72D /* MonthlyMoneyWatchWidgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7F6CD975D71B4414A0FF8BDD /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -53,20 +92,46 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CB14E188904CDB8E0BB10AC1 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				383F179847CEA475E45D11CF /* MonthlyMoneyWidgets.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = WatchDailyBudgetSnapshot.swift; path = WatchDailyBudgetSnapshot.swift; sourceTree = "<group>"; };
-		7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchView.swift; path = MonthlyMoneyWatchView.swift; sourceTree = "<group>"; };
-		85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchViewModel.swift; path = MonthlyMoneyWatchViewModel.swift; sourceTree = "<group>"; };
+		023DED4428C1CCEAD81BC98D /* DailyBudgetWidgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DailyBudgetWidgetSnapshot.swift; path = ../MonthlyMoney/DailyBudgetWidgetSnapshot.swift; sourceTree = "<group>"; };
+		05089CDFB8D49B992231217E /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		0991A5D69EB096496889763C /* MonthlyMoneyWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = MonthlyMoneyWidgets.entitlements; sourceTree = "<group>"; };
+		38F14A7DF746D28030B1E387 /* DailyBudgetSharedStorage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DailyBudgetSharedStorage.swift; path = ../MonthlyMoney/DailyBudgetSharedStorage.swift; sourceTree = "<group>"; };
+		443A586058160CCD378C723A /* MonthlyMoneyWatchWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = MonthlyMoneyWatchWidgets.entitlements; sourceTree = "<group>"; };
+		618369B1E98949C1B3018E49 /* MonthlyMoneyWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MonthlyMoneyWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		735CD0E9D2A565D7E2792971 /* MonthlyMoneyWatch.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = MonthlyMoneyWatch.entitlements; sourceTree = "<group>"; };
+		7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchDailyBudgetSnapshot.swift; sourceTree = "<group>"; };
+		7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MonthlyMoneyWatchView.swift; sourceTree = "<group>"; };
+		85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MonthlyMoneyWatchViewModel.swift; sourceTree = "<group>"; };
+		97A3005EBD2C8471A889DC25 /* MonthlyMoneyWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MonthlyMoneyWidgetsBundle.swift; sourceTree = "<group>"; };
+		B7C023184B07D04F19E0522B /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C3C7243E491541D13F7D70D1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		C3D9A8DA246A50726C3AEEF9 /* DailyBudgetSharedStorage.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DailyBudgetSharedStorage.swift; path = ../MonthlyMoney/DailyBudgetSharedStorage.swift; sourceTree = "<group>"; };
 		C80560A72F505D1E0021D18F /* MonthlyMoney.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonthlyMoney.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560B82F505D200021D18F /* MonthlyMoneyTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MonthlyMoneyUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		C80560D62F505D270021D18F /* AGENTS.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = AGENTS.md; sourceTree = "<group>"; };
 		C895F1FC2F58773C007AD83E /* HANDOFF.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = HANDOFF.md; sourceTree = "<group>"; };
 		C89FC5112F645FE300BA9102 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
-		CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = MonthlyMoneyWatchApp.swift; path = MonthlyMoneyWatchApp.swift; sourceTree = "<group>"; };
+		CD33253BF8B0227BEE6C0DB0 /* MonthlyMoneyWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MonthlyMoneyWatchApp.swift; sourceTree = "<group>"; };
 		D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MonthlyMoneyWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E1C6356E22100F619F59593E /* MonthlyMoneyWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MonthlyMoneyWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DailyBudgetSummaryWidget.swift; sourceTree = "<group>"; };
+		F17FB523F2BF874060FEB6EA /* MonthlyMoneyWatchWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MonthlyMoneyWatchWidgetsBundle.swift; sourceTree = "<group>"; };
+		F70913CFE326DE41435F2992 /* DailyBudgetWidgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DailyBudgetWidgetSnapshot.swift; path = ../MonthlyMoney/DailyBudgetWidgetSnapshot.swift; sourceTree = "<group>"; };
 		F751E9ADC62F56B4DF1944E2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
@@ -91,15 +156,11 @@
 		};
 		C80560BB2F505D200021D18F /* MonthlyMoneyTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = MonthlyMoneyTests;
 			sourceTree = "<group>";
 		};
 		C80560C52F505D200021D18F /* MonthlyMoneyUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-			);
 			path = MonthlyMoneyUITests;
 			sourceTree = "<group>";
 		};
@@ -111,6 +172,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				8E6C1A2BF11A59771B93CBBC /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		837DAD127A4F8D4FF4E6C274 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				544A60BAE59DFB02D4411601 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		98BBF31FE22F187D5F5970F6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DEE5CFC4B6129C50ECEAF0AC /* Foundation.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,10 +223,31 @@
 			name = watchOS;
 			sourceTree = "<group>";
 		};
+		6326E43DEEBE39E6FE565013 /* MonthlyMoneyWatchWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				F17FB523F2BF874060FEB6EA /* MonthlyMoneyWatchWidgetsBundle.swift */,
+				443A586058160CCD378C723A /* MonthlyMoneyWatchWidgets.entitlements */,
+				B7C023184B07D04F19E0522B /* Info.plist */,
+			);
+			path = MonthlyMoneyWatchWidgets;
+			sourceTree = "<group>";
+		};
+		89E03F28A73EF471487B8C78 /* MonthlyMoneyWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				97A3005EBD2C8471A889DC25 /* MonthlyMoneyWidgetsBundle.swift */,
+				0991A5D69EB096496889763C /* MonthlyMoneyWidgets.entitlements */,
+				05089CDFB8D49B992231217E /* Info.plist */,
+			);
+			path = MonthlyMoneyWidgets;
+			sourceTree = "<group>";
+		};
 		9946E8A0B8D1E85F6E4B41A9 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				0D40036B26E00CD7867FD50C /* watchOS */,
+				EE92CFD413AC56607BEA92DF /* iOS */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -161,8 +259,10 @@
 				7C74C25018C3F79D41E04B65 /* MonthlyMoneyWatchView.swift */,
 				85318EDDAB8A6F79F9D8E63F /* MonthlyMoneyWatchViewModel.swift */,
 				7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */,
+				735CD0E9D2A565D7E2792971 /* MonthlyMoneyWatch.entitlements */,
+				38F14A7DF746D28030B1E387 /* DailyBudgetSharedStorage.swift */,
+				F70913CFE326DE41435F2992 /* DailyBudgetWidgetSnapshot.swift */,
 			);
-			name = MonthlyMoneyWatch;
 			path = MonthlyMoneyWatch;
 			sourceTree = "<group>";
 		};
@@ -178,6 +278,9 @@
 				C89FC5112F645FE300BA9102 /* AppIcon.icon */,
 				9946E8A0B8D1E85F6E4B41A9 /* Frameworks */,
 				A6571033CDE154EE16335CA9 /* MonthlyMoneyWatch */,
+				89E03F28A73EF471487B8C78 /* MonthlyMoneyWidgets */,
+				6326E43DEEBE39E6FE565013 /* MonthlyMoneyWatchWidgets */,
+				F62F0324A9403168167427AC /* MonthlyMoneyWidgetsShared */,
 			);
 			sourceTree = "<group>";
 		};
@@ -188,13 +291,50 @@
 				C80560B82F505D200021D18F /* MonthlyMoneyTests.xctest */,
 				C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */,
 				D355BB13BBD80964FAD8A7F6 /* MonthlyMoneyWatch.app */,
+				E1C6356E22100F619F59593E /* MonthlyMoneyWidgets.appex */,
+				618369B1E98949C1B3018E49 /* MonthlyMoneyWatchWidgets.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		EE92CFD413AC56607BEA92DF /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				C3C7243E491541D13F7D70D1 /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F62F0324A9403168167427AC /* MonthlyMoneyWidgetsShared */ = {
+			isa = PBXGroup;
+			children = (
+				C3D9A8DA246A50726C3AEEF9 /* DailyBudgetSharedStorage.swift */,
+				023DED4428C1CCEAD81BC98D /* DailyBudgetWidgetSnapshot.swift */,
+				E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */,
+			);
+			path = MonthlyMoneyWidgetsShared;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		8714318E1AFFD5BCEEC1FB87 /* MonthlyMoneyWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 55C1D00EBCEDF0CEB50B81DF /* Build configuration list for PBXNativeTarget "MonthlyMoneyWidgets" */;
+			buildPhases = (
+				D5F883A7C406371826D19A85 /* Sources */,
+				98BBF31FE22F187D5F5970F6 /* Frameworks */,
+				E47A91E82E3E7AAE0677BAA0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MonthlyMoneyWidgets;
+			productName = MonthlyMoneyWidgets;
+			productReference = E1C6356E22100F619F59593E /* MonthlyMoneyWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		AAC9C5D58531A75049B05A38 /* MonthlyMoneyWatch */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 06E97C7A655F6E82416E90EB /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatch" */;
@@ -202,10 +342,12 @@
 				333A6381D738A3A308861AE5 /* Sources */,
 				781FE064F0C898EEEA611A95 /* Frameworks */,
 				9B1A017DC08A2E2FDF0AC398 /* Resources */,
+				475E500A366BBE981E008159 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				8430D7F49753CAA6B344DFEF /* PBXTargetDependency */,
 			);
 			name = MonthlyMoneyWatch;
 			productName = MonthlyMoneyWatch;
@@ -220,11 +362,13 @@
 				C80560A42F505D1E0021D18F /* Frameworks */,
 				C80560A52F505D1E0021D18F /* Resources */,
 				7F6CD975D71B4414A0FF8BDD /* Embed Watch Content */,
+				CB14E188904CDB8E0BB10AC1 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				FD6D879DF9044B6A8D95FB0A /* PBXTargetDependency */,
+				3645A10DF2387D4FF447267E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C80560A92F505D1E0021D18F /* MonthlyMoney */,
@@ -276,6 +420,23 @@
 			productReference = C80560C22F505D200021D18F /* MonthlyMoneyUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		CBB3D1B96AF634459C566984 /* MonthlyMoneyWatchWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 48200DC55AB7819A5B7AE252 /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatchWidgets" */;
+			buildPhases = (
+				0A327B12F6E199EAC43E3C9A /* Sources */,
+				837DAD127A4F8D4FF4E6C274 /* Frameworks */,
+				ABE59B82456C6986F7EB9402 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MonthlyMoneyWatchWidgets;
+			productName = MonthlyMoneyWatchWidgets;
+			productReference = 618369B1E98949C1B3018E49 /* MonthlyMoneyWatchWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -317,12 +478,21 @@
 				C80560B72F505D200021D18F /* MonthlyMoneyTests */,
 				C80560C12F505D200021D18F /* MonthlyMoneyUITests */,
 				AAC9C5D58531A75049B05A38 /* MonthlyMoneyWatch */,
+				8714318E1AFFD5BCEEC1FB87 /* MonthlyMoneyWidgets */,
+				CBB3D1B96AF634459C566984 /* MonthlyMoneyWatchWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		9B1A017DC08A2E2FDF0AC398 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ABE59B82456C6986F7EB9402 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -352,9 +522,27 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E47A91E82E3E7AAE0677BAA0 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0A327B12F6E199EAC43E3C9A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				714C29CFA77F1AE12AA340AA /* DailyBudgetSharedStorage.swift in Sources */,
+				7935611AB2CD5013B3A4D96C /* DailyBudgetWidgetSnapshot.swift in Sources */,
+				04335193EFD24AF39A4D0F26 /* DailyBudgetSummaryWidget.swift in Sources */,
+				FA08CF2565A4FBFBBD04ABC2 /* MonthlyMoneyWatchWidgetsBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		333A6381D738A3A308861AE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -363,6 +551,8 @@
 				E3970AE622FAD54105E4C2BB /* MonthlyMoneyWatchView.swift in Sources */,
 				846E711EEE0666E173F28C47 /* MonthlyMoneyWatchViewModel.swift in Sources */,
 				0326AB391B4D3E03C1AB130E /* WatchDailyBudgetSnapshot.swift in Sources */,
+				32D0D9536F62E507661DCB9E /* DailyBudgetSharedStorage.swift in Sources */,
+				BB6EA2B183AEFA8729CB0BA3 /* DailyBudgetWidgetSnapshot.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -387,9 +577,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D5F883A7C406371826D19A85 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CE4F59FC5F2A30DA822D23BC /* DailyBudgetSharedStorage.swift in Sources */,
+				58EB56DEB65E79BF64A59553 /* DailyBudgetWidgetSnapshot.swift in Sources */,
+				31F41EF487745961DA374722 /* DailyBudgetSummaryWidget.swift in Sources */,
+				E49B5168330F361F3E9B9B56 /* MonthlyMoneyWidgetsBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		3645A10DF2387D4FF447267E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = MonthlyMoneyWidgets;
+			target = 8714318E1AFFD5BCEEC1FB87 /* MonthlyMoneyWidgets */;
+			targetProxy = 1511DA0A10DB4C80BD3C7E00 /* PBXContainerItemProxy */;
+		};
+		8430D7F49753CAA6B344DFEF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = MonthlyMoneyWatchWidgets;
+			target = CBB3D1B96AF634459C566984 /* MonthlyMoneyWatchWidgets */;
+			targetProxy = 701C5D12E885EBC3006AF776 /* PBXContainerItemProxy */;
+		};
 		C80560BA2F505D200021D18F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C80560A62F505D1E0021D18F /* MonthlyMoney */;
@@ -411,11 +624,15 @@
 		038122A4DD6C3EEE94218EA6 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatch/MonthlyMoneyWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MonthlyMoney;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.diffeng.MonthlyMoney;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp;
 				PRODUCT_NAME = MonthlyMoneyWatch;
 				SDKROOT = watchos;
@@ -427,14 +644,43 @@
 			};
 			name = Debug;
 		};
+		08CBC79B3589DE0338732383 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWidgets/MonthlyMoneyWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 		319FB4E1076360D3D8E7F780 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = "";
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = NO;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatch/MonthlyMoneyWatch.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MonthlyMoney;
 				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.diffeng.MonthlyMoney;
+				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp;
 				PRODUCT_NAME = MonthlyMoneyWatch;
 				SDKROOT = watchos;
@@ -444,6 +690,58 @@
 				TARGETED_DEVICE_FAMILY = 4;
 				VALIDATE_PRODUCT = YES;
 				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		8E73723C842EB36B8C63FCBA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatchWidgets/MonthlyMoneyWatchWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWatchWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
+		93C036C26D643E71B85A7F7D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWidgets/MonthlyMoneyWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
@@ -722,6 +1020,31 @@
 			};
 			name = Release;
 		};
+		F99E13A3B65141DC9A9775A9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatchWidgets/MonthlyMoneyWatchWidgets.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWatchWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -730,6 +1053,24 @@
 			buildConfigurations = (
 				319FB4E1076360D3D8E7F780 /* Release */,
 				038122A4DD6C3EEE94218EA6 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		48200DC55AB7819A5B7AE252 /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatchWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8E73723C842EB36B8C63FCBA /* Release */,
+				F99E13A3B65141DC9A9775A9 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		55C1D00EBCEDF0CEB50B81DF /* Build configuration list for PBXNativeTarget "MonthlyMoneyWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				93C036C26D643E71B85A7F7D /* Release */,
+				08CBC79B3589DE0338732383 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

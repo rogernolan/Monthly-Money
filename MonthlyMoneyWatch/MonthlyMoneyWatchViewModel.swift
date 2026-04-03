@@ -1,19 +1,25 @@
 import Foundation
 import WatchConnectivity
+#if canImport(WidgetKit)
+import WidgetKit
+#endif
 
 @MainActor
 final class MonthlyMoneyWatchViewModel: NSObject, ObservableObject {
     @Published private(set) var snapshot: WatchDailyBudgetSnapshot?
 
     private let store: WatchDailyBudgetSnapshotStore
+    private let widgetStore: DailyBudgetWidgetSnapshotStore
     private let session: WCSession?
     private let decoder = JSONDecoder()
 
     init(
         store: WatchDailyBudgetSnapshotStore = WatchDailyBudgetSnapshotStore(),
+        widgetStore: DailyBudgetWidgetSnapshotStore = DailyBudgetWidgetSnapshotStore(),
         session: WCSession? = WCSession.isSupported() ? .default : nil
     ) {
         self.store = store
+        self.widgetStore = widgetStore
         self.session = session
         self.snapshot = store.load()
         super.init()
@@ -29,7 +35,17 @@ final class MonthlyMoneyWatchViewModel: NSObject, ObservableObject {
 
     private func applySnapshotData(_ data: Data) {
         store.save(data)
-        snapshot = try? decoder.decode(WatchDailyBudgetSnapshot.self, from: data)
+        guard let decodedSnapshot = try? decoder.decode(WatchDailyBudgetSnapshot.self, from: data) else {
+            snapshot = nil
+            return
+        }
+        snapshot = decodedSnapshot
+        if let widgetSnapshot = DailyBudgetWidgetSnapshot(watchSnapshot: decodedSnapshot) {
+            widgetStore.save(widgetSnapshot)
+            #if canImport(WidgetKit)
+            WidgetCenter.shared.reloadAllTimelines()
+            #endif
+        }
     }
 
     private func applyExistingApplicationContextIfAvailable() {
