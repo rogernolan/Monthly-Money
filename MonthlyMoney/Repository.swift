@@ -248,6 +248,8 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.sharingState = budget.sharingState
             existing.createdAt = budget.createdAt
             existing.updatedAt = budget.updatedAt
+            existing.monthlyBalanceLastUpdatedAt = budget.monthlyBalanceLastUpdatedAt
+            existing.dailyBalanceLastUpdatedAt = budget.dailyBalanceLastUpdatedAt
             existing.usesSeparateAccountForDailyBudget = budget.usesSeparateAccountForDailyBudget
             existing.dailyBudgetAmount = budget.dailyBudgetAmount
             existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
@@ -481,6 +483,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
 final class AccountRepository {
     private let privateStore: AccountDataStore
     private let sharedStore: AccountDataStore
+    private let dateProvider: () -> Date
     private static let hiddenDailyAccountName = "Daily budget"
     let privateStoreSyncMode: StoreSyncMode
     let sharedStoreSyncMode: StoreSyncMode
@@ -491,32 +494,38 @@ final class AccountRepository {
         privateStore: AccountDataStore,
         sharedStore: AccountDataStore,
         privateStoreSyncMode: StoreSyncMode = .localOnly,
-        sharedStoreSyncMode: StoreSyncMode = .localOnly
+        sharedStoreSyncMode: StoreSyncMode = .localOnly,
+        dateProvider: @escaping () -> Date = Date.init
     ) {
         self.privateStore = privateStore
         self.sharedStore = sharedStore
         self.privateStoreSyncMode = privateStoreSyncMode
         self.sharedStoreSyncMode = sharedStoreSyncMode
+        self.dateProvider = dateProvider
         self.privateStoreImplementationKind = privateStore.implementationKind
         self.sharedStoreImplementationKind = sharedStore.implementationKind
     }
 
     @discardableResult
     func createBudget(name: String, ownerParticipantID: String, sharingState: BudgetSharingState = .local) throws -> Budget {
-        let now = Date()
+        let now = dateProvider()
         let budget = Budget(
             name: name,
             ownerParticipantID: ownerParticipantID,
             sharingState: sharingState,
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            monthlyBalanceLastUpdatedAt: now,
+            dailyBalanceLastUpdatedAt: now
         )
         try store(for: sharingState).upsertBudget(budget)
         return budget
     }
 
-    func saveBudget(_ budget: Budget) throws {
-        budget.updatedAt = Date()
+    func saveBudget(_ budget: Budget, updateModifiedAt: Bool = true) throws {
+        if updateModifiedAt {
+            budget.updatedAt = dateProvider()
+        }
         if try privateStore.fetchBudget(id: budget.id) != nil {
             try privateStore.upsertBudget(budget)
             return
@@ -526,6 +535,32 @@ final class AccountRepository {
             return
         }
         try store(for: budget.sharingState).upsertBudget(budget)
+    }
+
+    func markMonthlyBalanceUpdated(id: UUID) throws {
+        try markBalanceViewsUpdated(id: id, monthly: true, daily: false)
+    }
+
+    func markDailyBalanceUpdated(id: UUID) throws {
+        try markBalanceViewsUpdated(id: id, monthly: false, daily: true)
+    }
+
+    func markBalanceViewsUpdated(id: UUID, monthly: Bool, daily: Bool) throws {
+        guard monthly || daily,
+              let store = try storeHoldingBudget(id: id),
+              let budget = try store.fetchBudget(id: id) else {
+            return
+        }
+
+        let now = dateProvider()
+        if monthly {
+            budget.monthlyBalanceLastUpdatedAt = now
+        }
+        if daily {
+            budget.dailyBalanceLastUpdatedAt = now
+        }
+        budget.updatedAt = now
+        try store.upsertBudget(budget)
     }
 
     func activeBudget() throws -> Budget? {
@@ -915,7 +950,7 @@ final class AccountRepository {
 
     private func touchBudget(id: UUID, in store: AccountDataStore) throws {
         guard let budget = try store.fetchBudget(id: id) else { return }
-        budget.updatedAt = Date()
+        budget.updatedAt = dateProvider()
         try store.upsertBudget(budget)
     }
 

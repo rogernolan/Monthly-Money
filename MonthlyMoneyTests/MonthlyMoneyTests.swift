@@ -543,6 +543,21 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse((try repository.activeBudget()?.monthBalancesPayload).map(\.isEmpty) ?? true)
     }
 
+    func testCurrentMonthBalanceEditUpdatesMonthlyAndDailyLastUpdatedWhenDailyUsesProjectedFunds() async throws {
+        var repositoryNow = Self.date(year: 2026, month: 3, day: 12, hour: 8, minute: 0)
+        let updatedAt = Self.date(year: 2026, month: 3, day: 12, hour: 9, minute: 30)
+        let repository = try makeRepository(dateProvider: { repositoryNow })
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        repositoryNow = updatedAt
+        state.primaryBankBalance = 1234
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.monthlyBalanceLastUpdatedAt, updatedAt)
+        XCTAssertEqual(budget.dailyBalanceLastUpdatedAt, updatedAt)
+    }
+
     func testDailySeparateAccountBalancePersistsAcrossAppStateRecreation() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -554,6 +569,51 @@ final class MonthlyMoneyTests: XCTestCase {
         let reloaded = AppState(repository: repository)
 
         XCTAssertEqual(reloaded.dailyBudgetSeparateAccountBalance, 888)
+    }
+
+    func testDailySeparateAccountBalanceEditUpdatesOnlyDailyLastUpdated() async throws {
+        var repositoryNow = Self.date(year: 2026, month: 3, day: 12, hour: 8, minute: 0)
+        let updatedAt = Self.date(year: 2026, month: 3, day: 12, hour: 10, minute: 45)
+        let repository = try makeRepository(dateProvider: { repositoryNow })
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let originalMonthlyUpdatedAt = try XCTUnwrap((try repository.activeBudget())?.monthlyBalanceLastUpdatedAt)
+        repositoryNow = updatedAt
+        state.usesSeparateAccountForDailyBudget = true
+        state.dailyBudgetSeparateAccountBalance = 888
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.monthlyBalanceLastUpdatedAt, originalMonthlyUpdatedAt)
+        XCTAssertEqual(budget.dailyBalanceLastUpdatedAt, updatedAt)
+    }
+
+    func testSetPaidUpdatesMonthlyAndDailyLastUpdated() async throws {
+        var repositoryNow = Self.date(year: 2026, month: 3, day: 12, hour: 8, minute: 0)
+        let updatedAt = Self.date(year: 2026, month: 3, day: 12, hour: 11, minute: 15)
+        let repository = try makeRepository(dateProvider: { repositoryNow })
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 900,
+            dueDay: 14,
+            isPaid: false
+        )
+        try repository.createPlannedItem(item)
+        try state.refresh()
+
+        repositoryNow = updatedAt
+        state.setPaid(item: item, paid: true)
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.monthlyBalanceLastUpdatedAt, updatedAt)
+        XCTAssertEqual(budget.dailyBalanceLastUpdatedAt, updatedAt)
     }
 
     func testDailyCurrentBalanceUsesMonthProjectionWhenSeparateAccountDisabled() async throws {
@@ -1677,6 +1737,30 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [account.id]).count, 2)
     }
 
+    func testImportQIFDataUpdatesMonthlyAndDailyLastUpdatedWhenDailyUsesProjectedFunds() async throws {
+        var repositoryNow = Self.date(year: 2026, month: 3, day: 12, hour: 8, minute: 0)
+        let updatedAt = Self.date(year: 2026, month: 3, day: 12, hour: 14, minute: 20)
+        let repository = try makeRepository(dateProvider: { repositoryNow })
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        repositoryNow = updatedAt
+
+        _ = try state.importQIFData(
+            Self.makeQIFData(),
+            fileName: "monzo.qif",
+            into: account.id
+        )
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.monthlyBalanceLastUpdatedAt, updatedAt)
+        XCTAssertEqual(budget.dailyBalanceLastUpdatedAt, updatedAt)
+    }
+
     func testImportDailyQIFDataDerivesCurrentBalanceFromStartingBudgetAndTransactions() async throws {
         let repository = try makeRepository()
         let state = AppState(
@@ -1705,6 +1789,30 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(transactions.count, 2)
         XCTAssertEqual(Set(transactions.map(\.monthKey)), [YearMonth(year: 2026, month: 3).rawValue, YearMonth(year: 2026, month: 4).rawValue])
         XCTAssertEqual(state.dailyBalanceChartPoints.last?.balance, Decimal(string: "1187.66"))
+    }
+
+    func testImportDailyQIFDataUpdatesOnlyDailyLastUpdated() async throws {
+        var repositoryNow = Self.date(year: 2026, month: 3, day: 12, hour: 8, minute: 0)
+        let updatedAt = Self.date(year: 2026, month: 3, day: 12, hour: 15, minute: 5)
+        let repository = try makeRepository(dateProvider: { repositoryNow })
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
+
+        await state.bootstrapIfNeeded()
+        let originalMonthlyUpdatedAt = try XCTUnwrap((try repository.activeBudget())?.monthlyBalanceLastUpdatedAt)
+        repositoryNow = updatedAt
+        state.usesSeparateAccountForDailyBudget = true
+
+        _ = try state.importDailyQIFData(
+            Self.makeQIFData(),
+            fileName: "monzo.qif"
+        )
+
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(budget.monthlyBalanceLastUpdatedAt, originalMonthlyUpdatedAt)
+        XCTAssertEqual(budget.dailyBalanceLastUpdatedAt, updatedAt)
     }
 
     func testImportDailyQIFDataReportsSkippedDuplicates() async throws {
@@ -3130,6 +3238,119 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(minimumSuggested, 250)
     }
 
+    func testDailyBudgetStatusFormatterBuildsAheadSummary() {
+        let summary = DailyBudgetStatusFormatter.summary(
+            from: DailyBudgetStatusSnapshot(
+                aheadBehind: 125.50,
+                currentDailyBudget: 18.25,
+                daysUntilPayday: 6,
+                projectedBalance: 240
+            )
+        )
+
+        XCTAssertEqual(
+            summary.spokenPhrase,
+            "You're £125.50 ahead. Daily budget: £18.25. Payday is in 6 days."
+        )
+    }
+
+    func testDailyBudgetStatusFormatterBuildsBehindSummary() {
+        let summary = DailyBudgetStatusFormatter.summary(
+            from: DailyBudgetStatusSnapshot(
+                aheadBehind: -42.10,
+                currentDailyBudget: 9.75,
+                daysUntilPayday: 1,
+                projectedBalance: 80
+            )
+        )
+
+        XCTAssertEqual(
+            summary.spokenPhrase,
+            "You're £42.10 behind. Daily budget: £9.75. Payday is in 1 day."
+        )
+    }
+
+    func testDailyBudgetStatusServiceReturnsCurrentBudgetStatusSnapshot() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: {
+            Self.date(year: 2026, month: 4, day: 13)
+        })
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetAmount = 300
+        state.dailyBudgetPaydayDay = 20
+        state.primaryBankBalance = 240
+
+        let account = try XCTUnwrap(try repository.accounts().first)
+        try repository.createPlannedItem(
+            PlannedItem(
+                accountID: account.id,
+                monthKey: state.selectedMonth,
+                type: .fixedDebit,
+                label: "Rent",
+                amount: 90,
+                dueDay: 18,
+                isPaid: false
+            )
+        )
+        try state.refresh()
+
+        let service = DailyBudgetStatusService(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 4, day: 13) }
+        )
+
+        let expectedMetrics = state.dailyCycleMetrics
+        let snapshot = try service.currentStatus()
+
+        XCTAssertEqual(snapshot.aheadBehind, expectedMetrics.aheadBehind)
+        XCTAssertEqual(snapshot.currentDailyBudget, expectedMetrics.currentDailyBudget)
+        XCTAssertEqual(snapshot.daysUntilPayday, expectedMetrics.remainingDaysToPayday)
+        XCTAssertEqual(snapshot.projectedBalance, state.projectedBalanceFromCurrentBalance)
+    }
+
+    func testRefreshMigratesMissingBalanceLastUpdatedTimestampsFromBudgetUpdatedAt() async throws {
+        let repository = try makeRepository()
+        let legacyUpdatedAt = Self.date(year: 2026, month: 2, day: 27, hour: 8, minute: 0)
+        let budget = try XCTUnwrap(try repository.activeBudget() ?? repository.createBudget(name: "Budget", ownerParticipantID: "owner"))
+        budget.updatedAt = legacyUpdatedAt
+        budget.monthlyBalanceLastUpdatedAt = nil
+        budget.dailyBalanceLastUpdatedAt = nil
+        try repository.saveBudget(budget, updateModifiedAt: false)
+
+        let state = AppState(repository: repository)
+        try state.refresh()
+
+        let migratedBudget = try XCTUnwrap(try repository.activeBudget())
+        XCTAssertEqual(migratedBudget.monthlyBalanceLastUpdatedAt, legacyUpdatedAt)
+        XCTAssertEqual(migratedBudget.dailyBalanceLastUpdatedAt, legacyUpdatedAt)
+    }
+
+    func testBalanceLastUpdatedPresentationBecomesStaleAfterSevenDays() {
+        let updatedAt = Self.date(year: 2026, month: 3, day: 1)
+        let freshReference = Self.date(year: 2026, month: 3, day: 8)
+        let staleReference = Self.date(year: 2026, month: 3, day: 9)
+
+        XCTAssertFalse(BalanceLastUpdatedPresentation.isStale(updatedAt, relativeTo: freshReference, calendar: Self.utcCalendar))
+        XCTAssertTrue(BalanceLastUpdatedPresentation.isStale(updatedAt, relativeTo: staleReference, calendar: Self.utcCalendar))
+    }
+
+    func testDailyBudgetStatusFormatterBuildsProjectedOverdraftSummary() {
+        let summary = DailyBudgetStatusFormatter.summary(
+            from: DailyBudgetStatusSnapshot(
+                aheadBehind: -42.10,
+                currentDailyBudget: 9.75,
+                daysUntilPayday: 3,
+                projectedBalance: -58.40
+            )
+        )
+
+        XCTAssertEqual(
+            summary.spokenPhrase,
+            "3 days to payday, you need to pay at least £58.40 in to avoid going overdrawn."
+        )
+    }
+
     func testProjectedBalanceMatchesDueTotalsArithmetic() {
         let month = YearMonth(year: 2026, month: 2)
         let accountID = UUID()
@@ -3337,10 +3558,11 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
-    private func makeRepository() throws -> AccountRepository {
+    private func makeRepository(dateProvider: @escaping () -> Date = Date.init) throws -> AccountRepository {
         return AccountRepository(
             privateStore: InMemoryAccountDataStore(),
-            sharedStore: InMemoryAccountDataStore()
+            sharedStore: InMemoryAccountDataStore(),
+            dateProvider: dateProvider
         )
     }
 
@@ -3419,6 +3641,7 @@ final class MonthlyMoneyTests: XCTestCase {
             Budget.self,
             Account.self,
             PlannedItem.self,
+            ImportedTransactionRecord.self,
             Transaction.self,
             WheelOfMoneyItem.self
         ])

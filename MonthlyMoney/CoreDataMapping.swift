@@ -129,6 +129,8 @@ enum CoreDataModelBuilder {
             attribute("sharingStateRaw", .stringAttributeType, defaultValue: BudgetSharingState.local.rawValue),
             attribute("createdAt", .dateAttributeType, defaultValue: Date()),
             attribute("updatedAt", .dateAttributeType, defaultValue: Date()),
+            attribute("monthlyBalanceLastUpdatedAt", .dateAttributeType, isOptional: true),
+            attribute("dailyBalanceLastUpdatedAt", .dateAttributeType, isOptional: true),
             attribute("usesSeparateAccountForDailyBudget", .booleanAttributeType, defaultValue: false),
             attribute("dailyBudgetAmount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
             attribute("dailyBudgetPaydayDay", .integer16AttributeType, defaultValue: 1),
@@ -276,6 +278,8 @@ enum CoreDataMapping {
         managedObject.setValue(budget.sharingState.rawValue, forKey: "sharingStateRaw")
         managedObject.setValue(budget.createdAt, forKey: "createdAt")
         managedObject.setValue(budget.updatedAt, forKey: "updatedAt")
+        managedObject.setValue(budget.monthlyBalanceLastUpdatedAt, forKey: "monthlyBalanceLastUpdatedAt")
+        managedObject.setValue(budget.dailyBalanceLastUpdatedAt, forKey: "dailyBalanceLastUpdatedAt")
         managedObject.setValue(budget.usesSeparateAccountForDailyBudget, forKey: "usesSeparateAccountForDailyBudget")
         managedObject.setValue(budget.dailyBudgetAmount as NSDecimalNumber, forKey: "dailyBudgetAmount")
         managedObject.setValue(Int16(budget.dailyBudgetPaydayDay), forKey: "dailyBudgetPaydayDay")
@@ -293,6 +297,8 @@ enum CoreDataMapping {
             sharingState: BudgetSharingState(rawValue: managedObject.value(forKey: "sharingStateRaw") as? String ?? "") ?? .local,
             createdAt: managedObject.value(forKey: "createdAt") as? Date ?? .distantPast,
             updatedAt: managedObject.value(forKey: "updatedAt") as? Date ?? .distantPast,
+            monthlyBalanceLastUpdatedAt: managedObject.value(forKey: "monthlyBalanceLastUpdatedAt") as? Date,
+            dailyBalanceLastUpdatedAt: managedObject.value(forKey: "dailyBalanceLastUpdatedAt") as? Date,
             usesSeparateAccountForDailyBudget: managedObject.value(forKey: "usesSeparateAccountForDailyBudget") as? Bool ?? false,
             dailyBudgetAmount: (managedObject.value(forKey: "dailyBudgetAmount") as? NSDecimalNumber)?.decimalValue ?? 0,
             dailyBudgetPaydayDay: Int(managedObject.value(forKey: "dailyBudgetPaydayDay") as? Int16 ?? 1),

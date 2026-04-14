@@ -88,6 +88,8 @@ final class Budget {
     var sharingState: BudgetSharingState = BudgetSharingState.local
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    var monthlyBalanceLastUpdatedAt: Date?
+    var dailyBalanceLastUpdatedAt: Date?
     var usesSeparateAccountForDailyBudget: Bool = false
     var dailyBudgetAmount: Decimal = 0
     var dailyBudgetPaydayDay: Int = 1
@@ -103,6 +105,8 @@ final class Budget {
         sharingState: BudgetSharingState = .local,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
+        monthlyBalanceLastUpdatedAt: Date? = nil,
+        dailyBalanceLastUpdatedAt: Date? = nil,
         usesSeparateAccountForDailyBudget: Bool = false,
         dailyBudgetAmount: Decimal = 0,
         dailyBudgetPaydayDay: Int = 1,
@@ -117,6 +121,8 @@ final class Budget {
         self.sharingState = sharingState
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.monthlyBalanceLastUpdatedAt = monthlyBalanceLastUpdatedAt
+        self.dailyBalanceLastUpdatedAt = dailyBalanceLastUpdatedAt
         self.usesSeparateAccountForDailyBudget = usesSeparateAccountForDailyBudget
         self.dailyBudgetAmount = dailyBudgetAmount
         self.dailyBudgetPaydayDay = dailyBudgetPaydayDay

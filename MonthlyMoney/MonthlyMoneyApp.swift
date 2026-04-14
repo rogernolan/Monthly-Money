@@ -16,24 +16,15 @@ struct MonthlyMoneyApp: App {
             return
         }
 
-        let schema = Schema([
-            Budget.self,
-            Account.self,
-            PlannedItem.self,
-            Transaction.self,
-            ImportedTransactionRecord.self,
-            WheelOfMoneyItem.self
-        ])
-
         do {
-            repository = try Self.makePersistentRepository(schema: schema)
+            repository = try MonthlyMoneyRepositoryBootstrap.makeRepository()
         } catch {
             Self.logPersistenceError("Could not create persistent stores", error: error)
             print("Warning: Deleting local stores and retrying.")
             Self.deletePersistentStores()
 
             do {
-                repository = try Self.makePersistentRepository(schema: schema)
+                repository = try MonthlyMoneyRepositoryBootstrap.makeRepository()
             } catch {
                 Self.logPersistenceError("Rebuilding persistent stores failed", error: error)
                 print("Warning: Falling back to in-memory storage for this launch.")
@@ -49,11 +40,6 @@ struct MonthlyMoneyApp: App {
         WindowGroup {
             ContentView(repository: repository)
         }
-    }
-
-    private static func makePersistentRepository(schema: Schema) throws -> AccountRepository {
-        let plan = MonthlyMoneyPersistencePlan.defaultPlan()
-        return try MonthlyMoneyPersistenceFactory.makeRepository(plan: plan, schema: schema)
     }
 
     static func persistentStoreDirectory() -> URL {

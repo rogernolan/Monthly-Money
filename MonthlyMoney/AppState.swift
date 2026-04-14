@@ -440,6 +440,7 @@ final class AppState: ObservableObject {
 
     func refresh() throws {
         try restoreLocalBudgetIfNeeded()
+        try migrateBalanceLastUpdatedTimestampsIfNeeded()
         try ensureHiddenDailyAccountIfNeeded()
         try cleanupHiddenDailyImportedDataIfNeeded()
         try loadPersistedBudgetState()
@@ -562,6 +563,7 @@ final class AppState: ObservableObject {
         get { explicitDailyBudgetSeparateAccountBalanceOverride ?? derivedDailyBudgetSeparateAccountBalance }
         set {
             explicitDailyBudgetSeparateAccountBalanceOverride = newValue
+            markDailyBalanceUpdatedIfNeeded()
             objectWillChange.send()
         }
     }
@@ -659,6 +661,7 @@ final class AppState: ObservableObject {
             importedRecordIDs: importResult.insertedRecordIDs
         )
         applyImportedStatementBalanceIfPresent(statement)
+        try markBalanceViewsUpdated(monthly: true, daily: !usesSeparateAccountForDailyBudget)
         try refresh()
         print(
             "[OFXImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
@@ -686,6 +689,7 @@ final class AppState: ObservableObject {
             account: account,
             importedRecordIDs: importResult.insertedRecordIDs
         )
+        try markBalanceViewsUpdated(monthly: true, daily: !usesSeparateAccountForDailyBudget)
         try refresh()
         print(
             "[QIFImport] imported file '\(fileName)' into account '\(account.name)': parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), matched \(reconciliationResult.matchedCount), created planned items \(reconciliationResult.createdCount)"
@@ -722,6 +726,7 @@ final class AppState: ObservableObject {
             importedRecordIDs: importResult.insertedRecordIDs
         )
         dailyBudgetSeparateAccountBalance = ledgerBalance
+        try markDailyBalanceUpdated()
         try refresh()
         print(
             "[OFXImport] imported file '\(fileName)' into daily balance: ledger balance \(ledgerBalance)"
@@ -754,6 +759,7 @@ final class AppState: ObservableObject {
             for: hiddenAccount,
             importedRecordIDs: importResult.insertedRecordIDs
         )
+        try markDailyBalanceUpdated()
         try refresh()
         print(
             "[QIFImport] imported file '\(fileName)' into daily account: parsed \(importResult.parsedCount), inserted \(importResult.insertedCount), skipped \(importResult.skippedCount), ignored outside cycle \(filtered.ignoredOutsideCurrentCycleCount)"
@@ -937,11 +943,24 @@ final class AppState: ObservableObject {
         )
     }
 
+    var monthlyBalanceLastUpdatedAt: Date? {
+        (try? repository.activeBudget())?.monthlyBalanceLastUpdatedAt
+    }
+
+    var dailyBalanceLastUpdatedAt: Date? {
+        (try? repository.activeBudget())?.dailyBalanceLastUpdatedAt
+    }
+
+    var currentDate: Date {
+        nowProvider()
+    }
+
     var openingBalance: Decimal {
         get { effectiveOpeningBalance(for: selectedMonth) }
         set {
             guard canEdit(month: selectedMonth) else { return }
             openingBalances[selectedMonth.rawValue] = newValue
+            markMonthlyBalanceUpdatedIfNeeded()
         }
     }
 
@@ -950,6 +969,10 @@ final class AppState: ObservableObject {
         set {
             guard canEdit(month: selectedMonth) else { return }
             primaryBankBalances[selectedMonth.rawValue] = newValue
+            markMonthlyBalanceUpdatedIfNeeded()
+            if !usesSeparateAccountForDailyBudget && selectedMonth == currentYearMonth {
+                markDailyBalanceUpdatedIfNeeded()
+            }
         }
     }
 
@@ -1053,6 +1076,7 @@ final class AppState: ObservableObject {
         item.isPaid = paid
         do {
             try repository.savePlannedItem(item)
+            try markBalanceViewsUpdated(monthly: true, daily: true)
             try refresh()
         } catch {
             print("Failed setPaid: \(error)")
@@ -1690,6 +1714,10 @@ final class AppState: ObservableObject {
         isHydratingPersistedBudgetState = false
     }
 
+    private func migrateBalanceLastUpdatedTimestampsIfNeeded() throws {
+        try BudgetBalanceLastUpdatedMigration.migrateIfNeeded(repository: repository)
+    }
+
     private func persistBudgetStateIfNeeded() {
         guard !isHydratingPersistedBudgetState else { return }
         do {
@@ -1701,6 +1729,37 @@ final class AppState: ObservableObject {
         } catch {
             print("Persist budget state failed: \(error)")
         }
+    }
+
+    private func markMonthlyBalanceUpdatedIfNeeded() {
+        do {
+            try markMonthlyBalanceUpdated()
+        } catch {
+            print("Update monthly last updated failed: \(error)")
+        }
+    }
+
+    private func markDailyBalanceUpdatedIfNeeded() {
+        do {
+            try markDailyBalanceUpdated()
+        } catch {
+            print("Update daily last updated failed: \(error)")
+        }
+    }
+
+    private func markMonthlyBalanceUpdated() throws {
+        guard let budget = try repository.activeBudget() else { return }
+        try repository.markMonthlyBalanceUpdated(id: budget.id)
+    }
+
+    private func markDailyBalanceUpdated() throws {
+        guard let budget = try repository.activeBudget() else { return }
+        try repository.markDailyBalanceUpdated(id: budget.id)
+    }
+
+    private func markBalanceViewsUpdated(monthly: Bool, daily: Bool) throws {
+        guard let budget = try repository.activeBudget() else { return }
+        try repository.markBalanceViewsUpdated(id: budget.id, monthly: monthly, daily: daily)
     }
 
     private func publishDailyBudgetWatchSnapshot() {

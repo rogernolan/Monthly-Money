@@ -194,6 +194,17 @@ struct MonthView: View {
                     title: state.isSelectedMonthInFuture ? "Opening balance" : "Current balance",
                     value: state.isSelectedMonthInFuture ? state.openingBalance : state.primaryBankBalance,
                     accessibilityValueID: "month-chip-current-balance-value",
+                    footnoteText: BalanceLastUpdatedPresentation.text(
+                        for: state.monthlyBalanceLastUpdatedAt,
+                        relativeTo: state.currentDate
+                    ),
+                    footnoteColor: {
+                        guard let lastUpdated = state.monthlyBalanceLastUpdatedAt,
+                              BalanceLastUpdatedPresentation.isStale(lastUpdated, relativeTo: state.currentDate) else {
+                            return nil
+                        }
+                        return .red
+                    }(),
                     editableValue: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
                         isSelectedMonthInFuture: state.isSelectedMonthInFuture
@@ -375,6 +386,8 @@ struct MonthView: View {
         value: Decimal,
         accessibilityValueID: String? = nil,
         secondaryText: String? = nil,
+        footnoteText: String? = nil,
+        footnoteColor: Color? = nil,
         editableValue: Binding<Decimal>? = nil,
         editableFocusID: String? = nil,
         prefixIcon: String? = nil,
@@ -415,6 +428,13 @@ struct MonthView: View {
                 Text(secondaryText)
                     .font(.caption2)
                     .foregroundStyle(palette.titleColor)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+
+            if let footnoteText {
+                Text(footnoteText)
+                    .font(.caption2)
+                    .foregroundStyle(footnoteColor ?? palette.titleColor)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }

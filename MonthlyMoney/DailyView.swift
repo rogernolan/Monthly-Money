@@ -164,6 +164,17 @@ struct DailyView: View {
         dailyChip(
             title: DailyPresentationContent.balanceTitle(usesSeparateAccount: state.usesSeparateAccountForDailyBudget),
             tone: DailyChipToneResolver.tone(for: .currentBalance, metrics: metrics, currentBalance: state.dailyBudgetCurrentBalance),
+            footerText: BalanceLastUpdatedPresentation.text(
+                for: state.dailyBalanceLastUpdatedAt,
+                relativeTo: state.currentDate
+            ),
+            footerColor: {
+                guard let lastUpdated = state.dailyBalanceLastUpdatedAt,
+                      BalanceLastUpdatedPresentation.isStale(lastUpdated, relativeTo: state.currentDate) else {
+                    return nil
+                }
+                return .red
+            }(),
             editableFocusID: state.usesSeparateAccountForDailyBudget ? "daily-current-balance" : nil
         ) {
             if state.usesSeparateAccountForDailyBudget {
@@ -223,6 +234,8 @@ struct DailyView: View {
     private func dailyChip<Content: View>(
         title: String,
         tone: DailyChipTone,
+        footerText: String? = nil,
+        footerColor: Color? = nil,
         editableFocusID: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> some View {
@@ -239,6 +252,13 @@ struct DailyView: View {
 
             content()
                 .frame(maxWidth: .infinity, alignment: .trailing)
+
+            if let footerText {
+                Text(footerText)
+                    .font(.caption2)
+                    .foregroundStyle(footerColor ?? palette.titleColor)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
         .foregroundStyle(palette.valueColor)
         .multilineTextAlignment(.trailing)
