@@ -204,7 +204,7 @@ final class ImportedTransactionReconciliationService {
             return YearMonth(year: year, month: month)
         }
 
-        guard day > normalizedPayday else {
+        if day < normalizedPayday {
             return YearMonth(year: year, month: month)
         }
 

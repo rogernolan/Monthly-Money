@@ -1648,7 +1648,7 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
-    func testImportedTransactionBudgetMonthStaysInCurrentMonthOnPayday() {
+    func testImportedTransactionBudgetMonthMovesToNextMonthOnPayday() {
         XCTAssertEqual(
             ImportedTransactionReconciliationService.budgetMonthKey(
                 year: 2026,
@@ -1658,7 +1658,7 @@ final class MonthlyMoneyTests: XCTestCase {
                 calendar: Self.utcCalendar,
                 referenceDate: Self.date(year: 2026, month: 1, day: 28)
             ),
-            YearMonth(year: 2026, month: 1)
+            YearMonth(year: 2026, month: 2)
         )
     }
 
@@ -1920,7 +1920,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.primaryBankBalance, Decimal(string: "1234.56"))
     }
 
-    func testImportOFXDataOnPaydayCreatesMonthItemInCurrentMonth() async throws {
+    func testImportOFXDataOnPaydayCreatesMonthItemInNextBudgetMonth() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
 
@@ -1941,8 +1941,8 @@ final class MonthlyMoneyTests: XCTestCase {
         let marchItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 3))
         let aprilItems = try repository.plannedItems(for: YearMonth(year: 2026, month: 4))
 
-        XCTAssertEqual(marchItems.filter { $0.label == "Card Payment" }.count, 1)
-        XCTAssertEqual(aprilItems.filter { $0.label == "Card Payment" }.count, 0)
+        XCTAssertEqual(marchItems.filter { $0.label == "Card Payment" }.count, 0)
+        XCTAssertEqual(aprilItems.filter { $0.label == "Card Payment" }.count, 1)
     }
 
     func testImportDailyOFXDataUpdatesDailySeparateAccountBalanceFromStatementLedgerBalance() async throws {

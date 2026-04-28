@@ -126,6 +126,32 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertNil(reconciledRecord.createdTransactionID)
     }
 
+    func testReconciliationCreatesImportedUnplannedItemInNextBudgetMonthOnPayday() throws {
+        let repository = makeRepository()
+        let account = try makeAccount(in: repository, name: "Nationwide")
+        let budget = try XCTUnwrap(try repository.activeBudget())
+        budget.dailyBudgetPaydayDay = 28
+        try repository.saveBudget(budget)
+        let importedRecord = makeImportedRecord(
+            budgetID: account.budgetID,
+            accountID: account.id,
+            externalTransactionID: "FITID-PAYDAY",
+            postedAt: Self.date("2026-04-28T12:00:00.000Z"),
+            amount: -12.34,
+            payee: "Card Payment",
+            transactionType: "POS"
+        )
+        try repository.createImportedTransactionRecord(importedRecord)
+
+        _ = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
+
+        XCTAssertTrue(try repository.plannedItems(for: YearMonth(year: 2026, month: 4)).isEmpty)
+        XCTAssertEqual(
+            try repository.plannedItems(for: YearMonth(year: 2026, month: 5)).map(\.label),
+            ["Card Payment"]
+        )
+    }
+
     func testReconciliationDoesNotDuplicateImportedUnplannedItemsAcrossRepeatedRuns() throws {
         let repository = makeRepository()
         let account = try makeAccount(in: repository, name: "Nationwide")
