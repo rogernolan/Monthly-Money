@@ -483,6 +483,10 @@ final class SharingAndMonthTests: XCTestCase {
             480
         )
         XCTAssertEqual(
+            MonthCalculationEngine.monthlyBudgetFromWeekModel(year: 2026, month: 7, paydayDay: 26, weeklyEstimate: 0, weekendEstimate: 10),
+            90
+        )
+        XCTAssertEqual(
             MonthCalculationEngine.suggestedLiving(projectedNetCredit: 900, livingBuffer: 200, monthlyBudgetFromWeekModel: 650, minSuggestedLiving: 250),
             650
         )

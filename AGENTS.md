@@ -16,6 +16,7 @@ Implement the data layer + sharing/migration architecture:
 - Keep the changes small and test-driven.
 - Any data model change must include an explicit migration.
 - After each milestone: build + run tests.
+- Budget month boundaries are payday-to-payday, not calendar months. For example, with payday on the 26th, June 27 belongs to the July budget month; June's balance is no longer editable and July's is.
 
 ## Deliverables
 - SwiftData models (or Core Data if chosen), including dual CloudKit stores.

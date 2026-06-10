@@ -420,6 +420,7 @@ final class AppState: ObservableObject {
                     ownerParticipantID: currentParticipantID
                 )
             }
+            selectedMonth = currentYearMonth
             try refresh()
         } catch {
             print("Bootstrap failed: \(error)")
@@ -772,8 +773,7 @@ final class AppState: ObservableObject {
 
     private func applyImportedStatementBalanceIfPresent(_ statement: NationwideOFXStatement) {
         guard let ledgerBalance = statement.ledgerBalance else { return }
-        let balanceMonth = dailyBudgetMonthKey(for: statement.statementEndDate)
-        primaryBankBalances[balanceMonth.rawValue] = ledgerBalance
+        primaryBankBalances[selectedMonth.rawValue] = ledgerBalance
     }
 
     private func filterStatementToCurrentDailyCycle(
@@ -984,7 +984,8 @@ final class AppState: ObservableObject {
             weeklyEstimate: weeklyEstimate,
             weekendEstimate: weekendEstimate,
             minSuggestedLiving: minSuggestedLiving,
-            yearMonth: selectedMonth
+            yearMonth: selectedMonth,
+            paydayDay: dailyBudgetPaydayDay
         )
     }
 
@@ -1034,24 +1035,14 @@ final class AppState: ObservableObject {
     }
 
     var daysRemainingInMonth: Int {
-        var comps = DateComponents()
-        comps.year = selectedMonth.year
-        comps.month = selectedMonth.month
-        comps.day = 1
-        let calendar = Calendar.current
-        guard let start = calendar.date(from: comps),
-              let range = calendar.range(of: .day, in: .month, for: start) else {
-            return 1
+        let calendar = Self.fixedDailyCycleCalendar
+        let cycle = budgetCycleDateRange(for: selectedMonth, calendar: calendar)
+        guard selectedMonth == currentYearMonth else {
+            return max(calendar.dateComponents([.day], from: cycle.startInclusive, to: cycle.endExclusive).day ?? 1, 1)
         }
 
-        let today = nowProvider()
-        let currentDay = calendar.component(.day, from: today)
-        let total = range.count
-        if calendar.component(.year, from: today) == selectedMonth.year,
-           calendar.component(.month, from: today) == selectedMonth.month {
-            return max(1, total - currentDay + 1)
-        }
-        return total
+        let today = calendar.startOfDay(for: nowProvider())
+        return max(calendar.dateComponents([.day], from: today, to: cycle.endExclusive).day ?? 1, 1)
     }
 
     var currentDailyAverage: Decimal {
@@ -1066,6 +1057,7 @@ final class AppState: ObservableObject {
         MonthCalculationEngine.monthlyBudgetFromWeekModel(
             year: selectedMonth.year,
             month: selectedMonth.month,
+            paydayDay: dailyBudgetPaydayDay,
             weeklyEstimate: weeklyEstimate,
             weekendEstimate: weekendEstimate
         )
@@ -1449,12 +1441,7 @@ final class AppState: ObservableObject {
     }
 
     private var currentYearMonth: YearMonth {
-        let now = nowProvider()
-        let calendar = Calendar.current
-        return YearMonth(
-            year: calendar.component(.year, from: now),
-            month: calendar.component(.month, from: now)
-        )
+        dailyBudgetMonthKey(for: nowProvider())
     }
 
     private var canEditSelectedMonth: Bool {
@@ -1644,6 +1631,26 @@ final class AppState: ObservableObject {
 
     private func currentDailyCycleMonthKey() -> YearMonth {
         dailyBudgetMonthKey(for: nowProvider())
+    }
+
+    private func budgetCycleDateRange(
+        for month: YearMonth,
+        calendar: Calendar
+    ) -> (startInclusive: Date, endExclusive: Date) {
+        let startMonth = previousMonth(of: month)
+        return (
+            startInclusive: paydayDate(in: startMonth, calendar: calendar),
+            endExclusive: paydayDate(in: month, calendar: calendar)
+        )
+    }
+
+    private func paydayDate(in month: YearMonth, calendar: Calendar) -> Date {
+        let monthStart = calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1))
+        let daysInMonth = monthStart.flatMap { calendar.range(of: .day, in: .month, for: $0)?.count } ?? 31
+        let clampedDay = min(max(dailyBudgetPaydayDay, 1), daysInMonth)
+        return calendar.date(from: DateComponents(year: month.year, month: month.month, day: clampedDay))
+            ?? monthStart
+            ?? nowProvider()
     }
 
     private static var fixedDailyCycleCalendar: Calendar {

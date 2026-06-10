@@ -118,6 +118,69 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
     }
 
+    func testCurrentBudgetMonthChangesOnPaydayBoundaryForBalanceEditing() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 6, day: 27) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 26
+
+        state.selectedMonth = YearMonth(year: 2026, month: 6)
+        try state.refresh()
+        state.primaryBankBalance = 100
+
+        XCTAssertTrue(state.isSelectedMonthInPast)
+        XCTAssertEqual(state.primaryBankBalance, 0)
+
+        state.selectedMonth = YearMonth(year: 2026, month: 7)
+        try state.refresh()
+        state.primaryBankBalance = 200
+
+        XCTAssertFalse(state.isSelectedMonthInPast)
+        XCTAssertFalse(state.isSelectedMonthInFuture)
+        XCTAssertEqual(state.primaryBankBalance, 200)
+    }
+
+    func testCurrentBudgetMonthStaysOnPreviousMonthBeforePayday() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 6, day: 25) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 26
+
+        state.selectedMonth = YearMonth(year: 2026, month: 6)
+        try state.refresh()
+
+        XCTAssertFalse(state.isSelectedMonthInPast)
+        XCTAssertFalse(state.isSelectedMonthInFuture)
+
+        state.selectedMonth = YearMonth(year: 2026, month: 7)
+        try state.refresh()
+
+        XCTAssertTrue(state.isSelectedMonthInFuture)
+    }
+
+    func testDaysRemainingInSelectedMonthUsesPaydayCycle() async throws {
+        let repository = try makeRepository()
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 6, day: 27) }
+        )
+
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 26
+        state.selectedMonth = YearMonth(year: 2026, month: 7)
+        try state.refresh()
+
+        XCTAssertEqual(state.daysRemainingInMonth, 29)
+    }
+
     func testHiddenDailyAccountCanBeCreatedAndExcludedFromVisibleAccounts() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -740,13 +803,15 @@ final class MonthlyMoneyTests: XCTestCase {
 
         await state.bootstrapIfNeeded()
         state.dailyBudgetPaydayDay = 10
+        state.selectedMonth = YearMonth(year: 2026, month: 4)
+        try state.refresh()
         state.primaryBankBalance = 200
 
         let account = try XCTUnwrap(try repository.accounts().first)
         try repository.createPlannedItem(
             PlannedItem(
                 accountID: account.id,
-                monthKey: YearMonth(year: 2026, month: 3),
+                monthKey: YearMonth(year: 2026, month: 4),
                 type: .fixedDebit,
                 label: "Coffee",
                 amount: 15,
@@ -768,6 +833,8 @@ final class MonthlyMoneyTests: XCTestCase {
         await state.bootstrapIfNeeded()
         state.dailyBudgetAmount = 310
         state.dailyBudgetPaydayDay = 10
+        state.selectedMonth = YearMonth(year: 2026, month: 4)
+        try state.refresh()
         state.primaryBankBalance = 200
 
         let snapshot = state.dailyBudgetWatchSnapshot
@@ -795,6 +862,8 @@ final class MonthlyMoneyTests: XCTestCase {
         await state.bootstrapIfNeeded()
         state.dailyBudgetAmount = 310
         state.dailyBudgetPaydayDay = 10
+        state.selectedMonth = YearMonth(year: 2026, month: 4)
+        try state.refresh()
         state.primaryBankBalance = 200
 
         let snapshot = state.dailyBudgetWidgetSnapshot
@@ -1713,7 +1782,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let repository = try makeRepository()
         let state = AppState(
             repository: repository,
-            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+            nowProvider: { Self.date(year: 2026, month: 3, day: 30) }
         )
 
         await state.bootstrapIfNeeded()
@@ -1765,7 +1834,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let repository = try makeRepository()
         let state = AppState(
             repository: repository,
-            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+            nowProvider: { Self.date(year: 2026, month: 3, day: 30) }
         )
 
         await state.bootstrapIfNeeded()
@@ -1787,7 +1856,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(state.dailyBudgetSeparateAccountBalance, Decimal(string: "1187.66"))
         XCTAssertEqual(state.dailyBudgetCurrentBalance, Decimal(string: "1187.66"))
         XCTAssertEqual(transactions.count, 2)
-        XCTAssertEqual(Set(transactions.map(\.monthKey)), [YearMonth(year: 2026, month: 3).rawValue, YearMonth(year: 2026, month: 4).rawValue])
+        XCTAssertEqual(Set(transactions.map(\.monthKey)), [YearMonth(year: 2026, month: 3).rawValue])
         XCTAssertEqual(state.dailyBalanceChartPoints.last?.balance, Decimal(string: "1187.66"))
     }
 
@@ -1819,7 +1888,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let repository = try makeRepository()
         let state = AppState(
             repository: repository,
-            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+            nowProvider: { Self.date(year: 2026, month: 3, day: 30) }
         )
 
         await state.bootstrapIfNeeded()
@@ -1838,7 +1907,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let repository = try makeRepository()
         let state = AppState(
             repository: repository,
-            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+            nowProvider: { Self.date(year: 2026, month: 3, day: 30) }
         )
 
         await state.bootstrapIfNeeded()
@@ -1947,7 +2016,10 @@ final class MonthlyMoneyTests: XCTestCase {
 
     func testImportDailyOFXDataUpdatesDailySeparateAccountBalanceFromStatementLedgerBalance() async throws {
         let repository = try makeRepository()
-        let state = AppState(repository: repository)
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
 
         await state.bootstrapIfNeeded()
         state.usesSeparateAccountForDailyBudget = true
@@ -1969,7 +2041,10 @@ final class MonthlyMoneyTests: XCTestCase {
 
     func testImportDailyOFXDataStoresCurrentCycleTransactionsAndImportedRecords() async throws {
         let repository = try makeRepository()
-        let state = AppState(repository: repository)
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
 
         await state.bootstrapIfNeeded()
         state.usesSeparateAccountForDailyBudget = true
@@ -1992,7 +2067,10 @@ final class MonthlyMoneyTests: XCTestCase {
 
     func testImportDailyOFXDataIsIdempotentForHiddenDailyAccount() async throws {
         let repository = try makeRepository()
-        let state = AppState(repository: repository)
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
 
         await state.bootstrapIfNeeded()
         state.usesSeparateAccountForDailyBudget = true
@@ -2042,7 +2120,10 @@ final class MonthlyMoneyTests: XCTestCase {
 
     func testImportDailyOFXDataDoesNotCreatePlannedItems() async throws {
         let repository = try makeRepository()
-        let state = AppState(repository: repository)
+        let state = AppState(
+            repository: repository,
+            nowProvider: { Self.date(year: 2026, month: 3, day: 12) }
+        )
 
         await state.bootstrapIfNeeded()
         state.usesSeparateAccountForDailyBudget = true
@@ -3376,6 +3457,18 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(totals.projectedBalance, 1300)
     }
 
+    func testMonthlyBudgetFromWeekModelUsesPaydayCycleWeekends() {
+        let budget = MonthCalculationEngine.monthlyBudgetFromWeekModel(
+            year: 2026,
+            month: 7,
+            paydayDay: 26,
+            weeklyEstimate: 0,
+            weekendEstimate: 10
+        )
+
+        XCTAssertEqual(budget, 90)
+    }
+
     func testMonthItemEditorDraftRequiresNameButAllowsZeroAmountToSave() {
         var draft = MonthItemEditorDraft(newType: .fixedDebit, dueDay: 11)
 
@@ -3742,7 +3835,7 @@ final class MonthlyMoneyTests: XCTestCase {
         T-12.34
         PMonzo Card
         ^
-        D28/02/2026
+        D27/02/2026
         T200.00
         PRoger Nolan
         ^
