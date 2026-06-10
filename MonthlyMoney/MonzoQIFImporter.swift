@@ -111,7 +111,12 @@ final class MonzoQIFImporter {
             formatter.locale = Locale(identifier: "en_GB")
             formatter.dateFormat = format
             if let date = formatter.date(from: trimmed) {
-                return date
+                return fixedCalendar.date(
+                    bySettingHour: 12,
+                    minute: 0,
+                    second: 0,
+                    of: date
+                ) ?? date
             }
         }
 

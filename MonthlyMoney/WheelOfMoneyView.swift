@@ -27,6 +27,11 @@ struct WheelOfMoneyView: View {
                 Divider()
 
                 List {
+                    if state.filteredWheelOfMoneyItems.isEmpty {
+                        Text("No items")
+                            .foregroundStyle(.secondary)
+                    }
+
                     ForEach(state.filteredWheelOfMoneyItems, id: \.id) { item in
                         row(for: item)
                             .swipeActions(edge: .trailing, allowsFullSwipe: false) {
