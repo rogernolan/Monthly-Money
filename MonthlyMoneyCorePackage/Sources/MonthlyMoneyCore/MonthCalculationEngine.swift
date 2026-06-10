@@ -37,14 +37,14 @@ public enum MonthCalculationEngine {
         max(minSuggestedLiving, min(projectedNetCredit - livingBuffer, monthlyBudgetFromWeekModel))
     }
 
-    public static func monthlyBudgetFromWeekModel(year: Int, month: Int, weeklyEstimate: Decimal, weekendEstimate: Decimal) -> Decimal {
-        let weekends = Decimal(weekendCount(year: year, month: month))
+    public static func monthlyBudgetFromWeekModel(year: Int, month: Int, paydayDay: Int = 1, weeklyEstimate: Decimal, weekendEstimate: Decimal) -> Decimal {
+        let weekends = Decimal(weekendCount(year: year, month: month, paydayDay: paydayDay))
         return weeklyEstimate * 4 + weekends * weekendEstimate
     }
 
-    public static func calculate(items: [PlannedItem], openingBalance: Decimal, livingBuffer: Decimal, weeklyEstimate: Decimal, weekendEstimate: Decimal, minSuggestedLiving: Decimal, yearMonth: YearMonth) -> MonthTotals {
+    public static func calculate(items: [PlannedItem], openingBalance: Decimal, livingBuffer: Decimal, weeklyEstimate: Decimal, weekendEstimate: Decimal, minSuggestedLiving: Decimal, yearMonth: YearMonth, paydayDay: Int = 1) -> MonthTotals {
         let projectedNet = projectedNetCredit(from: items)
-        let budget = monthlyBudgetFromWeekModel(year: yearMonth.year, month: yearMonth.month, weeklyEstimate: weeklyEstimate, weekendEstimate: weekendEstimate)
+        let budget = monthlyBudgetFromWeekModel(year: yearMonth.year, month: yearMonth.month, paydayDay: paydayDay, weeklyEstimate: weeklyEstimate, weekendEstimate: weekendEstimate)
         return MonthTotals(
             fixedTotal: fixedTotal(from: items),
             fixedDue: fixedDue(from: items),
@@ -69,16 +69,45 @@ public enum MonthCalculationEngine {
         items.filter { $0.type == type && !$0.isPaid }.reduce(0) { $0 + $1.amount }
     }
 
-    private static func weekendCount(year: Int, month: Int) -> Int {
+    private static func weekendCount(year: Int, month: Int, paydayDay: Int) -> Int {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
-        var comps = DateComponents(year: year, month: month, day: 1)
-        guard let start = calendar.date(from: comps), let days = calendar.range(of: .day, in: .month, for: start) else { return 0 }
-        return days.reduce(0) { partial, day in
-            comps.day = day
-            guard let date = calendar.date(from: comps) else { return partial }
-            let weekday = calendar.component(.weekday, from: date)
-            return partial + ((weekday == 1 || weekday == 7) ? 1 : 0)
+
+        guard let start = paydayDay <= 1
+                ? calendar.date(from: DateComponents(year: year, month: month, day: 1))
+                : paydayDate(year: previousMonthYear(forYear: year, month: month), month: previousMonthValue(for: month), paydayDay: paydayDay, calendar: calendar),
+              let end = paydayDay <= 1
+                ? calendar.date(byAdding: .month, value: 1, to: start)
+                : paydayDate(year: year, month: month, paydayDay: paydayDay, calendar: calendar) else {
+            return 0
         }
+
+        var count = 0
+        var date = start
+        while date < end {
+            let weekday = calendar.component(.weekday, from: date)
+            if weekday == 1 || weekday == 7 {
+                count += 1
+            }
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else {
+                break
+            }
+            date = nextDate
+        }
+        return count
+    }
+
+    private static func paydayDate(year: Int, month: Int, paydayDay: Int, calendar: Calendar) -> Date? {
+        let monthStart = calendar.date(from: DateComponents(year: year, month: month, day: 1))
+        let daysInMonth = monthStart.flatMap { calendar.range(of: .day, in: .month, for: $0)?.count } ?? 31
+        return calendar.date(from: DateComponents(year: year, month: month, day: min(max(paydayDay, 1), daysInMonth)))
+    }
+
+    private static func previousMonthYear(forYear year: Int, month: Int) -> Int {
+        month == 1 ? year - 1 : year
+    }
+
+    private static func previousMonthValue(for month: Int) -> Int {
+        month == 1 ? 12 : month - 1
     }
 }

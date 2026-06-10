@@ -75,10 +75,11 @@ enum MonthCalculationEngine {
     static func monthlyBudgetFromWeekModel(
         year: Int,
         month: Int,
+        paydayDay: Int = 1,
         weeklyEstimate: Decimal,
         weekendEstimate: Decimal
     ) -> Decimal {
-        let weekends = Decimal(weekendCount(year: year, month: month))
+        let weekends = Decimal(weekendCount(year: year, month: month, paydayDay: paydayDay))
         let weeklyBase = weeklyEstimate * Decimal(4)
         return weeklyBase + (weekends * weekendEstimate)
     }
@@ -90,12 +91,14 @@ enum MonthCalculationEngine {
         weeklyEstimate: Decimal,
         weekendEstimate: Decimal,
         minSuggestedLiving: Decimal,
-        yearMonth: YearMonth
+        yearMonth: YearMonth,
+        paydayDay: Int = 1
     ) -> MonthTotals {
         let projectedNet = projectedNetCredit(from: items)
         let budget = monthlyBudgetFromWeekModel(
             year: yearMonth.year,
             month: yearMonth.month,
+            paydayDay: paydayDay,
             weeklyEstimate: weeklyEstimate,
             weekendEstimate: weekendEstimate
         )
@@ -133,31 +136,45 @@ enum MonthCalculationEngine {
         item.label.lowercased().contains("living")
     }
 
-    private static func weekendCount(year: Int, month: Int) -> Int {
+    private static func weekendCount(year: Int, month: Int, paydayDay: Int) -> Int {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .current
 
-        var components = DateComponents()
-        components.year = year
-        components.month = month
-        components.day = 1
-
-        guard let startDate = calendar.date(from: components),
-              let daysRange = calendar.range(of: .day, in: .month, for: startDate) else {
+        guard let startDate = paydayDay <= 1
+                ? calendar.date(from: DateComponents(year: year, month: month, day: 1))
+                : paydayDate(year: previousMonthYear(forYear: year, month: month), month: previousMonthValue(for: month), paydayDay: paydayDay, calendar: calendar),
+              let endDate = paydayDay <= 1
+                ? calendar.date(byAdding: .month, value: 1, to: startDate)
+                : paydayDate(year: year, month: month, paydayDay: paydayDay, calendar: calendar) else {
             return 0
         }
 
-        return daysRange.reduce(0) { partial, day in
-            var dayComponents = DateComponents()
-            dayComponents.year = year
-            dayComponents.month = month
-            dayComponents.day = day
-            guard let date = calendar.date(from: dayComponents) else {
-                return partial
-            }
+        var count = 0
+        var date = startDate
+        while date < endDate {
             let weekday = calendar.component(.weekday, from: date)
-            let isWeekendDay = weekday == 1 || weekday == 7
-            return partial + (isWeekendDay ? 1 : 0)
+            if weekday == 1 || weekday == 7 {
+                count += 1
+            }
+            guard let nextDate = calendar.date(byAdding: .day, value: 1, to: date) else {
+                break
+            }
+            date = nextDate
         }
+        return count
+    }
+
+    private static func paydayDate(year: Int, month: Int, paydayDay: Int, calendar: Calendar) -> Date? {
+        let monthStart = calendar.date(from: DateComponents(year: year, month: month, day: 1))
+        let daysInMonth = monthStart.flatMap { calendar.range(of: .day, in: .month, for: $0)?.count } ?? 31
+        return calendar.date(from: DateComponents(year: year, month: month, day: min(max(paydayDay, 1), daysInMonth)))
+    }
+
+    private static func previousMonthYear(forYear year: Int, month: Int) -> Int {
+        month == 1 ? year - 1 : year
+    }
+
+    private static func previousMonthValue(for month: Int) -> Int {
+        month == 1 ? 12 : month - 1
     }
 }
