@@ -380,8 +380,8 @@ final class AppState: ObservableObject {
             let sharedBudget = try BudgetSharingService(repository: repository).shareBudget(participantsSelection: [])
             return try await BudgetShareCoordinator(repository: repository).prepareShareResult(for: sharedBudget)
         },
-        dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing = DailyBudgetWatchSnapshotSyncer.shared,
-        dailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing = DailyBudgetWidgetSnapshotSyncer.shared,
+        dailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing? = nil,
+        dailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing? = nil,
         nowProvider: @escaping () -> Date = Date.init
     ) {
         self.repository = repository
@@ -389,8 +389,8 @@ final class AppState: ObservableObject {
         self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
         self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
-        self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer
-        self.dailyBudgetWidgetSnapshotSyncer = dailyBudgetWidgetSnapshotSyncer
+        self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer ?? DailyBudgetWatchSnapshotSyncer.shared
+        self.dailyBudgetWidgetSnapshotSyncer = dailyBudgetWidgetSnapshotSyncer ?? DailyBudgetWidgetSnapshotSyncer.shared
         self.nowProvider = nowProvider
         let now = nowProvider()
         let calendar = Calendar.current

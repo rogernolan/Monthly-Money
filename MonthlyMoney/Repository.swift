@@ -954,7 +954,7 @@ final class AccountRepository {
         try store.upsertBudget(budget)
     }
 
-    private static func budgetSort(lhs: Budget, rhs: Budget) -> Bool {
+    nonisolated private static func budgetSort(lhs: Budget, rhs: Budget) -> Bool {
         if lhs.updatedAt != rhs.updatedAt {
             return lhs.updatedAt > rhs.updatedAt
         }
@@ -980,7 +980,10 @@ final class AccountRepository {
         return Array(transactionsByID.values)
     }
 
-    private static func importedTransactionSort(_ lhs: ImportedTransactionRecord, _ rhs: ImportedTransactionRecord) -> Bool {
+    nonisolated private static func importedTransactionSort(
+        _ lhs: ImportedTransactionRecord,
+        _ rhs: ImportedTransactionRecord
+    ) -> Bool {
         if lhs.postedAt != rhs.postedAt {
             return lhs.postedAt < rhs.postedAt
         }

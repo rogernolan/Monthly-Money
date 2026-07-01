@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 enum MonthlyMoneyPersistenceFactory {
-    static let cloudKitContainerIdentifier = "iCloud.com.hatbat.monthlymoney"
+    nonisolated static let cloudKitContainerIdentifier = "iCloud.com.hatbat.monthlymoney"
 
     static func makeRepository(
         plan: MonthlyMoneyPersistencePlan,
