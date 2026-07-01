@@ -96,12 +96,37 @@ enum MonthItemRowContent {
         for item: PlannedItem,
         isSelectedMonthInPast: Bool,
         isSelectedMonthInFuture: Bool,
-        todayDay: Int
+        selectedMonth: YearMonth,
+        paydayDay: Int,
+        today: Date,
+        calendar: Calendar = .current
     ) -> Bool {
         guard item.amount != 0 else { return false }
         guard !item.isPaid, !isSelectedMonthInPast, !isSelectedMonthInFuture else { return false }
         guard let dueDay = item.dueDay else { return false }
-        return dueDay < todayDay
+
+        let selectedMonthStart = calendar.date(
+            from: DateComponents(year: selectedMonth.year, month: selectedMonth.month, day: 1)
+        )
+        guard let selectedMonthStart,
+              let previousMonthStart = calendar.date(byAdding: .month, value: -1, to: selectedMonthStart),
+              let previousMonthDays = calendar.range(of: .day, in: .month, for: previousMonthStart)?.count,
+              let selectedMonthDays = calendar.range(of: .day, in: .month, for: selectedMonthStart)?.count else {
+            return false
+        }
+
+        let cycleStartDay = min(max(paydayDay, 1), previousMonthDays)
+        let dueMonthStart = dueDay >= cycleStartDay ? previousMonthStart : selectedMonthStart
+        let dueMonthDays = dueDay >= cycleStartDay ? previousMonthDays : selectedMonthDays
+        guard let dueDate = calendar.date(
+            bySetting: .day,
+            value: min(max(dueDay, 1), dueMonthDays),
+            of: dueMonthStart
+        ) else {
+            return false
+        }
+
+        return calendar.startOfDay(for: dueDate) < calendar.startOfDay(for: today)
     }
 }
 
@@ -578,7 +603,9 @@ struct MonthView: View {
             for: item,
             isSelectedMonthInPast: state.isSelectedMonthInPast,
             isSelectedMonthInFuture: state.isSelectedMonthInFuture,
-            todayDay: Calendar.current.component(.day, from: Date())
+            selectedMonth: state.selectedMonth,
+            paydayDay: state.dailyBudgetPaydayDay,
+            today: Date()
         )
     }
 

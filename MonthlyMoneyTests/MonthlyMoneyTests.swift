@@ -3621,7 +3621,33 @@ final class MonthlyMoneyTests: XCTestCase {
                 for: item,
                 isSelectedMonthInPast: false,
                 isSelectedMonthInFuture: false,
-                todayDay: 12
+                selectedMonth: YearMonth(year: 2026, month: 3),
+                paydayDay: 1,
+                today: Self.date(year: 2026, month: 3, day: 12)
+            )
+        )
+    }
+
+    func testMonthItemRowDoesNotHighlightNextCalendarMonthItemsAfterPayday() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 7),
+            type: .fixedDebit,
+            label: "Mortgage",
+            amount: 1_200,
+            dueDay: 1,
+            dueText: nil,
+            isPaid: false
+        )
+
+        XCTAssertFalse(
+            MonthItemRowContent.showsOverdueHighlight(
+                for: item,
+                isSelectedMonthInPast: false,
+                isSelectedMonthInFuture: false,
+                selectedMonth: YearMonth(year: 2026, month: 7),
+                paydayDay: 28,
+                today: Self.date(year: 2026, month: 6, day: 29)
             )
         )
     }
