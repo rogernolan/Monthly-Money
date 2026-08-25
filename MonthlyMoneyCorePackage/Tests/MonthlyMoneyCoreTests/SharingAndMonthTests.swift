@@ -578,6 +578,105 @@ final class SharingAndMonthTests: XCTestCase {
         )
     }
 
+    func testEveryNDaysOccurrencesAdvanceAcrossMonthBoundary() {
+        let anchor = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 2),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 26,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(from: anchor, in: YearMonth(year: 2026, month: 3))
+                .compactMap(\.dueDay),
+            [26]
+        )
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(from: anchor, in: YearMonth(year: 2026, month: 4))
+                .compactMap(\.dueDay),
+            [23]
+        )
+    }
+
+    func testEveryNDaysOccurrencesPopulateAllLaterDatesInSameMonth() {
+        let anchor = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10,
+            recurrenceID: UUID()
+        )
+
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(from: anchor, in: YearMonth(year: 2026, month: 3))
+                .compactMap(\.dueDay),
+            [11, 21, 31]
+        )
+    }
+
+    func testEveryNDaysCopyContinuesOnlyFromLatestOccurrence() {
+        let recurrenceID = UUID()
+        let sourceItems = [1, 11, 21, 31].map { day in
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Pension",
+                amount: 100,
+                dueDay: day,
+                repeatDays: 10,
+                recurrenceID: recurrenceID
+            )
+        }
+
+        let copied = PlannedItem.copiedItems(
+            from: sourceItems,
+            into: YearMonth(year: 2026, month: 4)
+        )
+
+        XCTAssertEqual(copied.compactMap(\.dueDay), [10, 20, 30])
+        XCTAssertTrue(copied.allSatisfy { $0.recurrenceID == recurrenceID })
+    }
+
+    func testEveryNDaysCopyDoesNotGroupDifferentRecurrenceIDs() {
+        let sourceItems = [
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Pension",
+                amount: 100,
+                dueDay: 31,
+                repeatDays: 10,
+                recurrenceID: UUID()
+            ),
+            PlannedItem(
+                accountID: UUID(),
+                monthKey: YearMonth(year: 2026, month: 3),
+                type: .fixedDebit,
+                label: "Pension",
+                amount: 100,
+                dueDay: 25,
+                repeatDays: 10,
+                recurrenceID: UUID()
+            )
+        ]
+
+        let copied = PlannedItem.copiedItems(
+            from: sourceItems,
+            into: YearMonth(year: 2026, month: 4)
+        )
+
+        XCTAssertEqual(copied.compactMap(\.dueDay), [10, 20, 30, 4, 14, 24])
+    }
+
     func testCopiedPlannedItemIsStampedFromPreviousMonth() {
         let budget = Budget(name: "Home", ownerParticipantID: "owner")
         let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
