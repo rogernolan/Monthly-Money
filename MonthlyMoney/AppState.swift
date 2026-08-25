@@ -1233,6 +1233,8 @@ final class AppState: ObservableObject {
         dueDay: Int?,
         dueText: String?,
         type: PlannedItemType,
+        repeatDays: Int? = nil,
+        recurrenceID: UUID? = nil,
         copiesToNextMonthAutomatically: Bool,
         notes: String
     ) {
@@ -1244,6 +1246,8 @@ final class AppState: ObservableObject {
             dueDay: dueDay,
             dueText: dueText,
             type: type,
+            repeatDays: repeatDays,
+            recurrenceID: recurrenceID,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
             notes: notes
         )
@@ -1258,6 +1262,8 @@ final class AppState: ObservableObject {
         dueText: String?,
         type: PlannedItemType,
         sourceOverride: PlannedItemSource? = nil,
+        repeatDays: Int? = nil,
+        recurrenceID: UUID? = nil,
         copiesToNextMonthAutomatically: Bool,
         notes: String
     ) {
@@ -1267,6 +1273,10 @@ final class AppState: ObservableObject {
         item.amount = amount
         item.dueDay = dueDay
         item.dueText = dueText
+        let originalRepeatDays = item.repeatDays
+        let originalRecurrenceID = item.recurrenceID
+        item.repeatDays = repeatDays.flatMap { $0 > 0 ? $0 : nil }
+        item.recurrenceID = item.repeatDays == nil ? nil : (recurrenceID ?? item.recurrenceID ?? UUID())
         item.type = type
         item.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         item.notes = notes
@@ -1280,6 +1290,8 @@ final class AppState: ObservableObject {
             try refresh()
         } catch {
             item.source = originalSource
+            item.repeatDays = originalRepeatDays
+            item.recurrenceID = originalRecurrenceID
             print("Edit failed: \(error)")
         }
     }
@@ -1292,6 +1304,8 @@ final class AppState: ObservableObject {
         amount: Decimal = 0,
         dueDay: Int?,
         source: PlannedItemSource = .manual,
+        repeatDays: Int? = nil,
+        recurrenceID: UUID? = nil,
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
     ) -> PlannedItem? {
@@ -1310,6 +1324,8 @@ final class AppState: ObservableObject {
                 matchingString: normalizeMatchingString(matchingString),
                 dueDay: dueDay,
                 dueText: nil,
+                repeatDays: repeatDays.flatMap { $0 > 0 ? $0 : nil },
+                recurrenceID: repeatDays.flatMap { $0 > 0 ? (recurrenceID ?? UUID()) : nil },
                 isPaid: false,
                 copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
                 notes: notes
@@ -1338,6 +1354,29 @@ final class AppState: ObservableObject {
             paydayDay: dailyBudgetPaydayDay,
             month: selectedMonth
         )
+    }
+
+    func sameMonthOccurrences(for item: PlannedItem) -> [PlannedItem] {
+        guard item.resolvedMonthKey == selectedMonth else { return [] }
+        return PlannedItem.everyNDaysOccurrences(from: item, in: selectedMonth)
+    }
+
+    func populateSameMonth(for item: PlannedItem) {
+        guard canEditSelectedMonth else { return }
+        do {
+            let existingItems = try repository.plannedItems(for: selectedMonth)
+            let existingDays = Set<Int>(existingItems.compactMap { existing in
+                guard existing.recurrenceID == item.recurrenceID else { return nil }
+                return existing.dueDay
+            })
+            for occurrence in sameMonthOccurrences(for: item) {
+                guard let dueDay = occurrence.dueDay, !existingDays.contains(dueDay) else { continue }
+                try repository.createPlannedItem(occurrence)
+            }
+            try refresh()
+        } catch {
+            print("Populate every-n-days occurrences failed: \(error)")
+        }
     }
 
     @discardableResult
@@ -1693,8 +1732,7 @@ final class AppState: ObservableObject {
     }
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
-        for source in PlannedItem.automaticallyCopiedItems(from: sourceItems) {
-            let copy = PlannedItem.copied(from: source, into: month)
+        for copy in PlannedItem.copiedItems(from: sourceItems, into: month) {
             try repository.createPlannedItem(copy)
         }
     }

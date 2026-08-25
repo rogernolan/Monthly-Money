@@ -677,6 +677,59 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(copied.compactMap(\.dueDay), [10, 20, 30, 4, 14, 24])
     }
 
+    func testEveryNDaysOccurrencesHandleYearAndLeapYearBoundaries() {
+        let yearBoundaryAnchor = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 12),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 20,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+        let leapYearAnchor = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2028, month: 1),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 31,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(from: yearBoundaryAnchor, in: YearMonth(year: 2027, month: 1))
+                .compactMap(\.dueDay),
+            [17]
+        )
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(from: leapYearAnchor, in: YearMonth(year: 2028, month: 2))
+                .compactMap(\.dueDay),
+            [28]
+        )
+    }
+
+    func testCopiedItemsPreserveOrdinaryFixedDayItems() {
+        let source = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            copiesToNextMonthAutomatically: true
+        )
+
+        let copied = PlannedItem.copiedItems(from: [source], into: YearMonth(year: 2026, month: 4))
+
+        XCTAssertEqual(copied.count, 1)
+        XCTAssertEqual(copied.first?.dueDay, 1)
+        XCTAssertNil(copied.first?.repeatDays)
+        XCTAssertNil(copied.first?.recurrenceID)
+    }
+
     func testCopiedPlannedItemIsStampedFromPreviousMonth() {
         let budget = Budget(name: "Home", ownerParticipantID: "owner")
         let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)

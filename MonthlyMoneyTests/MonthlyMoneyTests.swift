@@ -450,6 +450,45 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(copiedItem.isPaid)
     }
 
+    func testPopulatingMonthCopiesEveryNDaysFromLatestOccurrenceOnly() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let sourceMonth = state.selectedMonth
+        let targetMonth = nextMonth(after: sourceMonth)
+        let accountID = try XCTUnwrap(try repository.accounts().first).id
+        let recurrenceID = UUID()
+        for day in [1, 11, 21, 31] {
+            try repository.createPlannedItem(
+                PlannedItem(
+                    accountID: accountID,
+                    monthKey: sourceMonth,
+                    type: .fixedDebit,
+                    label: "Pension",
+                    amount: 100,
+                    dueDay: day,
+                    repeatDays: 10,
+                    recurrenceID: recurrenceID,
+                    isPaid: false,
+                    copiesToNextMonthAutomatically: true
+                )
+            )
+        }
+
+        state.selectedMonth = targetMonth
+        try state.refresh()
+        state.populateSelectedMonthFromPrevious()
+
+        XCTAssertEqual(
+            try repository.plannedItems(for: targetMonth)
+                .filter { $0.recurrenceID == recurrenceID }
+                .compactMap(\.dueDay)
+                .sorted(),
+            [10, 20, 30]
+        )
+    }
+
     func testPopulatingMonthDoesNotCreateWheelOfMoneySavingsDebitWhenDisabled() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -3012,6 +3051,92 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(
             try repository.plannedItems(for: state.selectedMonth).first(where: { $0.id == saved.id })?.matchingString,
             "Statement keywords"
+        )
+    }
+
+    func testCreatingEveryNDaysEntryCreatesOnlyItsAnchor() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let created = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10
+        ))
+
+        let monthItems = try repository.plannedItems(for: state.selectedMonth)
+        XCTAssertEqual(monthItems.filter { $0.recurrenceID == created.recurrenceID }.count, 1)
+        XCTAssertEqual(created.repeatDays, 10)
+        XCTAssertEqual(created.dueDay, 1)
+    }
+
+    func testChangingEveryNDaysEntryBackToFixedDayClearsRecurrenceMetadata() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10,
+            recurrenceID: UUID()
+        )
+        try repository.createPlannedItem(item)
+
+        state.update(
+            item: item,
+            label: "Pension",
+            amount: 100,
+            dueDay: 2,
+            dueText: nil,
+            type: .fixedDebit,
+            repeatDays: nil,
+            recurrenceID: nil,
+            copiesToNextMonthAutomatically: true,
+            notes: ""
+        )
+
+        let saved = try XCTUnwrap(try repository.plannedItems(for: state.selectedMonth).first)
+        XCTAssertNil(saved.repeatDays)
+        XCTAssertNil(saved.recurrenceID)
+    }
+
+    func testPopulatingEveryNDaysEntryCreatesAllLaterOccurrencesInSelectedMonth() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10,
+            recurrenceID: UUID()
+        )
+        try repository.createPlannedItem(item)
+
+        XCTAssertEqual(state.sameMonthOccurrences(for: item).compactMap(\.dueDay), [11, 21, 31])
+        state.populateSameMonth(for: item)
+
+        XCTAssertEqual(
+            try repository.plannedItems(for: state.selectedMonth)
+                .filter { $0.recurrenceID == item.recurrenceID }
+                .compactMap(\.dueDay)
+                .sorted(),
+            [1, 11, 21, 31]
         )
     }
 

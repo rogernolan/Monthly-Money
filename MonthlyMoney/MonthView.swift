@@ -639,6 +639,7 @@ private struct MonthItemEditorView: View {
     @State private var editingItem: PlannedItem?
     @State private var draft: MonthItemEditorDraft
     @State private var activeMatchSourceItem: PlannedItem?
+    @State private var pendingSameMonthPopulationItem: PlannedItem?
 
     init(item: PlannedItem) {
         _editingItem = State(initialValue: item)
@@ -735,6 +736,11 @@ private struct MonthItemEditorView: View {
         .onChange(of: draft.amountText) { _, _ in
             draft.normalizeAmountInput()
         }
+        .onChange(of: draft.dueSelection) { _, selection in
+            if case .day(let day) = selection {
+                draft.repeatAnchorDay = day
+            }
+        }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
             MonthItemManualMatchPickerView(sourceItem: sourceItem) { matchedItem in
                 editingItem = matchedItem
@@ -751,6 +757,29 @@ private struct MonthItemEditorView: View {
                     .disabled(!draft.canSave)
                 }
             }
+        }
+        .alert(
+            "Add remaining occurrences?",
+            isPresented: Binding(
+                get: { pendingSameMonthPopulationItem != nil },
+                set: { isPresented in
+                    if !isPresented { pendingSameMonthPopulationItem = nil }
+                }
+            )
+        ) {
+            Button("Add occurrences") {
+                if let item = pendingSameMonthPopulationItem {
+                    state.populateSameMonth(for: item)
+                }
+                pendingSameMonthPopulationItem = nil
+                dismiss()
+            }
+            Button("Not now", role: .cancel) {
+                pendingSameMonthPopulationItem = nil
+                dismiss()
+            }
+        } message: {
+            Text("This repeat falls again later in the selected month. Add all remaining occurrences now?")
         }
     }
 
@@ -787,19 +816,28 @@ private struct MonthItemEditorView: View {
 
     private func save() {
         if let item = editableItem {
+            let wasNotRepeating = item.repeatDays == nil
             state.update(
                 item: item,
                 label: draft.label,
                 matchingString: draft.matchingString,
                 amount: draft.amount,
-                dueDay: draft.dueSelection.value,
+                dueDay: draft.dueDay,
                 dueText: nil,
                 type: draft.resolvedType(existingItemType: item.type),
                 sourceOverride: sourceOverride,
+                repeatDays: draft.repeatDays,
+                recurrenceID: item.recurrenceID,
                 copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
-            dismiss()
+            if wasNotRepeating,
+               draft.repeatDays != nil,
+               !state.sameMonthOccurrences(for: item).isEmpty {
+                pendingSameMonthPopulationItem = item
+            } else {
+                dismiss()
+            }
             return
         }
         if state.createEntry(
@@ -807,8 +845,9 @@ private struct MonthItemEditorView: View {
             label: draft.label,
             matchingString: draft.matchingString,
             amount: draft.amount,
-            dueDay: draft.dueSelection.value,
+            dueDay: draft.dueDay,
             source: sourceOverride,
+            repeatDays: draft.repeatDays,
             copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
             notes: draft.notes
         ) != nil {
