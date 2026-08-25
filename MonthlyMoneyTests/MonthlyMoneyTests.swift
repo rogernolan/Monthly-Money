@@ -3880,6 +3880,69 @@ final class MonthlyMoneyTests: XCTestCase {
             containerIdentifier: MonthlyMoneyPersistenceFactory.cloudKitContainerIdentifier
         )
     }
+
+    func testCoreDataModelBuilderDefinesAndPersistsEveryNDaysAttributes() throws {
+        let plannedItemEntity = try XCTUnwrap(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["repeatDays"]?.attributeType,
+            .integer16AttributeType
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["recurrenceID"]?.attributeType,
+            .UUIDAttributeType
+        )
+        XCTAssertTrue(plannedItemEntity.attributesByName["repeatDays"]?.isOptional == true)
+        XCTAssertTrue(plannedItemEntity.attributesByName["recurrenceID"]?.isOptional == true)
+
+        let managedObjectContext = try makeInMemoryManagedObjectContext()
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 26,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+        let managedObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem,
+            into: managedObjectContext
+        )
+        CoreDataMapping.apply(item, to: managedObject)
+        try managedObjectContext.save()
+
+        let roundTrip = CoreDataMapping.plannedItem(from: managedObject)
+        XCTAssertEqual(roundTrip.repeatDays, 28)
+        XCTAssertEqual(roundTrip.recurrenceID, item.recurrenceID)
+
+        let legacyObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem,
+            into: managedObjectContext
+        )
+        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).repeatDays)
+        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).recurrenceID)
+    }
+
+    private func makeInMemoryManagedObjectContext() throws -> NSManagedObjectContext {
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError { throw loadError }
+        return container.viewContext
+    }
 }
 
 @MainActor

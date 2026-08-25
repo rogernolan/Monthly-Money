@@ -172,6 +172,8 @@ enum CoreDataModelBuilder {
             attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
             attribute("dueDay", .integer16AttributeType, isOptional: true),
             attribute("dueText", .stringAttributeType, isOptional: true),
+            attribute("repeatDays", .integer16AttributeType, isOptional: true),
+            attribute("recurrenceID", .UUIDAttributeType, isOptional: true),
             attribute("isPaid", .booleanAttributeType, defaultValue: false),
             attribute("sourceRaw", .stringAttributeType, defaultValue: PlannedItemSource.manual.rawValue),
             attribute("copiesToNextMonthAutomatically", .booleanAttributeType, defaultValue: true),
@@ -340,6 +342,8 @@ enum CoreDataMapping {
         managedObject.setValue(item.amount as NSDecimalNumber, forKey: "amount")
         managedObject.setValue(item.dueDay.map(NSNumber.init(value:)), forKey: "dueDay")
         managedObject.setValue(item.dueText, forKey: "dueText")
+        managedObject.setValue(item.repeatDays.map(NSNumber.init(value:)), forKey: "repeatDays")
+        managedObject.setValue(item.recurrenceID, forKey: "recurrenceID")
         managedObject.setValue(item.isPaid, forKey: "isPaid")
         managedObject.setValue(item.source.rawValue, forKey: "sourceRaw")
         managedObject.setValue(item.copiesToNextMonthAutomatically, forKey: "copiesToNextMonthAutomatically")
@@ -357,6 +361,8 @@ enum CoreDataMapping {
         let amount = (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0
         let dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
         let dueText = managedObject.value(forKey: "dueText") as? String
+        let repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
+        let recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
         let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
@@ -374,6 +380,8 @@ enum CoreDataMapping {
             matchingString: matchingString,
             dueDay: dueDay,
             dueText: dueText,
+            repeatDays: repeatDays,
+            recurrenceID: recurrenceID,
             isPaid: isPaid,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
             notes: notes
