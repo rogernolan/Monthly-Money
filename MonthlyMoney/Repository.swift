@@ -332,6 +332,8 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.amount = item.amount
                 existing.dueDay = item.dueDay
                 existing.dueText = item.dueText
+                existing.repeatDays = item.repeatDays
+                existing.recurrenceID = item.recurrenceID
                 existing.isPaid = item.isPaid
                 existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes

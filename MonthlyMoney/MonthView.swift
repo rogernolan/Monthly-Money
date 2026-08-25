@@ -639,6 +639,7 @@ private struct MonthItemEditorView: View {
     @State private var editingItem: PlannedItem?
     @State private var draft: MonthItemEditorDraft
     @State private var activeMatchSourceItem: PlannedItem?
+    @State private var pendingSameMonthPopulationItem: PlannedItem?
 
     init(item: PlannedItem) {
         _editingItem = State(initialValue: item)
@@ -681,11 +682,26 @@ private struct MonthItemEditorView: View {
 
                 Picker("Day", selection: $draft.dueSelection) {
                     Text("Floating").tag(MonthDueSelection.floating)
+                    Text("Every n days").tag(MonthDueSelection.everyNDays)
                     ForEach(1...31, id: \.self) { day in
                         Text(MonthItemRowContent.ordinal(day)).tag(MonthDueSelection.day(day))
                     }
                 }
                 .disabled(!isEditable)
+
+                if draft.dueSelection == .everyNDays {
+                    Picker("Anchor day", selection: Binding(
+                        get: { draft.repeatAnchorDay ?? 1 },
+                        set: { draft.repeatAnchorDay = $0 }
+                    )) {
+                        ForEach(1...31, id: \.self) { day in
+                            Text(MonthItemRowContent.ordinal(day)).tag(day)
+                        }
+                    }
+                    TextField("Repeat days", text: $draft.repeatDaysText)
+                        .keyboardType(.numberPad)
+                        .disabled(!isEditable)
+                }
 
                 Toggle("Planned", isOn: $draft.isPlanned)
                     .disabled(!isEditable)
@@ -728,6 +744,16 @@ private struct MonthItemEditorView: View {
         .onChange(of: draft.amountText) { _, _ in
             draft.normalizeAmountInput()
         }
+        .onChange(of: draft.dueSelection) { _, selection in
+            switch selection {
+            case .day(let day):
+                draft.repeatAnchorDay = day
+            case .everyNDays where draft.repeatAnchorDay == nil:
+                draft.repeatAnchorDay = 1
+            case .floating, .everyNDays:
+                break
+            }
+        }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
             MonthItemManualMatchPickerView(sourceItem: sourceItem) { matchedItem in
                 editingItem = matchedItem
@@ -744,6 +770,29 @@ private struct MonthItemEditorView: View {
                     .disabled(!draft.canSave)
                 }
             }
+        }
+        .alert(
+            "Add remaining occurrences?",
+            isPresented: Binding(
+                get: { pendingSameMonthPopulationItem != nil },
+                set: { isPresented in
+                    if !isPresented { pendingSameMonthPopulationItem = nil }
+                }
+            )
+        ) {
+            Button("Add occurrences") {
+                if let item = pendingSameMonthPopulationItem {
+                    state.populateSameMonth(for: item)
+                }
+                pendingSameMonthPopulationItem = nil
+                dismiss()
+            }
+            Button("Not now", role: .cancel) {
+                pendingSameMonthPopulationItem = nil
+                dismiss()
+            }
+        } message: {
+            Text("This repeat falls again later in the selected month. Add all remaining occurrences now?")
         }
     }
 
@@ -780,19 +829,29 @@ private struct MonthItemEditorView: View {
 
     private func save() {
         if let item = editableItem {
+            let wasNotRepeating = item.repeatDays == nil
+            let intervalChanged = item.repeatDays != draft.repeatDays
             state.update(
                 item: item,
                 label: draft.label,
                 matchingString: draft.matchingString,
                 amount: draft.amount,
-                dueDay: draft.dueSelection.value,
+                dueDay: draft.dueDay,
                 dueText: nil,
                 type: draft.resolvedType(existingItemType: item.type),
                 sourceOverride: sourceOverride,
+                repeatDays: draft.repeatDays,
+                recurrenceID: item.recurrenceID,
                 copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
-            dismiss()
+            if (wasNotRepeating || intervalChanged),
+               draft.repeatDays != nil,
+               !state.sameMonthOccurrences(for: item).isEmpty {
+                pendingSameMonthPopulationItem = item
+            } else {
+                dismiss()
+            }
             return
         }
         if state.createEntry(
@@ -800,8 +859,9 @@ private struct MonthItemEditorView: View {
             label: draft.label,
             matchingString: draft.matchingString,
             amount: draft.amount,
-            dueDay: draft.dueSelection.value,
+            dueDay: draft.dueDay,
             source: sourceOverride,
+            repeatDays: draft.repeatDays,
             copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
             notes: draft.notes
         ) != nil {

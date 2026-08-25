@@ -159,6 +159,8 @@ public final class PlannedItem {
     public var amount: Decimal = 0
     public var dueDay: Int?
     public var dueText: String?
+    public var repeatDays: Int?
+    public var recurrenceID: UUID?
     public var isPaid: Bool = false
     public var copiesToNextMonthAutomatically: Bool = true
     public var notes: String = ""
@@ -175,6 +177,8 @@ public final class PlannedItem {
         matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
+        repeatDays: Int? = nil,
+        recurrenceID: UUID? = nil,
         isPaid: Bool = false,
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
@@ -190,6 +194,8 @@ public final class PlannedItem {
         self.amount = amount
         self.dueDay = dueDay
         self.dueText = dueText
+        self.repeatDays = repeatDays
+        self.recurrenceID = recurrenceID
         self.isPaid = isPaid
         self.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         self.notes = notes
@@ -207,6 +213,8 @@ public final class PlannedItem {
         matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
+        repeatDays: Int? = nil,
+        recurrenceID: UUID? = nil,
         isPaid: Bool = false,
         notes: String = ""
     ) {
@@ -222,6 +230,8 @@ public final class PlannedItem {
             matchingString: matchingString,
             dueDay: dueDay,
             dueText: dueText,
+            repeatDays: repeatDays,
+            recurrenceID: recurrenceID,
             isPaid: isPaid,
             copiesToNextMonthAutomatically: true,
             notes: notes
@@ -230,6 +240,69 @@ public final class PlannedItem {
 
     public static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
         items.filter(\.copiesToNextMonthAutomatically)
+    }
+
+    public static func everyNDaysOccurrences(
+        from anchor: PlannedItem,
+        in month: YearMonth,
+        paydayDay: Int = 1,
+        calendar: Calendar = .current
+    ) -> [PlannedItem] {
+        guard let repeatDays = anchor.repeatDays,
+              repeatDays > 0,
+              let anchorDate = concreteDate(for: anchor, paydayDay: paydayDay, calendar: calendar),
+              let budgetRange = budgetMonthRange(for: month, paydayDay: paydayDay, calendar: calendar) else {
+            return []
+        }
+
+        var date = anchorDate
+        var occurrences: [PlannedItem] = []
+        while let nextDate = calendar.date(byAdding: .day, value: repeatDays, to: date),
+              nextDate < budgetRange.end {
+            date = nextDate
+            guard date >= budgetRange.start else { continue }
+
+            let occurrence = copied(from: anchor, into: month)
+            occurrence.dueDay = calendar.component(.day, from: date)
+            occurrence.repeatDays = repeatDays
+            occurrence.recurrenceID = anchor.recurrenceID
+            occurrences.append(occurrence)
+        }
+        return occurrences
+    }
+
+    public static func copiedItems(
+        from sourceItems: [PlannedItem],
+        into month: YearMonth,
+        paydayDay: Int = 1,
+        calendar: Calendar = .current
+    ) -> [PlannedItem] {
+        let eligibleItems = automaticallyCopiedItems(from: sourceItems)
+        var copiedItems: [PlannedItem] = []
+        var handledRecurrenceIDs = Set<UUID>()
+
+        for item in eligibleItems {
+            guard let recurrenceID = item.recurrenceID,
+                  let repeatDays = item.repeatDays,
+                  repeatDays > 0,
+                  concreteDate(for: item, paydayDay: paydayDay, calendar: calendar) != nil else {
+                copiedItems.append(copied(from: item, into: month))
+                continue
+            }
+            guard handledRecurrenceIDs.insert(recurrenceID).inserted else { continue }
+
+            let series = eligibleItems.filter {
+                $0.recurrenceID == recurrenceID &&
+                    $0.repeatDays == repeatDays &&
+                    concreteDate(for: $0, paydayDay: paydayDay, calendar: calendar) != nil
+            }
+            guard let latest = series.max(by: {
+                concreteDate(for: $0, paydayDay: paydayDay, calendar: calendar)! < concreteDate(for: $1, paydayDay: paydayDay, calendar: calendar)!
+            }) else { continue }
+            copiedItems.append(contentsOf: everyNDaysOccurrences(from: latest, in: month, paydayDay: paydayDay, calendar: calendar))
+        }
+
+        return copiedItems
     }
 
     public static func copied(from item: PlannedItem, into monthKey: YearMonth) -> PlannedItem {
@@ -245,10 +318,55 @@ public final class PlannedItem {
             matchingString: item.matchingString,
             dueDay: item.dueDay,
             dueText: item.dueText,
+            repeatDays: item.repeatDays,
+            recurrenceID: item.recurrenceID,
             isPaid: false,
             copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes
         )
+    }
+
+    private static func concreteDate(for item: PlannedItem, paydayDay: Int, calendar: Calendar) -> Date? {
+        guard let month = YearMonth(rawValue: item.monthKey),
+              let dueDay = item.dueDay else { return nil }
+        let paydayDate = paydayDate(in: month, paydayDay: paydayDay, calendar: calendar)
+        let dueMonth = paydayDay <= 1 ? month : (dueDay >= calendar.component(.day, from: paydayDate)
+            ? previousMonth(of: month)
+            : month)
+        let monthStart = calendar.date(from: DateComponents(year: dueMonth.year, month: dueMonth.month, day: 1))
+        let daysInMonth = monthStart.flatMap { calendar.range(of: .day, in: .month, for: $0)?.count } ?? 31
+        return calendar.date(from: DateComponents(year: dueMonth.year, month: dueMonth.month, day: min(dueDay, daysInMonth)))
+    }
+
+    private static func budgetMonthRange(
+        for month: YearMonth,
+        paydayDay: Int,
+        calendar: Calendar
+    ) -> (start: Date, end: Date)? {
+        if paydayDay <= 1 {
+            let start = paydayDate(in: month, paydayDay: 1, calendar: calendar)
+            let end = paydayDate(in: nextMonth(of: month), paydayDay: 1, calendar: calendar)
+            return (start, end)
+        }
+        let start = paydayDate(in: previousMonth(of: month), paydayDay: paydayDay, calendar: calendar)
+        let end = paydayDate(in: month, paydayDay: paydayDay, calendar: calendar)
+        return start < end ? (start, end) : nil
+    }
+
+    private static func paydayDate(in month: YearMonth, paydayDay: Int, calendar: Calendar) -> Date {
+        let monthStart = calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1))!
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)!.count
+        return calendar.date(
+            from: DateComponents(year: month.year, month: month.month, day: min(max(paydayDay, 1), daysInMonth))
+        )!
+    }
+
+    private static func previousMonth(of month: YearMonth) -> YearMonth {
+        month.month == 1 ? YearMonth(year: month.year - 1, month: 12) : YearMonth(year: month.year, month: month.month - 1)
+    }
+
+    private static func nextMonth(of month: YearMonth) -> YearMonth {
+        month.month == 12 ? YearMonth(year: month.year + 1, month: 1) : YearMonth(year: month.year, month: month.month + 1)
     }
 }
 

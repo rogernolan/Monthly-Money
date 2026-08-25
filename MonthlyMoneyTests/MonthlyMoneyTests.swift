@@ -450,6 +450,45 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(copiedItem.isPaid)
     }
 
+    func testPopulatingMonthCopiesEveryNDaysFromLatestOccurrenceOnly() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let sourceMonth = state.selectedMonth
+        let targetMonth = nextMonth(after: sourceMonth)
+        let accountID = try XCTUnwrap(try repository.accounts().first).id
+        let recurrenceID = UUID()
+        for day in [1, 11, 21, 31] {
+            try repository.createPlannedItem(
+                PlannedItem(
+                    accountID: accountID,
+                    monthKey: sourceMonth,
+                    type: .fixedDebit,
+                    label: "Pension",
+                    amount: 100,
+                    dueDay: day,
+                    repeatDays: 10,
+                    recurrenceID: recurrenceID,
+                    isPaid: false,
+                    copiesToNextMonthAutomatically: true
+                )
+            )
+        }
+
+        state.selectedMonth = targetMonth
+        try state.refresh()
+        state.populateSelectedMonthFromPrevious()
+
+        XCTAssertEqual(
+            try repository.plannedItems(for: targetMonth)
+                .filter { $0.recurrenceID == recurrenceID }
+                .compactMap(\.dueDay)
+                .sorted(),
+            [10, 20, 30]
+        )
+    }
+
     func testPopulatingMonthDoesNotCreateWheelOfMoneySavingsDebitWhenDisabled() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -3015,6 +3054,92 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testCreatingEveryNDaysEntryCreatesOnlyItsAnchor() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let created = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10
+        ))
+
+        let monthItems = try repository.plannedItems(for: state.selectedMonth)
+        XCTAssertEqual(monthItems.filter { $0.recurrenceID == created.recurrenceID }.count, 1)
+        XCTAssertEqual(created.repeatDays, 10)
+        XCTAssertEqual(created.dueDay, 1)
+    }
+
+    func testChangingEveryNDaysEntryBackToFixedDayClearsRecurrenceMetadata() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10,
+            recurrenceID: UUID()
+        )
+        try repository.createPlannedItem(item)
+
+        state.update(
+            item: item,
+            label: "Pension",
+            amount: 100,
+            dueDay: 2,
+            dueText: nil,
+            type: .fixedDebit,
+            repeatDays: nil,
+            recurrenceID: nil,
+            copiesToNextMonthAutomatically: true,
+            notes: ""
+        )
+
+        let saved = try XCTUnwrap(try repository.plannedItems(for: state.selectedMonth).first)
+        XCTAssertNil(saved.repeatDays)
+        XCTAssertNil(saved.recurrenceID)
+    }
+
+    func testPopulatingEveryNDaysEntryCreatesAllLaterOccurrencesInSelectedMonth() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: state.selectedMonth,
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 10,
+            recurrenceID: UUID()
+        )
+        try repository.createPlannedItem(item)
+
+        XCTAssertEqual(state.sameMonthOccurrences(for: item).compactMap(\.dueDay), [11, 21, 31])
+        state.populateSameMonth(for: item)
+
+        XCTAssertEqual(
+            try repository.plannedItems(for: state.selectedMonth)
+                .filter { $0.recurrenceID == item.recurrenceID }
+                .compactMap(\.dueDay)
+                .sorted(),
+            [1, 11, 21, 31]
+        )
+    }
+
     func testEditingImportedUnplannedItemPromotesSourceToManual() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -3508,6 +3633,51 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(draft.isPlanned)
     }
 
+    func testMonthItemEditorDraftValidatesEveryNDaysRepeatInput() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+        var draft = MonthItemEditorDraft(item: item)
+
+        XCTAssertEqual(draft.dueSelection, .everyNDays)
+        XCTAssertEqual(draft.repeatDaysText, "28")
+        XCTAssertEqual(draft.repeatDays, 28)
+
+        for invalidValue in ["", "0", "-1", "28.5"] {
+            draft.repeatDaysText = invalidValue
+            XCTAssertFalse(draft.canSave)
+        }
+
+        draft.repeatDaysText = "14"
+        XCTAssertTrue(draft.canSave)
+    }
+
+    func testMonthItemEditorDraftRequiresEveryNDaysAnchor() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100
+        )
+        var draft = MonthItemEditorDraft(item: item)
+        draft.dueSelection = .everyNDays
+        draft.repeatDaysText = "28"
+
+        XCTAssertNil(draft.dueDay)
+        XCTAssertFalse(draft.canSave)
+
+        draft.repeatAnchorDay = 1
+        XCTAssertTrue(draft.canSave)
+    }
+
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
         let item = PlannedItem(
             accountID: UUID(),
@@ -3879,6 +4049,77 @@ final class MonthlyMoneyTests: XCTestCase {
             share: share,
             containerIdentifier: MonthlyMoneyPersistenceFactory.cloudKitContainerIdentifier
         )
+    }
+
+    func testCoreDataModelBuilderDefinesAndPersistsEveryNDaysAttributes() throws {
+        let plannedItemEntity = try XCTUnwrap(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["repeatDays"]?.attributeType,
+            .integer16AttributeType
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["recurrenceID"]?.attributeType,
+            .UUIDAttributeType
+        )
+        XCTAssertTrue(plannedItemEntity.attributesByName["repeatDays"]?.isOptional == true)
+        XCTAssertTrue(plannedItemEntity.attributesByName["recurrenceID"]?.isOptional == true)
+
+        let managedObjectContext = try makeInMemoryManagedObjectContext()
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 26,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+        let managedObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem,
+            into: managedObjectContext
+        )
+        CoreDataMapping.apply(item, to: managedObject)
+        try managedObjectContext.save()
+
+        let roundTrip = CoreDataMapping.plannedItem(from: managedObject)
+        XCTAssertEqual(roundTrip.repeatDays, 28)
+        XCTAssertEqual(roundTrip.recurrenceID, item.recurrenceID)
+
+        let legacyObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem,
+            into: managedObjectContext
+        )
+        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).repeatDays)
+        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).recurrenceID)
+    }
+
+    func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
+        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v1"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v2"])
+
+        let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
+        XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })
+    }
+
+    private func makeInMemoryManagedObjectContext() throws -> NSManagedObjectContext {
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let description = NSPersistentStoreDescription()
+        description.type = NSInMemoryStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError { throw loadError }
+        return container.viewContext
     }
 }
 

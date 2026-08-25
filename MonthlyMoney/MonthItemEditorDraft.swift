@@ -18,6 +18,7 @@ enum MonthEntryKind: String, CaseIterable, Identifiable, Equatable {
 
 enum MonthDueSelection: Hashable {
     case floating
+    case everyNDays
     case day(Int)
 
     init(_ day: Int?) {
@@ -32,6 +33,8 @@ enum MonthDueSelection: Hashable {
         switch self {
         case .floating:
             return nil
+        case .everyNDays:
+            return nil
         case .day(let day):
             return day
         }
@@ -44,6 +47,8 @@ struct MonthItemEditorDraft {
     var entryKind: MonthEntryKind
     var amountText: String
     var dueSelection: MonthDueSelection
+    var repeatAnchorDay: Int?
+    var repeatDaysText: String
     var isPlanned: Bool
     var copiesToNextMonthAutomatically: Bool
     var notes: String
@@ -53,7 +58,9 @@ struct MonthItemEditorDraft {
         matchingString = item.matchingString ?? ""
         entryKind = item.type == .credit ? .credit : .debit
         amountText = NSDecimalNumber(decimal: item.amount).stringValue
-        dueSelection = MonthDueSelection(item.dueDay)
+        dueSelection = item.repeatDays.map { _ in .everyNDays } ?? MonthDueSelection(item.dueDay)
+        repeatAnchorDay = item.dueDay
+        repeatDaysText = item.repeatDays.map(String.init) ?? ""
         isPlanned = item.source != .importedUnplanned
         copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
         notes = item.notes
@@ -65,17 +72,45 @@ struct MonthItemEditorDraft {
         entryKind = newType == .credit ? .credit : .debit
         amountText = "0"
         dueSelection = MonthDueSelection(dueDay)
+        repeatAnchorDay = dueDay
+        repeatDaysText = ""
         isPlanned = true
         copiesToNextMonthAutomatically = true
         notes = ""
     }
 
     var canSave: Bool {
-        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+            (dueSelection != .everyNDays || (repeatDaysAreValid && dueDay != nil))
     }
 
     var amount: Decimal {
         Decimal(string: amountText, locale: Locale.current) ?? 0
+    }
+
+    var dueDay: Int? {
+        switch dueSelection {
+        case .floating:
+            return nil
+        case .everyNDays:
+            return repeatAnchorDay
+        case .day(let day):
+            return day
+        }
+    }
+
+    var repeatDays: Int? {
+        guard dueSelection == .everyNDays,
+              repeatDaysText.allSatisfy(\.isNumber),
+              let value = Int(repeatDaysText),
+              value > 0 else {
+            return nil
+        }
+        return value
+    }
+
+    var repeatDaysAreValid: Bool {
+        repeatDays != nil
     }
 
     mutating func normalizeAmountInput(locale: Locale = .current) {
