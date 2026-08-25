@@ -621,6 +621,36 @@ final class SharingAndMonthTests: XCTestCase {
         )
     }
 
+    func testEveryNDaysOccurrencesUsePaydayBudgetMonthBoundaries() {
+        let anchor = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 7),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 27,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+
+        XCTAssertEqual(
+            PlannedItem.everyNDaysOccurrences(
+                from: anchor,
+                in: YearMonth(year: 2026, month: 7),
+                paydayDay: 26
+            ).compactMap(\.dueDay),
+            [25]
+        )
+        XCTAssertEqual(
+            PlannedItem.copiedItems(
+                from: [anchor],
+                into: YearMonth(year: 2026, month: 8),
+                paydayDay: 26
+            ).compactMap(\.dueDay),
+            [22]
+        )
+    }
+
     func testEveryNDaysCopyContinuesOnlyFromLatestOccurrence() {
         let recurrenceID = UUID()
         let sourceItems = [1, 11, 21, 31].map { day in

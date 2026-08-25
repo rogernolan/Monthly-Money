@@ -1275,8 +1275,11 @@ final class AppState: ObservableObject {
         item.dueText = dueText
         let originalRepeatDays = item.repeatDays
         let originalRecurrenceID = item.recurrenceID
-        item.repeatDays = repeatDays.flatMap { $0 > 0 ? $0 : nil }
-        item.recurrenceID = item.repeatDays == nil ? nil : (recurrenceID ?? item.recurrenceID ?? UUID())
+        let normalizedRepeatDays = repeatDays.flatMap { $0 > 0 ? $0 : nil }
+        item.repeatDays = normalizedRepeatDays
+        item.recurrenceID = normalizedRepeatDays == nil
+            ? nil
+            : (normalizedRepeatDays != originalRepeatDays ? UUID() : (recurrenceID ?? item.recurrenceID ?? UUID()))
         item.type = type
         item.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         item.notes = notes
@@ -1358,7 +1361,7 @@ final class AppState: ObservableObject {
 
     func sameMonthOccurrences(for item: PlannedItem) -> [PlannedItem] {
         guard item.resolvedMonthKey == selectedMonth else { return [] }
-        return PlannedItem.everyNDaysOccurrences(from: item, in: selectedMonth)
+        return PlannedItem.everyNDaysOccurrences(from: item, in: selectedMonth, paydayDay: dailyBudgetPaydayDay)
     }
 
     func populateSameMonth(for item: PlannedItem) {
@@ -1732,7 +1735,7 @@ final class AppState: ObservableObject {
     }
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
-        for copy in PlannedItem.copiedItems(from: sourceItems, into: month) {
+        for copy in PlannedItem.copiedItems(from: sourceItems, into: month, paydayDay: dailyBudgetPaydayDay) {
             try repository.createPlannedItem(copy)
         }
     }

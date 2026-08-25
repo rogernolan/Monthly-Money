@@ -3659,6 +3659,25 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(draft.canSave)
     }
 
+    func testMonthItemEditorDraftRequiresEveryNDaysAnchor() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100
+        )
+        var draft = MonthItemEditorDraft(item: item)
+        draft.dueSelection = .everyNDays
+        draft.repeatDaysText = "28"
+
+        XCTAssertNil(draft.dueDay)
+        XCTAssertFalse(draft.canSave)
+
+        draft.repeatAnchorDay = 1
+        XCTAssertTrue(draft.canSave)
+    }
+
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
         let item = PlannedItem(
             accountID: UUID(),
@@ -4075,6 +4094,14 @@ final class MonthlyMoneyTests: XCTestCase {
         )
         XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).repeatDays)
         XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).recurrenceID)
+    }
+
+    func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
+        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v1"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v2"])
+
+        let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
+        XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })
     }
 
     private func makeInMemoryManagedObjectContext() throws -> NSManagedObjectContext {

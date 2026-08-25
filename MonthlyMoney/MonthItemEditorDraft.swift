@@ -81,7 +81,7 @@ struct MonthItemEditorDraft {
 
     var canSave: Bool {
         !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (dueSelection != .everyNDays || repeatDaysAreValid)
+            (dueSelection != .everyNDays || (repeatDaysAreValid && dueDay != nil))
     }
 
     var amount: Decimal {

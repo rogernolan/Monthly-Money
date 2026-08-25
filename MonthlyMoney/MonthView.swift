@@ -690,6 +690,14 @@ private struct MonthItemEditorView: View {
                 .disabled(!isEditable)
 
                 if draft.dueSelection == .everyNDays {
+                    Picker("Anchor day", selection: Binding(
+                        get: { draft.repeatAnchorDay ?? 1 },
+                        set: { draft.repeatAnchorDay = $0 }
+                    )) {
+                        ForEach(1...31, id: \.self) { day in
+                            Text(MonthItemRowContent.ordinal(day)).tag(day)
+                        }
+                    }
                     TextField("Repeat days", text: $draft.repeatDaysText)
                         .keyboardType(.numberPad)
                         .disabled(!isEditable)
@@ -737,8 +745,13 @@ private struct MonthItemEditorView: View {
             draft.normalizeAmountInput()
         }
         .onChange(of: draft.dueSelection) { _, selection in
-            if case .day(let day) = selection {
+            switch selection {
+            case .day(let day):
                 draft.repeatAnchorDay = day
+            case .everyNDays where draft.repeatAnchorDay == nil:
+                draft.repeatAnchorDay = 1
+            case .floating, .everyNDays:
+                break
             }
         }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
@@ -817,6 +830,7 @@ private struct MonthItemEditorView: View {
     private func save() {
         if let item = editableItem {
             let wasNotRepeating = item.repeatDays == nil
+            let intervalChanged = item.repeatDays != draft.repeatDays
             state.update(
                 item: item,
                 label: draft.label,
@@ -831,7 +845,7 @@ private struct MonthItemEditorView: View {
                 copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
-            if wasNotRepeating,
+            if (wasNotRepeating || intervalChanged),
                draft.repeatDays != nil,
                !state.sameMonthOccurrences(for: item).isEmpty {
                 pendingSameMonthPopulationItem = item

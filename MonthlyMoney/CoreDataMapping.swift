@@ -11,9 +11,13 @@ enum CoreDataEntityName {
 }
 
 enum CoreDataModelBuilder {
-    static let sharedModel: NSManagedObjectModel = makeModel()
+    static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: false, versionIdentifier: "MonthlyMoney.v1")
+    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, versionIdentifier: "MonthlyMoney.v2")
 
-    static func makeModel() -> NSManagedObjectModel {
+    static func makeModel(
+        includeEveryNDaysAttributes: Bool = true,
+        versionIdentifier: String = "MonthlyMoney.v2"
+    ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         let budgetEntity = makeBudgetEntity()
         let accountEntity = makeAccountEntity()
@@ -114,8 +118,22 @@ enum CoreDataModelBuilder {
         importedTransactionRecordEntity.properties.append(importedTransactionRecordBudget)
         wheelOfMoneyItemEntity.properties.append(wheelOfMoneyItemBudget)
 
+        if !includeEveryNDaysAttributes {
+            plannedItemEntity.properties.removeAll { property in
+                guard let attribute = property as? NSAttributeDescription else { return false }
+                return attribute.name == "repeatDays" || attribute.name == "recurrenceID"
+            }
+        }
         model.entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, importedTransactionRecordEntity, wheelOfMoneyItemEntity]
+        model.versionIdentifiers = [versionIdentifier]
         return model
+    }
+
+    static func inferredEveryNDaysMigrationModel() throws -> NSMappingModel {
+        try NSMappingModel.inferredMappingModel(
+            forSourceModel: legacyModel,
+            destinationModel: sharedModel
+        )
     }
 
     private static func makeBudgetEntity() -> NSEntityDescription {
