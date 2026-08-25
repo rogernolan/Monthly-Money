@@ -3508,6 +3508,32 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertFalse(draft.isPlanned)
     }
 
+    func testMonthItemEditorDraftValidatesEveryNDaysRepeatInput() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Pension",
+            amount: 100,
+            dueDay: 1,
+            repeatDays: 28,
+            recurrenceID: UUID()
+        )
+        var draft = MonthItemEditorDraft(item: item)
+
+        XCTAssertEqual(draft.dueSelection, .everyNDays)
+        XCTAssertEqual(draft.repeatDaysText, "28")
+        XCTAssertEqual(draft.repeatDays, 28)
+
+        for invalidValue in ["", "0", "-1", "28.5"] {
+            draft.repeatDaysText = invalidValue
+            XCTAssertFalse(draft.canSave)
+        }
+
+        draft.repeatDaysText = "14"
+        XCTAssertTrue(draft.canSave)
+    }
+
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
         let item = PlannedItem(
             accountID: UUID(),

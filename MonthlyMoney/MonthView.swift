@@ -681,11 +681,18 @@ private struct MonthItemEditorView: View {
 
                 Picker("Day", selection: $draft.dueSelection) {
                     Text("Floating").tag(MonthDueSelection.floating)
+                    Text("Every n days").tag(MonthDueSelection.everyNDays)
                     ForEach(1...31, id: \.self) { day in
                         Text(MonthItemRowContent.ordinal(day)).tag(MonthDueSelection.day(day))
                     }
                 }
                 .disabled(!isEditable)
+
+                if draft.dueSelection == .everyNDays {
+                    TextField("Repeat days", text: $draft.repeatDaysText)
+                        .keyboardType(.numberPad)
+                        .disabled(!isEditable)
+                }
 
                 Toggle("Planned", isOn: $draft.isPlanned)
                     .disabled(!isEditable)
