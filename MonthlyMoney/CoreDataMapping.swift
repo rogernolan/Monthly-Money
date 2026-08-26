@@ -424,10 +424,10 @@ enum CoreDataMapping {
         let label = managedObject.value(forKey: "label") as? String ?? ""
         let matchingString = managedObject.value(forKey: "matchingString") as? String
         let amount = (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0
-        let dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
+        var dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
         let dueText = managedObject.value(forKey: "dueText") as? String
-        let repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
-        let recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
+        var repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
+        var recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
         let storedRepeatMode = managedObject.entity.attributesByName["repeatModeRaw"] != nil
             ? managedObject.value(forKey: "repeatModeRaw") as? String
             : nil
@@ -435,6 +435,13 @@ enum CoreDataMapping {
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
         let notes = managedObject.value(forKey: "notes") as? String ?? ""
+
+        let isLegacyFloating = storedRepeatMode == nil && dueDay == nil && repeatDays == nil && copiesToNextMonthAutomatically
+        if isLegacyFloating {
+            dueDay = 1
+            repeatDays = 28
+            recurrenceID = id
+        }
 
         return PlannedItem(
             id: id,
@@ -450,7 +457,7 @@ enum CoreDataMapping {
             dueText: dueText,
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
-            repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? (repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
+            repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? (isLegacyFloating || repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
             isPaid: isPaid,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
             notes: notes

@@ -789,6 +789,39 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertEqual(marker.monthKey, month)
     }
 
+    func testPeriodicHarvestProducesOneTwoOneAcrossPaydayMonths() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let recurrenceID = UUID()
+        let anchor = PlannedItem(
+            accountID: UUID(), monthKey: YearMonth(year: 2026, month: 4), type: .fixedDebit,
+            label: "Pension", amount: 100, dueDay: 4, repeatDays: 28,
+            recurrenceID: recurrenceID, repeatMode: .periodic
+        )
+
+        let may = PlannedItem.periodicOccurrences(from: [anchor], into: YearMonth(year: 2026, month: 5), paydayDay: 1, calendar: calendar)
+        let june = PlannedItem.periodicOccurrences(from: [anchor] + may, into: YearMonth(year: 2026, month: 6), paydayDay: 1, calendar: calendar)
+
+        XCTAssertEqual(may.compactMap(\.dueDay), [2, 30])
+        XCTAssertEqual(june.compactMap(\.dueDay), [27])
+    }
+
+    func testPeriodicHarvestCanJumpOverEmptyMonths() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let anchor = PlannedItem(
+            accountID: UUID(), monthKey: YearMonth(year: 2026, month: 1), type: .fixedDebit,
+            label: "Annual", amount: 100, dueDay: 2, repeatDays: 100,
+            recurrenceID: UUID(), repeatMode: .periodic
+        )
+
+        let occurrences = PlannedItem.periodicOccurrences(from: [anchor], into: YearMonth(year: 2026, month: 4), paydayDay: 1, calendar: calendar)
+
+        XCTAssertEqual(occurrences.count, 1)
+        XCTAssertEqual(occurrences.first?.dueDay, 12)
+        XCTAssertEqual(occurrences.first.flatMap { YearMonth(rawValue: $0.monthKey) }, YearMonth(year: 2026, month: 4))
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(),

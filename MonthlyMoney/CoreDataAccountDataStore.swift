@@ -409,6 +409,9 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try fetchObjects(entityName: CoreDataEntityName.wheelOfMoneyItem, budgetID: budgetID).forEach {
             $0.setValue(budget, forKey: "budget")
         }
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
         try save()
     }
 

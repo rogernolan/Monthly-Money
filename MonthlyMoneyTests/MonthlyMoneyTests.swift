@@ -1573,7 +1573,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let budgetRelationshipNames = Set(budgetEntity?.relationshipsByName.keys ?? Dictionary<String, NSRelationshipDescription>().keys)
         XCTAssertEqual(
             budgetRelationshipNames,
-            ["accounts", "plannedItems", "transactions", "importedTransactionRecords", "wheelOfMoneyItems"]
+            ["accounts", "plannedItems", "transactions", "importedTransactionRecords", "wheelOfMoneyItems", "populatedMonths"]
         )
 
         XCTAssertEqual(accountEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
@@ -3101,13 +3101,15 @@ final class MonthlyMoneyTests: XCTestCase {
             type: .fixedDebit,
             repeatDays: nil,
             recurrenceID: nil,
+            repeatMode: .calendar,
             copiesToNextMonthAutomatically: true,
             notes: ""
         )
 
         let saved = try XCTUnwrap(try repository.plannedItems(for: state.selectedMonth).first)
-        XCTAssertNil(saved.repeatDays)
-        XCTAssertNil(saved.recurrenceID)
+        XCTAssertEqual(saved.repeatDays, 10)
+        XCTAssertEqual(saved.recurrenceID, item.recurrenceID)
+        XCTAssertEqual(saved.repeatMode, .calendar)
     }
 
     func testPopulatingEveryNDaysEntryCreatesAllLaterOccurrencesInSelectedMonth() async throws {
@@ -4092,8 +4094,11 @@ final class MonthlyMoneyTests: XCTestCase {
             forEntityName: CoreDataEntityName.plannedItem,
             into: managedObjectContext
         )
-        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).repeatDays)
-        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).recurrenceID)
+        let migratedFloating = CoreDataMapping.plannedItem(from: legacyObject)
+        XCTAssertEqual(migratedFloating.repeatMode, .periodic)
+        XCTAssertEqual(migratedFloating.repeatDays, 28)
+        XCTAssertEqual(migratedFloating.dueDay, 1)
+        XCTAssertNotNil(migratedFloating.recurrenceID)
     }
 
     func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {

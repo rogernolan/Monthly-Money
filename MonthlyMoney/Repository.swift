@@ -975,7 +975,7 @@ final class AccountRepository {
         try preferredBudget(from: sharedStore.fetchBudgets())
     }
 
-    func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem])? {
+    func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth])? {
         guard let budget = try localBudget() else { return nil }
         let accounts = try privateStore.fetchAccounts().filter { $0.budgetID == budget.id }
         let accountIDs = Set(accounts.map(\.id))
@@ -985,10 +985,11 @@ final class AccountRepository {
             .filter { $0.budgetID == budget.id }
         let wheelOfMoneyItems = try privateStore.fetchWheelOfMoneyItems(budgetID: budget.id)
             .filter { $0.budgetID == budget.id }
-        return (budget, accounts, plannedItems, transactions, wheelOfMoneyItems)
+        let populatedMonths = try privateStore.fetchPopulatedMonths(budgetID: budget.id)
+        return (budget, accounts, plannedItems, transactions, wheelOfMoneyItems, populatedMonths)
     }
 
-    func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem]) throws {
+    func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth] = []) throws {
         try sharedStore.upsertBudget(budget)
         for account in accounts {
             try sharedStore.upsertAccount(account)
@@ -998,6 +999,7 @@ final class AccountRepository {
         let importedRecords = try privateStore.fetchImportedTransactionRecords(accountIDs: Set(accounts.map(\.id)))
         try sharedStore.upsertImportedTransactionRecords(importedRecords)
         try sharedStore.upsertWheelOfMoneyItems(wheelOfMoneyItems)
+        try sharedStore.upsertPopulatedMonths(populatedMonths)
     }
 
     func deleteLocalBudget(id: UUID) throws {

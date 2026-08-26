@@ -300,6 +300,36 @@ public final class PlannedItem {
         return occurrences
     }
 
+    public static func periodicOccurrences(
+        from history: [PlannedItem],
+        into month: YearMonth,
+        paydayDay: Int = 1,
+        calendar: Calendar = .current
+    ) -> [PlannedItem] {
+        guard let budgetRange = budgetMonthRange(for: month, paydayDay: paydayDay, calendar: calendar) else { return [] }
+        let periodic = history.filter { $0.repeatMode == .periodic && ($0.repeatDays ?? 0) > 0 && $0.recurrenceID != nil }
+        var results: [PlannedItem] = []
+
+        for group in Dictionary(grouping: periodic, by: { $0.recurrenceID! }).values {
+            guard let latest = group.max(by: {
+                (concreteDate(for: $0, paydayDay: paydayDay, calendar: calendar) ?? .distantPast) <
+                    (concreteDate(for: $1, paydayDay: paydayDay, calendar: calendar) ?? .distantPast)
+            }), let repeatDays = latest.repeatDays,
+            var date = concreteDate(for: latest, paydayDay: paydayDay, calendar: calendar) else { continue }
+
+            while let nextDate = calendar.date(byAdding: .day, value: repeatDays, to: date), nextDate < budgetRange.end {
+                date = nextDate
+                guard date >= budgetRange.start else { continue }
+                let occurrence = copied(from: latest, into: month)
+                occurrence.dueDay = calendar.component(.day, from: date)
+                occurrence.repeatMode = .periodic
+                results.append(occurrence)
+            }
+        }
+
+        return results.sorted { ($0.dueDay ?? 0) < ($1.dueDay ?? 0) }
+    }
+
     public static func copiedItems(
         from sourceItems: [PlannedItem],
         into month: YearMonth,
@@ -349,6 +379,7 @@ public final class PlannedItem {
             dueText: item.dueText,
             repeatDays: item.repeatDays,
             recurrenceID: item.recurrenceID,
+            repeatMode: item.repeatMode,
             isPaid: false,
             copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes
