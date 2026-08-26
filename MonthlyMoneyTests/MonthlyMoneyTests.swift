@@ -4097,11 +4097,63 @@ final class MonthlyMoneyTests: XCTestCase {
     }
 
     func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
-        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v1"])
-        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v2"])
+        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v2"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v3"])
 
         let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
         XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })
+    }
+
+    func testRepeatModeAndPopulatedMonthArePersistedInTheCurrentModel() throws {
+        XCTAssertEqual(RepeatMode.periodic.rawValue, "periodic")
+        let budgetID = UUID()
+        let month = YearMonth(year: 2026, month: 4)
+        let marker = PopulatedMonth(budgetID: budgetID, monthKey: month)
+        XCTAssertEqual(marker.monthKey, month)
+
+        let plannedItemEntity = try XCTUnwrap(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["repeatModeRaw"]?.attributeType,
+            .stringAttributeType
+        )
+        XCTAssertTrue(plannedItemEntity.attributesByName["repeatModeRaw"]?.isOptional == true)
+        XCTAssertNotNil(CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.populatedMonth])
+    }
+
+    func testPopulatedMonthRepositoryRoundTripAndDeduplication() throws {
+        let repository = try makeRepository()
+        let budget = try repository.createBudget(name: "Home", ownerParticipantID: "owner")
+        _ = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+        let month = YearMonth(year: 2026, month: 4)
+
+        try repository.markMonthPopulated(month)
+        try repository.markMonthPopulated(month)
+
+        XCTAssertTrue(try repository.isMonthPopulated(month))
+        XCTAssertEqual(try repository.populatedMonths().filter { $0.budgetID == budget.id && $0.monthKey == month }.count, 1)
+    }
+
+    func testPeriodicHistoryIsScopedAndBeforeTarget() throws {
+        let repository = try makeRepository()
+        let budget = try repository.createBudget(name: "Home", ownerParticipantID: "owner")
+        let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+        let target = YearMonth(year: 2026, month: 6)
+        let periodic = PlannedItem(
+            budgetID: budget.id, accountID: account.id, monthKey: YearMonth(year: 2026, month: 4),
+            type: .fixedDebit, label: "Pension", amount: 100, dueDay: 4, repeatDays: 28,
+            recurrenceID: UUID(), repeatMode: .periodic
+        )
+        let calendar = PlannedItem(
+            budgetID: budget.id, accountID: account.id, monthKey: YearMonth(year: 2026, month: 5),
+            type: .fixedDebit, label: "Rent", amount: 100, dueDay: 1, repeatMode: .calendar
+        )
+        try repository.createPlannedItem(periodic)
+        try repository.createPlannedItem(calendar)
+
+        let history = try repository.periodicItems(before: target)
+        XCTAssertEqual(history.map(\.id), [periodic.id])
     }
 
     private func makeInMemoryManagedObjectContext() throws -> NSManagedObjectContext {

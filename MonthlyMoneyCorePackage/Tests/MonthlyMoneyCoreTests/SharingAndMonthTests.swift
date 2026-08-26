@@ -782,6 +782,13 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertFalse(copiedItem.isPaid)
     }
 
+    func testPeriodicRepeatModeAndPopulatedMonthModel() {
+        XCTAssertEqual(RepeatMode.periodic.rawValue, "periodic")
+        let month = YearMonth(year: 2026, month: 4)
+        let marker = PopulatedMonth(budgetID: UUID(), monthKey: month)
+        XCTAssertEqual(marker.monthKey, month)
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(),

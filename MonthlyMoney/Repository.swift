@@ -31,6 +31,9 @@ protocol AccountDataStore {
     func upsertPlannedItems(_ items: [PlannedItem]) throws
     func deletePlannedItem(id: UUID) throws
     func deletePlannedItems(accountID: UUID) throws
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth]
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws
+    func deletePopulatedMonths(budgetID: UUID) throws
 
     func fetchTransactions() throws -> [Transaction]
     func fetchTransactions(accountIDs: Set<UUID>) throws -> [Transaction]
@@ -52,6 +55,19 @@ protocol AccountDataStore {
 }
 
 extension AccountDataStore {
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
+        _ = budgetID
+        return []
+    }
+
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws {
+        _ = months
+    }
+
+    func deletePopulatedMonths(budgetID: UUID) throws {
+        _ = budgetID
+    }
+
     func awaitInitialCloudImport(timeout: Duration) async throws {
         _ = timeout
     }
@@ -78,6 +94,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
     private var budgetsByID: [UUID: Budget] = [:]
     private var accountsByID: [UUID: Account] = [:]
     private var plannedItemsByID: [UUID: PlannedItem] = [:]
+    private var populatedMonthsByID: [UUID: PopulatedMonth] = [:]
     private var transactionsByID: [UUID: Transaction] = [:]
     private var importedTransactionRecordsByID: [UUID: ImportedTransactionRecord] = [:]
     private var wheelOfMoneyItemsByID: [UUID: WheelOfMoneyItem] = [:]
@@ -102,6 +119,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
 
     func deleteBudget(id: UUID) throws {
         budgetsByID[id] = nil
+        try deletePopulatedMonths(budgetID: id)
     }
 
     func fetchAccounts() throws -> [Account] {
@@ -146,6 +164,24 @@ final class InMemoryAccountDataStore: AccountDataStore {
 
     func deletePlannedItems(accountID: UUID) throws {
         plannedItemsByID = plannedItemsByID.filter { $0.value.accountID != accountID }
+    }
+
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
+        populatedMonthsByID.values.filter { $0.budgetID == budgetID }
+    }
+
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws {
+        for month in months {
+            if let existing = populatedMonthsByID.values.first(where: { $0.budgetID == month.budgetID && $0.monthKey == month.monthKey }) {
+                populatedMonthsByID[existing.id] = month
+            } else {
+                populatedMonthsByID[month.id] = month
+            }
+        }
+    }
+
+    func deletePopulatedMonths(budgetID: UUID) throws {
+        populatedMonthsByID = populatedMonthsByID.filter { $0.value.budgetID != budgetID }
     }
 
     func fetchTransactions() throws -> [Transaction] {
@@ -266,6 +302,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
     func deleteBudget(id: UUID) throws {
         let descriptor = FetchDescriptor<Budget>(predicate: #Predicate { $0.id == id })
         if let budget = try modelContext.fetch(descriptor).first {
+            try deletePopulatedMonths(budgetID: id)
             modelContext.delete(budget)
             try modelContext.save()
         }
@@ -334,6 +371,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.dueText = item.dueText
                 existing.repeatDays = item.repeatDays
                 existing.recurrenceID = item.recurrenceID
+                existing.repeatMode = item.repeatMode
                 existing.isPaid = item.isPaid
                 existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes
@@ -354,6 +392,36 @@ final class SwiftDataAccountDataStore: AccountDataStore {
 
     func deletePlannedItems(accountID: UUID) throws {
         let descriptor = FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.accountID == accountID })
+        try modelContext.fetch(descriptor).forEach(modelContext.delete)
+        try modelContext.save()
+    }
+
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
+        let budgetID = budgetID
+        return try modelContext.fetch(FetchDescriptor<PopulatedMonthRecord>(predicate: #Predicate { $0.budgetID == budgetID }))
+            .compactMap { month in
+                guard let monthKey = YearMonth(rawValue: month.monthKey) else { return nil }
+                return PopulatedMonth(id: month.id, budgetID: month.budgetID, monthKey: monthKey)
+            }
+    }
+
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws {
+        for month in months {
+            let budgetID = month.budgetID
+            let monthKey = month.monthKey.rawValue
+            let descriptor = FetchDescriptor<PopulatedMonthRecord>(predicate: #Predicate { $0.budgetID == budgetID && $0.monthKey == monthKey })
+            if let existing = try modelContext.fetch(descriptor).first {
+                existing.id = month.id
+            } else {
+                modelContext.insert(PopulatedMonthRecord(id: month.id, budgetID: month.budgetID, monthKey: month.monthKey))
+            }
+        }
+        try modelContext.save()
+    }
+
+    func deletePopulatedMonths(budgetID: UUID) throws {
+        let budgetID = budgetID
+        let descriptor = FetchDescriptor<PopulatedMonthRecord>(predicate: #Predicate { $0.budgetID == budgetID })
         try modelContext.fetch(descriptor).forEach(modelContext.delete)
         try modelContext.save()
     }
@@ -794,6 +862,37 @@ final class AccountRepository {
         guard let store = try storeHoldingBudget(id: budget.id) else { return [] }
         return try store.fetchPlannedItems(accountIDs: accountIDs, monthKey: month)
             .filter { $0.budgetID == budget.id }
+    }
+
+    func populatedMonths() throws -> [PopulatedMonth] {
+        guard let budget = try activeBudget(),
+              let store = try storeHoldingBudget(id: budget.id) else { return [] }
+        return try store.fetchPopulatedMonths(budgetID: budget.id)
+            .filter { $0.budgetID == budget.id }
+    }
+
+    func isMonthPopulated(_ month: YearMonth) throws -> Bool {
+        try populatedMonths().contains { $0.monthKey == month }
+    }
+
+    func markMonthPopulated(_ month: YearMonth) throws {
+        guard let budget = try activeBudget(),
+              let store = try storeHoldingBudget(id: budget.id) else { return }
+        let marker = PopulatedMonth(budgetID: budget.id, monthKey: month)
+        try store.upsertPopulatedMonths([marker])
+        try touchBudget(id: budget.id, in: store)
+    }
+
+    func periodicItems(before month: YearMonth) throws -> [PlannedItem] {
+        guard let budget = try activeBudget(),
+              let store = try storeHoldingBudget(id: budget.id) else { return [] }
+        let accountIDs = Set(try accounts().map(\.id))
+        return try store.fetchPlannedItems(accountIDs: accountIDs, monthKey: nil)
+            .filter { item in
+                item.budgetID == budget.id && item.repeatMode == .periodic &&
+                (item.repeatDays ?? 0) > 0 && item.recurrenceID != nil &&
+                (item.resolvedMonthKey ?? month) < month
+            }
     }
 
     func hasPlannedItem(id: UUID) throws -> Bool {

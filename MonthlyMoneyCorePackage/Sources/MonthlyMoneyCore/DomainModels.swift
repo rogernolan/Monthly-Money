@@ -31,6 +31,12 @@ public enum PlannedItemSource: String, Codable, CaseIterable {
     case importedUnplanned
 }
 
+public enum RepeatMode: String, Codable, CaseIterable {
+    case oneOff = "oneOff"
+    case calendar = "calendar"
+    case periodic = "periodic"
+}
+
 public enum WheelOfMoneyMonth: Int, Codable, CaseIterable {
     case january = 1
     case february = 2
@@ -73,6 +79,18 @@ public struct YearMonth: Codable, Hashable, Comparable, CustomStringConvertible 
 
     public static func < (lhs: YearMonth, rhs: YearMonth) -> Bool {
         lhs.year == rhs.year ? lhs.month < rhs.month : lhs.year < rhs.year
+    }
+}
+
+public struct PopulatedMonth: Codable, Hashable {
+    public let id: UUID
+    public let budgetID: UUID
+    public let monthKey: YearMonth
+
+    public init(id: UUID = UUID(), budgetID: UUID, monthKey: YearMonth) {
+        self.id = id
+        self.budgetID = budgetID
+        self.monthKey = monthKey
     }
 }
 
@@ -161,6 +179,7 @@ public final class PlannedItem {
     public var dueText: String?
     public var repeatDays: Int?
     public var recurrenceID: UUID?
+    public var repeatMode: RepeatMode = RepeatMode.oneOff
     public var isPaid: Bool = false
     public var copiesToNextMonthAutomatically: Bool = true
     public var notes: String = ""
@@ -179,6 +198,7 @@ public final class PlannedItem {
         dueText: String? = nil,
         repeatDays: Int? = nil,
         recurrenceID: UUID? = nil,
+        repeatMode: RepeatMode? = nil,
         isPaid: Bool = false,
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
@@ -196,6 +216,7 @@ public final class PlannedItem {
         self.dueText = dueText
         self.repeatDays = repeatDays
         self.recurrenceID = recurrenceID
+        self.repeatMode = repeatMode ?? Self.inferredRepeatMode(dueDay: dueDay, repeatDays: repeatDays, copiesAutomatically: copiesToNextMonthAutomatically)
         self.isPaid = isPaid
         self.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         self.notes = notes
@@ -215,6 +236,7 @@ public final class PlannedItem {
         dueText: String? = nil,
         repeatDays: Int? = nil,
         recurrenceID: UUID? = nil,
+        repeatMode: RepeatMode? = nil,
         isPaid: Bool = false,
         notes: String = ""
     ) {
@@ -232,10 +254,17 @@ public final class PlannedItem {
             dueText: dueText,
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
+            repeatMode: repeatMode,
             isPaid: isPaid,
             copiesToNextMonthAutomatically: true,
             notes: notes
         )
+    }
+
+    private static func inferredRepeatMode(dueDay: Int?, repeatDays: Int?, copiesAutomatically: Bool) -> RepeatMode {
+        if repeatDays != nil { return .periodic }
+        if dueDay != nil && copiesAutomatically { return .calendar }
+        return .oneOff
     }
 
     public static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {

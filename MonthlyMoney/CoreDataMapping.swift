@@ -5,18 +5,21 @@ enum CoreDataEntityName {
     static let budget = "CDBudget"
     static let account = "CDAccount"
     static let plannedItem = "CDPlannedItem"
+    static let populatedMonth = "CDPopulatedMonth"
     static let transaction = "CDTransaction"
     static let importedTransactionRecord = "CDImportedTransactionRecord"
     static let wheelOfMoneyItem = "CDWheelOfMoneyItem"
 }
 
 enum CoreDataModelBuilder {
-    static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: false, versionIdentifier: "MonthlyMoney.v1")
-    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, versionIdentifier: "MonthlyMoney.v2")
+    static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: false, includePopulatedMonth: false, versionIdentifier: "MonthlyMoney.v2")
+    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, versionIdentifier: "MonthlyMoney.v3")
 
     static func makeModel(
         includeEveryNDaysAttributes: Bool = true,
-        versionIdentifier: String = "MonthlyMoney.v2"
+        includeRepeatMode: Bool = true,
+        includePopulatedMonth: Bool = true,
+        versionIdentifier: String = "MonthlyMoney.v3"
     ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         let budgetEntity = makeBudgetEntity()
@@ -25,6 +28,7 @@ enum CoreDataModelBuilder {
         let transactionEntity = makeTransactionEntity()
         let importedTransactionRecordEntity = makeImportedTransactionRecordEntity()
         let wheelOfMoneyItemEntity = makeWheelOfMoneyItemEntity()
+        let populatedMonthEntity = makePopulatedMonthEntity()
 
         let budgetAccounts = relationship(
             "accounts",
@@ -111,6 +115,23 @@ enum CoreDataModelBuilder {
         budgetWheelOfMoneyItems.inverseRelationship = wheelOfMoneyItemBudget
         wheelOfMoneyItemBudget.inverseRelationship = budgetWheelOfMoneyItems
 
+        let budgetPopulatedMonths = relationship(
+            "populatedMonths",
+            destination: populatedMonthEntity,
+            minCount: 0,
+            maxCount: 0,
+            deleteRule: .cascadeDeleteRule
+        )
+        let populatedMonthBudget = relationship(
+            "budget",
+            destination: budgetEntity,
+            minCount: 0,
+            maxCount: 1,
+            deleteRule: .nullifyDeleteRule
+        )
+        budgetPopulatedMonths.inverseRelationship = populatedMonthBudget
+        populatedMonthBudget.inverseRelationship = budgetPopulatedMonths
+
         budgetEntity.properties.append(contentsOf: [budgetAccounts, budgetPlannedItems, budgetTransactions, budgetImportedTransactionRecords, budgetWheelOfMoneyItems])
         accountEntity.properties.append(accountBudget)
         plannedItemEntity.properties.append(plannedItemBudget)
@@ -118,13 +139,24 @@ enum CoreDataModelBuilder {
         importedTransactionRecordEntity.properties.append(importedTransactionRecordBudget)
         wheelOfMoneyItemEntity.properties.append(wheelOfMoneyItemBudget)
 
+        if includePopulatedMonth {
+            budgetEntity.properties.append(budgetPopulatedMonths)
+            populatedMonthEntity.properties.append(populatedMonthBudget)
+        }
+
+        if includeRepeatMode {
+            plannedItemEntity.properties.append(attribute("repeatModeRaw", .stringAttributeType, isOptional: true))
+        }
+
         if !includeEveryNDaysAttributes {
             plannedItemEntity.properties.removeAll { property in
                 guard let attribute = property as? NSAttributeDescription else { return false }
                 return attribute.name == "repeatDays" || attribute.name == "recurrenceID"
             }
         }
-        model.entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, importedTransactionRecordEntity, wheelOfMoneyItemEntity]
+        var entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, importedTransactionRecordEntity, wheelOfMoneyItemEntity]
+        if includePopulatedMonth { entities.append(populatedMonthEntity) }
+        model.entities = entities
         model.versionIdentifiers = [versionIdentifier]
         return model
     }
@@ -258,6 +290,18 @@ enum CoreDataModelBuilder {
         return entity
     }
 
+    private static func makePopulatedMonthEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.populatedMonth
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("id", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("budgetID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("monthKey", .stringAttributeType, defaultValue: YearMonth(year: 2000, month: 1).rawValue)
+        ]
+        return entity
+    }
+
     private static func attribute(
         _ name: String,
         _ type: NSAttributeType,
@@ -362,6 +406,9 @@ enum CoreDataMapping {
         managedObject.setValue(item.dueText, forKey: "dueText")
         managedObject.setValue(item.repeatDays.map(NSNumber.init(value:)), forKey: "repeatDays")
         managedObject.setValue(item.recurrenceID, forKey: "recurrenceID")
+        if managedObject.entity.attributesByName["repeatModeRaw"] != nil {
+            managedObject.setValue(item.repeatMode.rawValue, forKey: "repeatModeRaw")
+        }
         managedObject.setValue(item.isPaid, forKey: "isPaid")
         managedObject.setValue(item.source.rawValue, forKey: "sourceRaw")
         managedObject.setValue(item.copiesToNextMonthAutomatically, forKey: "copiesToNextMonthAutomatically")
@@ -381,6 +428,9 @@ enum CoreDataMapping {
         let dueText = managedObject.value(forKey: "dueText") as? String
         let repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
         let recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
+        let storedRepeatMode = managedObject.entity.attributesByName["repeatModeRaw"] != nil
+            ? managedObject.value(forKey: "repeatModeRaw") as? String
+            : nil
         let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
@@ -400,9 +450,24 @@ enum CoreDataMapping {
             dueText: dueText,
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
+            repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? (repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
             isPaid: isPaid,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
             notes: notes
+        )
+    }
+
+    static func apply(_ marker: PopulatedMonth, to managedObject: NSManagedObject) {
+        managedObject.setValue(marker.id, forKey: "id")
+        managedObject.setValue(marker.budgetID, forKey: "budgetID")
+        managedObject.setValue(marker.monthKey.rawValue, forKey: "monthKey")
+    }
+
+    static func populatedMonth(from managedObject: NSManagedObject) -> PopulatedMonth {
+        PopulatedMonth(
+            id: managedObject.value(forKey: "id") as? UUID ?? UUID(),
+            budgetID: managedObject.value(forKey: "budgetID") as? UUID ?? UUID(),
+            monthKey: YearMonth(rawValue: managedObject.value(forKey: "monthKey") as? String ?? "") ?? YearMonth(year: 2000, month: 1)
         )
     }
 

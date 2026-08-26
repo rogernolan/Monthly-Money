@@ -197,6 +197,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
 
     func deleteBudget(id: UUID) throws {
         if let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: id) {
+            try deletePopulatedMonths(budgetID: id)
             context.delete(budget)
             try save()
         }
@@ -266,6 +267,31 @@ final class CoreDataAccountDataStore: AccountDataStore {
         let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.plannedItem)
         request.predicate = NSPredicate(format: "accountID == %@", accountID as CVarArg)
         try context.fetch(request).forEach(context.delete)
+        try save()
+    }
+
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID)
+            .map(CoreDataMapping.populatedMonth(from:))
+    }
+
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws {
+        for month in months {
+            let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.populatedMonth)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "budgetID == %@", month.budgetID as CVarArg),
+                NSPredicate(format: "monthKey == %@", month.monthKey.rawValue)
+            ])
+            let managedObject = try context.fetch(request).first
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.populatedMonth, into: context)
+            CoreDataMapping.apply(month, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: month.budgetID)
+        }
+        try save()
+    }
+
+    func deletePopulatedMonths(budgetID: UUID) throws {
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID).forEach(context.delete)
         try save()
     }
 
