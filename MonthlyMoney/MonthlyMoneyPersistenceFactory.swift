@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 
+@MainActor
 enum MonthlyMoneyPersistenceFactory {
     nonisolated static let cloudKitContainerIdentifier = "iCloud.com.hatbat.monthlymoney"
 
@@ -11,10 +12,7 @@ enum MonthlyMoneyPersistenceFactory {
         let privateStore: AccountDataStore
         switch plan.privateStore.backend {
         case .coreData:
-            privateStore = try CoreDataAccountDataStore.makePersistentCloudKitPrivate(
-                url: plan.privateStore.url,
-                containerIdentifier: cloudKitContainerIdentifier
-            )
+            privateStore = try makeCoreDataStore(for: plan.privateStore)
         case .swiftData:
             let container = try ModelContainer(
                 for: schema,
@@ -32,10 +30,7 @@ enum MonthlyMoneyPersistenceFactory {
             )
             sharedStore = SwiftDataAccountDataStore(modelContainer: container)
         case .coreData:
-            sharedStore = try CoreDataAccountDataStore.makePersistentCloudKitShared(
-                url: plan.sharedStore.url,
-                containerIdentifier: cloudKitContainerIdentifier
-            )
+            sharedStore = try makeCoreDataStore(for: plan.sharedStore)
         }
 
         return AccountRepository(
@@ -44,5 +39,22 @@ enum MonthlyMoneyPersistenceFactory {
             privateStoreSyncMode: plan.privateStore.syncMode,
             sharedStoreSyncMode: plan.sharedStore.syncMode
         )
+    }
+
+    private static func makeCoreDataStore(for plan: MonthlyMoneyStorePlan) throws -> CoreDataAccountDataStore {
+        switch plan.syncMode {
+        case .localOnly:
+            return try CoreDataAccountDataStore.makePersistentLocal(url: plan.url)
+        case .cloudPrivate:
+            return try CoreDataAccountDataStore.makePersistentCloudKitPrivate(
+                url: plan.url,
+                containerIdentifier: cloudKitContainerIdentifier
+            )
+        case .cloudShared:
+            return try CoreDataAccountDataStore.makePersistentCloudKitShared(
+                url: plan.url,
+                containerIdentifier: cloudKitContainerIdentifier
+            )
+        }
     }
 }

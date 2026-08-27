@@ -389,8 +389,11 @@ final class AppState: ObservableObject {
         self.verifyBudgetUnsharedAction = verifyBudgetUnsharedAction
         self.currentParticipantID = Self.legacyOwnerParticipantID
         self.shareBudgetAction = shareBudgetAction
-        self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer ?? DailyBudgetWatchSnapshotSyncer.shared
-        self.dailyBudgetWidgetSnapshotSyncer = dailyBudgetWidgetSnapshotSyncer ?? DailyBudgetWidgetSnapshotSyncer.shared
+        let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        self.dailyBudgetWatchSnapshotSyncer = dailyBudgetWatchSnapshotSyncer
+            ?? (isRunningTests ? NoOpDailyBudgetWatchSnapshotSyncer() : DailyBudgetWatchSnapshotSyncer.shared)
+        self.dailyBudgetWidgetSnapshotSyncer = dailyBudgetWidgetSnapshotSyncer
+            ?? (isRunningTests ? NoOpDailyBudgetWidgetSnapshotSyncer() : DailyBudgetWidgetSnapshotSyncer.shared)
         self.nowProvider = nowProvider
         let now = nowProvider()
         let calendar = Calendar.current
@@ -1502,7 +1505,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    static func currency(_ value: Decimal) -> String {
+    nonisolated static func currency(_ value: Decimal) -> String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .currency
         formatter.currencyCode = Locale.current.currency?.identifier ?? "GBP"

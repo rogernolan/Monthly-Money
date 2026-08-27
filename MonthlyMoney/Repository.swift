@@ -550,6 +550,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
     }
 }
 
+@MainActor
 final class AccountRepository {
     private let privateStore: AccountDataStore
     private let sharedStore: AccountDataStore

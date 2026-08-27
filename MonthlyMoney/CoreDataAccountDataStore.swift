@@ -64,6 +64,29 @@ final class CoreDataAccountDataStore: AccountDataStore {
         return CoreDataAccountDataStore(persistentContainer: container)
     }
 
+    static func makePersistentLocal(url: URL) throws -> CoreDataAccountDataStore {
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let description = NSPersistentStoreDescription(url: url)
+        description.type = NSSQLiteStoreType
+        description.shouldAddStoreAsynchronously = false
+        description.shouldMigrateStoreAutomatically = true
+        description.shouldInferMappingModelAutomatically = true
+        container.persistentStoreDescriptions = [description]
+
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError {
+            throw loadError
+        }
+
+        return CoreDataAccountDataStore(persistentContainer: container)
+    }
+
     static func makePersistentCloudKitPrivate(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",

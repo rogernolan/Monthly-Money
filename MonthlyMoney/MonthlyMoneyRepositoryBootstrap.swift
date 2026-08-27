@@ -1,5 +1,6 @@
 import SwiftData
 
+@MainActor
 enum MonthlyMoneyRepositoryBootstrap {
     static func makeRepository() throws -> AccountRepository {
         let plan = MonthlyMoneyPersistencePlan.defaultPlan()

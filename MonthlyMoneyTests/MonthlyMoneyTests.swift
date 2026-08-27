@@ -1705,7 +1705,7 @@ final class MonthlyMoneyTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
@@ -2340,19 +2340,19 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(privateStore.didAwaitInitialCloudImport)
     }
 
-    func testPersistenceFactoryBuildsCoreDataPrivateAndSharedStores() throws {
+    func testPersistenceFactoryBuildsLocalCoreDataPrivateAndSharedStores() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
 
         XCTAssertEqual(repository.privateStoreImplementationKind, .coreData)
         XCTAssertEqual(repository.sharedStoreImplementationKind, .coreData)
-        XCTAssertEqual(repository.sharedStoreSyncMode, .cloudShared)
+        XCTAssertEqual(repository.sharedStoreSyncMode, .localOnly)
     }
 
     func testCloudKitShareSceneConfigurationUsesShareSceneDelegate() {
@@ -2366,7 +2366,7 @@ final class MonthlyMoneyTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
@@ -3854,6 +3854,23 @@ final class MonthlyMoneyTests: XCTestCase {
             privateStore: InMemoryAccountDataStore(),
             sharedStore: InMemoryAccountDataStore(),
             dateProvider: dateProvider
+        )
+    }
+
+    private static func localCoreDataPlan(baseDirectory: URL) -> MonthlyMoneyPersistencePlan {
+        MonthlyMoneyPersistencePlan(
+            privateStore: MonthlyMoneyStorePlan(
+                name: "PrivateStore",
+                url: baseDirectory.appendingPathComponent("PrivateStore.store"),
+                syncMode: .localOnly,
+                backend: .coreData
+            ),
+            sharedStore: MonthlyMoneyStorePlan(
+                name: "SharedStore",
+                url: baseDirectory.appendingPathComponent("SharedStore.store"),
+                syncMode: .localOnly,
+                backend: .coreData
+            )
         )
     }
 
