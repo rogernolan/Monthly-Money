@@ -4126,6 +4126,105 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })
     }
 
+    func testCoreDataEveryNDaysMigrationUsesExplicitPolicy() throws {
+        let mapping = try CoreDataModelBuilder.explicitEveryNDaysMigrationModel()
+        let plannedItemMapping = try XCTUnwrap(
+            mapping.entityMappings.first { $0.sourceEntityName == CoreDataEntityName.plannedItem }
+        )
+
+        XCTAssertEqual(plannedItemMapping.mappingType.rawValue, 1)
+        XCTAssertEqual(
+            plannedItemMapping.entityMigrationPolicyClassName,
+            NSStringFromClass(CoreDataV2ToV3MigrationPolicy.self)
+        )
+    }
+
+    func testCoreDataV2StoreMigratesBeforeLoadingV3Store() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("PrivateStore.sqlite")
+        let budgetID = UUID()
+        let accountID = UUID()
+        let itemID = UUID()
+        let copiedItemID = UUID()
+
+        do {
+            let container = NSPersistentContainer(
+                name: "MonthlyMoneyCoreData",
+                managedObjectModel: CoreDataModelBuilder.legacyModel
+            )
+            let description = NSPersistentStoreDescription(url: storeURL)
+            description.type = NSSQLiteStoreType
+            description.shouldAddStoreAsynchronously = false
+            container.persistentStoreDescriptions = [description]
+            var loadError: Error?
+            container.loadPersistentStores { _, error in loadError = error }
+            if let loadError { throw loadError }
+
+            let context = container.viewContext
+            let budget = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.budget,
+                into: context
+            )
+            budget.setValue(budgetID, forKey: "id")
+            budget.setValue("Home", forKey: "name")
+            budget.setValue("owner", forKey: "ownerParticipantID")
+            let account = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.account,
+                into: context
+            )
+            account.setValue(accountID, forKey: "id")
+            account.setValue(budgetID, forKey: "budgetID")
+            account.setValue("Current", forKey: "name")
+            let item = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.plannedItem,
+                into: context
+            )
+            item.setValue(itemID, forKey: "id")
+            item.setValue(budgetID, forKey: "budgetID")
+            item.setValue(accountID, forKey: "accountID")
+            item.setValue("2026-04", forKey: "monthKey")
+            item.setValue(PlannedItemType.fixedDebit.rawValue, forKey: "typeRaw")
+            item.setValue("Pension", forKey: "label")
+            item.setValue(NSDecimalNumber(string: "100"), forKey: "amount")
+            item.setValue(true, forKey: "copiesToNextMonthAutomatically")
+            let copiedItem = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.plannedItem,
+                into: context
+            )
+            copiedItem.setValue(copiedItemID, forKey: "id")
+            copiedItem.setValue(budgetID, forKey: "budgetID")
+            copiedItem.setValue(accountID, forKey: "accountID")
+            copiedItem.setValue("2026-05", forKey: "monthKey")
+            copiedItem.setValue(PlannedItemType.fixedDebit.rawValue, forKey: "typeRaw")
+            copiedItem.setValue("Pension", forKey: "label")
+            copiedItem.setValue(NSDecimalNumber(string: "100"), forKey: "amount")
+            copiedItem.setValue(true, forKey: "copiesToNextMonthAutomatically")
+            try context.save()
+        }
+
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: storeURL,
+            options: nil
+        )
+        XCTAssertTrue(
+            CoreDataModelBuilder.legacyModel.isConfiguration(
+                withName: nil,
+                compatibleWithStoreMetadata: metadata
+            )
+        )
+        let store = try CoreDataAccountDataStore.makePersistentLocal(url: storeURL)
+        let migratedItems = try store.fetchPlannedItems()
+        let migratedItem = try XCTUnwrap(migratedItems.first { $0.id == itemID })
+        XCTAssertEqual(migratedItem.repeatMode, .periodic)
+        XCTAssertEqual(migratedItem.repeatDays, 28)
+        XCTAssertEqual(migratedItem.dueDay, 1)
+        XCTAssertNotNil(migratedItem.recurrenceID)
+        let migratedCopy = try XCTUnwrap(migratedItems.first { $0.id == copiedItemID })
+        XCTAssertEqual(migratedCopy.recurrenceID, migratedItem.recurrenceID)
+    }
+
     func testRepeatModeAndPopulatedMonthArePersistedInTheCurrentModel() throws {
         XCTAssertEqual(RepeatMode.periodic.rawValue, "periodic")
         let budgetID = UUID()

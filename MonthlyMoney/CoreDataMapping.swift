@@ -168,6 +168,19 @@ enum CoreDataModelBuilder {
         )
     }
 
+    static func explicitEveryNDaysMigrationModel() throws -> NSMappingModel {
+        let mapping = try inferredEveryNDaysMigrationModel()
+        guard let plannedItemMapping = mapping.entityMappings.first(where: {
+            $0.sourceEntityName == CoreDataEntityName.plannedItem
+        }) else {
+            throw CoreDataMigrationError.missingPlannedItemMapping
+        }
+        plannedItemMapping.entityMigrationPolicyClassName = NSStringFromClass(CoreDataV2ToV3MigrationPolicy.self)
+        plannedItemMapping.attributeMappings = []
+        plannedItemMapping.mappingType = .customEntityMappingType
+        return mapping
+    }
+
     private static func makeBudgetEntity() -> NSEntityDescription {
         let entity = NSEntityDescription()
         entity.name = CoreDataEntityName.budget
@@ -331,6 +344,88 @@ enum CoreDataModelBuilder {
         relationship.deleteRule = deleteRule
         relationship.isOptional = true
         return relationship
+    }
+}
+
+enum CoreDataMigrationError: Error {
+    case missingPlannedItemMapping
+}
+
+final class CoreDataV2ToV3MigrationPolicy: NSEntityMigrationPolicy {
+    override func createDestinationInstances(
+        forSource sourceInstance: NSManagedObject,
+        in mapping: NSEntityMapping,
+        manager: NSMigrationManager
+    ) throws {
+        guard let destinationEntityName = mapping.destinationEntityName else {
+            throw CoreDataMigrationError.missingPlannedItemMapping
+        }
+        let destination = NSEntityDescription.insertNewObject(
+            forEntityName: destinationEntityName,
+            into: manager.destinationContext
+        )
+
+        for (name, _) in sourceInstance.entity.attributesByName {
+            guard destination.entity.attributesByName[name] != nil else { continue }
+            destination.setValue(sourceInstance.value(forKey: name), forKey: name)
+        }
+
+        let dueDay = (sourceInstance.value(forKey: "dueDay") as? NSNumber)?.intValue
+        let repeatDays = (sourceInstance.value(forKey: "repeatDays") as? NSNumber)?.intValue
+        let copiesAutomatically = sourceInstance.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
+        let isLegacyFloating = dueDay == nil && repeatDays == nil && copiesAutomatically
+        if isLegacyFloating {
+            let seriesKey = Self.legacySeriesKey(for: sourceInstance)
+            let recurrenceID = Self.stableRecurrenceID(for: seriesKey)
+            destination.setValue(1, forKey: "dueDay")
+            destination.setValue(28, forKey: "repeatDays")
+            destination.setValue(recurrenceID, forKey: "recurrenceID")
+            destination.setValue(RepeatMode.periodic.rawValue, forKey: "repeatModeRaw")
+        } else {
+            let mode: RepeatMode = repeatDays != nil
+                ? .periodic
+                : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
+            destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
+        }
+
+        manager.associate(
+            sourceInstance: sourceInstance,
+            withDestinationInstance: destination,
+            for: mapping
+        )
+    }
+
+    static func legacySeriesKey(for sourceInstance: NSManagedObject) -> String {
+        let budgetID = (sourceInstance.value(forKey: "budgetID") as? UUID)?.uuidString ?? ""
+        let accountID = (sourceInstance.value(forKey: "accountID") as? UUID)?.uuidString ?? ""
+        let amount = (sourceInstance.value(forKey: "amount") as? NSDecimalNumber)?.stringValue ?? ""
+        return [
+            budgetID,
+            accountID,
+            sourceInstance.value(forKey: "typeRaw") as? String ?? "",
+            sourceInstance.value(forKey: "label") as? String ?? "",
+            amount
+        ].joined(separator: "\u{1f}")
+    }
+
+    static func stableRecurrenceID(for seriesKey: String) -> UUID {
+        let bytes = Array(seriesKey.utf8)
+        var first: UInt64 = 14_695_981_039_346_656_037
+        var second: UInt64 = 10_995_116_282_111
+        for byte in bytes {
+            first ^= UInt64(byte)
+            first &*= 1_099_511_628_211
+            second ^= UInt64(byte)
+            second &*= 1_099_511_628_211
+        }
+        let firstBytes = withUnsafeBytes(of: first.bigEndian, Array.init)
+        let secondBytes = withUnsafeBytes(of: second.bigEndian, Array.init)
+        return UUID(uuid: (
+            firstBytes[0], firstBytes[1], firstBytes[2], firstBytes[3],
+            firstBytes[4], firstBytes[5], firstBytes[6], firstBytes[7],
+            secondBytes[0], secondBytes[1], secondBytes[2], secondBytes[3],
+            secondBytes[4], secondBytes[5], secondBytes[6], secondBytes[7]
+        ))
     }
 }
 
