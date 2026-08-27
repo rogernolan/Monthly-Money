@@ -680,24 +680,25 @@ private struct MonthItemEditorView: View {
                     .keyboardType(.decimalPad)
                     .disabled(!isEditable)
 
-                Picker("Day", selection: $draft.dueSelection) {
-                    Text("Floating").tag(MonthDueSelection.floating)
-                    Text("Every n days").tag(MonthDueSelection.everyNDays)
-                    ForEach(1...31, id: \.self) { day in
-                        Text(MonthItemRowContent.ordinal(day)).tag(MonthDueSelection.day(day))
-                    }
+                Picker("Repeat", selection: $draft.repeatMode) {
+                    Text("Does not repeat").tag(MonthRepeatMode.oneOff)
+                    Text("Calendar repeat").tag(MonthRepeatMode.calendar)
+                    Text("Periodic").tag(MonthRepeatMode.periodic)
                 }
                 .disabled(!isEditable)
 
-                if draft.dueSelection == .everyNDays {
-                    Picker("Anchor day", selection: Binding(
+                if draft.repeatMode == .calendar {
+                    Picker("Day", selection: Binding(
                         get: { draft.repeatAnchorDay ?? 1 },
-                        set: { draft.repeatAnchorDay = $0 }
+                        set: { draft.repeatAnchorDay = $0; draft.dueSelection = .day($0) }
                     )) {
                         ForEach(1...31, id: \.self) { day in
                             Text(MonthItemRowContent.ordinal(day)).tag(day)
                         }
                     }
+                }
+
+                if draft.repeatMode == .periodic {
                     TextField("Repeat days", text: $draft.repeatDaysText)
                         .keyboardType(.numberPad)
                         .disabled(!isEditable)
@@ -744,14 +745,17 @@ private struct MonthItemEditorView: View {
         .onChange(of: draft.amountText) { _, _ in
             draft.normalizeAmountInput()
         }
-        .onChange(of: draft.dueSelection) { _, selection in
-            switch selection {
-            case .day(let day):
+        .onChange(of: draft.repeatMode) { _, mode in
+            switch mode {
+            case .oneOff:
+                draft.dueSelection = .floating
+            case .calendar:
+                let day = draft.repeatAnchorDay ?? 1
                 draft.repeatAnchorDay = day
-            case .everyNDays where draft.repeatAnchorDay == nil:
-                draft.repeatAnchorDay = 1
-            case .floating, .everyNDays:
-                break
+                draft.dueSelection = .day(day)
+            case .periodic:
+                if draft.repeatAnchorDay == nil { draft.repeatAnchorDay = 1 }
+                draft.dueSelection = .everyNDays
             }
         }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
@@ -829,7 +833,7 @@ private struct MonthItemEditorView: View {
 
     private func save() {
         if let item = editableItem {
-            let wasNotRepeating = item.repeatDays == nil
+            let wasNotRepeating = item.repeatMode != .periodic
             let intervalChanged = item.repeatDays != draft.repeatDays
             state.update(
                 item: item,
@@ -842,6 +846,7 @@ private struct MonthItemEditorView: View {
                 sourceOverride: sourceOverride,
                 repeatDays: draft.repeatDays,
                 recurrenceID: item.recurrenceID,
+                repeatMode: draft.repeatMode == .oneOff ? .oneOff : (draft.repeatMode == .calendar ? .calendar : .periodic),
                 copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
                 notes: draft.notes
             )
@@ -862,6 +867,7 @@ private struct MonthItemEditorView: View {
             dueDay: draft.dueDay,
             source: sourceOverride,
             repeatDays: draft.repeatDays,
+            repeatMode: draft.repeatMode == .oneOff ? .oneOff : (draft.repeatMode == .calendar ? .calendar : .periodic),
             copiesToNextMonthAutomatically: draft.copiesToNextMonthAutomatically,
             notes: draft.notes
         ) != nil {

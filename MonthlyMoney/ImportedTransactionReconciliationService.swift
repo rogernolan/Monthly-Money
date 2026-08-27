@@ -12,6 +12,7 @@ struct ImportedTransactionReconciliationResult: Equatable {
     }
 }
 
+@MainActor
 final class ImportedTransactionReconciliationService {
     private let repository: AccountRepository
     private let calendar: Calendar

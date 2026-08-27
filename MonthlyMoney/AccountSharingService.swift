@@ -9,6 +9,7 @@ enum BudgetSharingError: Error, Equatable {
 
 typealias BudgetShareHandler = (Budget) throws -> Void
 
+@MainActor
 struct BudgetSharingService {
     private let repository: AccountRepository
     private let shareHandler: BudgetShareHandler

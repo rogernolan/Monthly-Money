@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 final class ImportedTransactionService {
     static let nationwideOFXSourceKind = "nationwide_ofx"
     static let monzoQIFSourceKind = "monzo_qif"

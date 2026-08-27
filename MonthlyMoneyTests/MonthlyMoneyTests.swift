@@ -1573,7 +1573,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let budgetRelationshipNames = Set(budgetEntity?.relationshipsByName.keys ?? Dictionary<String, NSRelationshipDescription>().keys)
         XCTAssertEqual(
             budgetRelationshipNames,
-            ["accounts", "plannedItems", "transactions", "importedTransactionRecords", "wheelOfMoneyItems"]
+            ["accounts", "plannedItems", "transactions", "importedTransactionRecords", "wheelOfMoneyItems", "populatedMonths"]
         )
 
         XCTAssertEqual(accountEntity?.relationshipsByName["budget"]?.destinationEntity?.name, CoreDataEntityName.budget)
@@ -1705,7 +1705,7 @@ final class MonthlyMoneyTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
@@ -2340,19 +2340,19 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(privateStore.didAwaitInitialCloudImport)
     }
 
-    func testPersistenceFactoryBuildsCoreDataPrivateAndSharedStores() throws {
+    func testPersistenceFactoryBuildsLocalCoreDataPrivateAndSharedStores() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
 
         XCTAssertEqual(repository.privateStoreImplementationKind, .coreData)
         XCTAssertEqual(repository.sharedStoreImplementationKind, .coreData)
-        XCTAssertEqual(repository.sharedStoreSyncMode, .cloudShared)
+        XCTAssertEqual(repository.sharedStoreSyncMode, .localOnly)
     }
 
     func testCloudKitShareSceneConfigurationUsesShareSceneDelegate() {
@@ -2366,7 +2366,7 @@ final class MonthlyMoneyTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         let repository = try MonthlyMoneyPersistenceFactory.makeRepository(
-            plan: .defaultPlan(baseDirectory: directory),
+            plan: Self.localCoreDataPlan(baseDirectory: directory),
             schema: Self.makeSchema()
         )
         Self.retainHostedTestObject(repository)
@@ -3101,13 +3101,15 @@ final class MonthlyMoneyTests: XCTestCase {
             type: .fixedDebit,
             repeatDays: nil,
             recurrenceID: nil,
+            repeatMode: .calendar,
             copiesToNextMonthAutomatically: true,
             notes: ""
         )
 
         let saved = try XCTUnwrap(try repository.plannedItems(for: state.selectedMonth).first)
-        XCTAssertNil(saved.repeatDays)
-        XCTAssertNil(saved.recurrenceID)
+        XCTAssertEqual(saved.repeatDays, 10)
+        XCTAssertEqual(saved.recurrenceID, item.recurrenceID)
+        XCTAssertEqual(saved.repeatMode, .calendar)
     }
 
     func testPopulatingEveryNDaysEntryCreatesAllLaterOccurrencesInSelectedMonth() async throws {
@@ -3855,6 +3857,23 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    private static func localCoreDataPlan(baseDirectory: URL) -> MonthlyMoneyPersistencePlan {
+        MonthlyMoneyPersistencePlan(
+            privateStore: MonthlyMoneyStorePlan(
+                name: "PrivateStore",
+                url: baseDirectory.appendingPathComponent("PrivateStore.store"),
+                syncMode: .localOnly,
+                backend: .coreData
+            ),
+            sharedStore: MonthlyMoneyStorePlan(
+                name: "SharedStore",
+                url: baseDirectory.appendingPathComponent("SharedStore.store"),
+                syncMode: .localOnly,
+                backend: .coreData
+            )
+        )
+    }
+
     private func insertIncomingSharedBudget(into repository: AccountRepository, month: YearMonth) throws {
         let budget = Budget(
             id: UUID(),
@@ -4092,16 +4111,170 @@ final class MonthlyMoneyTests: XCTestCase {
             forEntityName: CoreDataEntityName.plannedItem,
             into: managedObjectContext
         )
-        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).repeatDays)
-        XCTAssertNil(CoreDataMapping.plannedItem(from: legacyObject).recurrenceID)
+        let migratedFloating = CoreDataMapping.plannedItem(from: legacyObject)
+        XCTAssertEqual(migratedFloating.repeatMode, .periodic)
+        XCTAssertEqual(migratedFloating.repeatDays, 28)
+        XCTAssertEqual(migratedFloating.dueDay, 1)
+        XCTAssertNotNil(migratedFloating.recurrenceID)
     }
 
     func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
-        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v1"])
-        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v2"])
+        XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v2"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v3"])
 
         let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
         XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })
+    }
+
+    func testCoreDataEveryNDaysMigrationUsesExplicitPolicy() throws {
+        let mapping = try CoreDataModelBuilder.explicitEveryNDaysMigrationModel()
+        let plannedItemMapping = try XCTUnwrap(
+            mapping.entityMappings.first { $0.sourceEntityName == CoreDataEntityName.plannedItem }
+        )
+
+        XCTAssertEqual(plannedItemMapping.mappingType.rawValue, 1)
+        XCTAssertEqual(
+            plannedItemMapping.entityMigrationPolicyClassName,
+            NSStringFromClass(CoreDataV2ToV3MigrationPolicy.self)
+        )
+    }
+
+    func testCoreDataV2StoreMigratesBeforeLoadingV3Store() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("PrivateStore.sqlite")
+        let budgetID = UUID()
+        let accountID = UUID()
+        let itemID = UUID()
+        let copiedItemID = UUID()
+
+        do {
+            let container = NSPersistentContainer(
+                name: "MonthlyMoneyCoreData",
+                managedObjectModel: CoreDataModelBuilder.legacyModel
+            )
+            let description = NSPersistentStoreDescription(url: storeURL)
+            description.type = NSSQLiteStoreType
+            description.shouldAddStoreAsynchronously = false
+            container.persistentStoreDescriptions = [description]
+            var loadError: Error?
+            container.loadPersistentStores { _, error in loadError = error }
+            if let loadError { throw loadError }
+
+            let context = container.viewContext
+            let budget = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.budget,
+                into: context
+            )
+            budget.setValue(budgetID, forKey: "id")
+            budget.setValue("Home", forKey: "name")
+            budget.setValue("owner", forKey: "ownerParticipantID")
+            let account = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.account,
+                into: context
+            )
+            account.setValue(accountID, forKey: "id")
+            account.setValue(budgetID, forKey: "budgetID")
+            account.setValue("Current", forKey: "name")
+            let item = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.plannedItem,
+                into: context
+            )
+            item.setValue(itemID, forKey: "id")
+            item.setValue(budgetID, forKey: "budgetID")
+            item.setValue(accountID, forKey: "accountID")
+            item.setValue("2026-04", forKey: "monthKey")
+            item.setValue(PlannedItemType.fixedDebit.rawValue, forKey: "typeRaw")
+            item.setValue("Pension", forKey: "label")
+            item.setValue(NSDecimalNumber(string: "100"), forKey: "amount")
+            item.setValue(true, forKey: "copiesToNextMonthAutomatically")
+            let copiedItem = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.plannedItem,
+                into: context
+            )
+            copiedItem.setValue(copiedItemID, forKey: "id")
+            copiedItem.setValue(budgetID, forKey: "budgetID")
+            copiedItem.setValue(accountID, forKey: "accountID")
+            copiedItem.setValue("2026-05", forKey: "monthKey")
+            copiedItem.setValue(PlannedItemType.fixedDebit.rawValue, forKey: "typeRaw")
+            copiedItem.setValue("Pension", forKey: "label")
+            copiedItem.setValue(NSDecimalNumber(string: "100"), forKey: "amount")
+            copiedItem.setValue(true, forKey: "copiesToNextMonthAutomatically")
+            try context.save()
+        }
+
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: storeURL,
+            options: nil
+        )
+        XCTAssertTrue(
+            CoreDataModelBuilder.legacyModel.isConfiguration(
+                withName: nil,
+                compatibleWithStoreMetadata: metadata
+            )
+        )
+        let store = try CoreDataAccountDataStore.makePersistentLocal(url: storeURL)
+        let migratedItems = try store.fetchPlannedItems()
+        let migratedItem = try XCTUnwrap(migratedItems.first { $0.id == itemID })
+        XCTAssertEqual(migratedItem.repeatMode, .periodic)
+        XCTAssertEqual(migratedItem.repeatDays, 28)
+        XCTAssertEqual(migratedItem.dueDay, 1)
+        XCTAssertNotNil(migratedItem.recurrenceID)
+        let migratedCopy = try XCTUnwrap(migratedItems.first { $0.id == copiedItemID })
+        XCTAssertEqual(migratedCopy.recurrenceID, migratedItem.recurrenceID)
+    }
+
+    func testRepeatModeAndPopulatedMonthArePersistedInTheCurrentModel() throws {
+        XCTAssertEqual(RepeatMode.periodic.rawValue, "periodic")
+        let budgetID = UUID()
+        let month = YearMonth(year: 2026, month: 4)
+        let marker = PopulatedMonth(budgetID: budgetID, monthKey: month)
+        XCTAssertEqual(marker.monthKey, month)
+
+        let plannedItemEntity = try XCTUnwrap(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]
+        )
+        XCTAssertEqual(
+            plannedItemEntity.attributesByName["repeatModeRaw"]?.attributeType,
+            .stringAttributeType
+        )
+        XCTAssertTrue(plannedItemEntity.attributesByName["repeatModeRaw"]?.isOptional == true)
+        XCTAssertNotNil(CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.populatedMonth])
+    }
+
+    func testPopulatedMonthRepositoryRoundTripAndDeduplication() throws {
+        let repository = try makeRepository()
+        let budget = try repository.createBudget(name: "Home", ownerParticipantID: "owner")
+        _ = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+        let month = YearMonth(year: 2026, month: 4)
+
+        try repository.markMonthPopulated(month)
+        try repository.markMonthPopulated(month)
+
+        XCTAssertTrue(try repository.isMonthPopulated(month))
+        XCTAssertEqual(try repository.populatedMonths().filter { $0.budgetID == budget.id && $0.monthKey == month }.count, 1)
+    }
+
+    func testPeriodicHistoryIsScopedAndBeforeTarget() throws {
+        let repository = try makeRepository()
+        let budget = try repository.createBudget(name: "Home", ownerParticipantID: "owner")
+        let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+        let target = YearMonth(year: 2026, month: 6)
+        let periodic = PlannedItem(
+            budgetID: budget.id, accountID: account.id, monthKey: YearMonth(year: 2026, month: 4),
+            type: .fixedDebit, label: "Pension", amount: 100, dueDay: 4, repeatDays: 28,
+            recurrenceID: UUID(), repeatMode: .periodic
+        )
+        let calendar = PlannedItem(
+            budgetID: budget.id, accountID: account.id, monthKey: YearMonth(year: 2026, month: 5),
+            type: .fixedDebit, label: "Rent", amount: 100, dueDay: 1, repeatMode: .calendar
+        )
+        try repository.createPlannedItem(periodic)
+        try repository.createPlannedItem(calendar)
+
+        let history = try repository.periodicItems(before: target)
+        XCTAssertEqual(history.map(\.id), [periodic.id])
     }
 
     private func makeInMemoryManagedObjectContext() throws -> NSManagedObjectContext {

@@ -57,13 +57,13 @@ struct DailyBudgetStatusService {
     }
 }
 
-private final class NoOpDailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing {
+final class NoOpDailyBudgetWatchSnapshotSyncer: DailyBudgetWatchSnapshotSyncing {
     func sync(_ snapshot: DailyBudgetWatchSnapshot) {
         _ = snapshot
     }
 }
 
-private final class NoOpDailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing {
+final class NoOpDailyBudgetWidgetSnapshotSyncer: DailyBudgetWidgetSnapshotSyncing {
     func sync(_ snapshot: DailyBudgetWidgetSnapshot) {
         _ = snapshot
     }

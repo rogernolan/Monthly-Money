@@ -64,7 +64,32 @@ final class CoreDataAccountDataStore: AccountDataStore {
         return CoreDataAccountDataStore(persistentContainer: container)
     }
 
+    static func makePersistentLocal(url: URL) throws -> CoreDataAccountDataStore {
+        try migrateV2StoreIfNeeded(at: url)
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let description = NSPersistentStoreDescription(url: url)
+        description.type = NSSQLiteStoreType
+        description.shouldAddStoreAsynchronously = false
+        description.shouldMigrateStoreAutomatically = false
+        description.shouldInferMappingModelAutomatically = false
+        container.persistentStoreDescriptions = [description]
+
+        var loadError: Error?
+        container.loadPersistentStores { _, error in
+            loadError = error
+        }
+        if let loadError {
+            throw loadError
+        }
+
+        return CoreDataAccountDataStore(persistentContainer: container)
+    }
+
     static func makePersistentCloudKitPrivate(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
+        try migrateV2StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
             managedObjectModel: CoreDataModelBuilder.sharedModel
@@ -75,6 +100,8 @@ final class CoreDataAccountDataStore: AccountDataStore {
             containerIdentifier: containerIdentifier
         )
         description.shouldAddStoreAsynchronously = false
+        description.shouldMigrateStoreAutomatically = false
+        description.shouldInferMappingModelAutomatically = false
         container.persistentStoreDescriptions = [description]
 
         var loadError: Error?
@@ -89,6 +116,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
     }
 
     static func makePersistentCloudKitShared(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
+        try migrateV2StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
             managedObjectModel: CoreDataModelBuilder.sharedModel
@@ -99,6 +127,8 @@ final class CoreDataAccountDataStore: AccountDataStore {
             containerIdentifier: containerIdentifier
         )
         description.shouldAddStoreAsynchronously = false
+        description.shouldMigrateStoreAutomatically = false
+        description.shouldInferMappingModelAutomatically = false
         container.persistentStoreDescriptions = [description]
 
         var loadError: Error?
@@ -110,6 +140,120 @@ final class CoreDataAccountDataStore: AccountDataStore {
         }
 
         return CoreDataAccountDataStore(persistentContainer: container)
+    }
+
+    private static func migrateV2StoreIfNeeded(at url: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else { return }
+
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: url,
+            options: nil
+        )
+        guard CoreDataModelBuilder.legacyModel.isConfiguration(
+            withName: nil,
+            compatibleWithStoreMetadata: metadata
+        ) else {
+            return
+        }
+
+        let migrationDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MonthlyMoney-v2-migration-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
+        try copyV2StoreContents(from: url, to: destinationURL)
+
+        for suffix in ["", "-shm", "-wal"] {
+            let oldURL = URL(fileURLWithPath: url.path + suffix)
+            if fileManager.fileExists(atPath: oldURL.path) {
+                try fileManager.removeItem(at: oldURL)
+            }
+            let migratedURL = URL(fileURLWithPath: destinationURL.path + suffix)
+            if fileManager.fileExists(atPath: migratedURL.path) {
+                try fileManager.moveItem(at: migratedURL, to: oldURL)
+            }
+        }
+        try? fileManager.removeItem(at: migrationDirectory)
+    }
+
+    private static func copyV2StoreContents(from sourceURL: URL, to destinationURL: URL) throws {
+        let sourceContainer = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.legacyModel
+        )
+        let sourceDescription = NSPersistentStoreDescription(url: sourceURL)
+        sourceDescription.type = NSSQLiteStoreType
+        sourceDescription.shouldAddStoreAsynchronously = false
+        sourceContainer.persistentStoreDescriptions = [sourceDescription]
+        try load(sourceContainer)
+
+        let destinationContainer = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData",
+            managedObjectModel: CoreDataModelBuilder.sharedModel
+        )
+        let destinationDescription = NSPersistentStoreDescription(url: destinationURL)
+        destinationDescription.type = NSSQLiteStoreType
+        destinationDescription.shouldAddStoreAsynchronously = false
+        destinationContainer.persistentStoreDescriptions = [destinationDescription]
+        try load(destinationContainer)
+
+        let sourceContext = sourceContainer.viewContext
+        let destinationContext = destinationContainer.viewContext
+        let entityNames = [
+            CoreDataEntityName.budget,
+            CoreDataEntityName.account,
+            CoreDataEntityName.plannedItem,
+            CoreDataEntityName.transaction,
+            CoreDataEntityName.importedTransactionRecord,
+            CoreDataEntityName.wheelOfMoneyItem
+        ]
+        for entityName in entityNames {
+            let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+            for source in try sourceContext.fetch(request) {
+                let destination = NSEntityDescription.insertNewObject(
+                    forEntityName: entityName,
+                    into: destinationContext
+                )
+                for (name, _) in source.entity.attributesByName {
+                    guard destination.entity.attributesByName[name] != nil else { continue }
+                    destination.setValue(source.value(forKey: name), forKey: name)
+                }
+                if entityName == CoreDataEntityName.plannedItem {
+                    let dueDay = (source.value(forKey: "dueDay") as? NSNumber)?.intValue
+                    let repeatDays = (source.value(forKey: "repeatDays") as? NSNumber)?.intValue
+                    let copiesAutomatically = source.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
+                    if dueDay == nil && repeatDays == nil && copiesAutomatically {
+                        let seriesKey = CoreDataV2ToV3MigrationPolicy.legacySeriesKey(for: source)
+                        destination.setValue(1, forKey: "dueDay")
+                        destination.setValue(28, forKey: "repeatDays")
+                        destination.setValue(
+                            CoreDataV2ToV3MigrationPolicy.stableRecurrenceID(for: seriesKey),
+                            forKey: "recurrenceID"
+                        )
+                        destination.setValue(RepeatMode.periodic.rawValue, forKey: "repeatModeRaw")
+                    } else {
+                        let mode: RepeatMode = repeatDays != nil
+                            ? .periodic
+                            : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
+                        destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
+                    }
+                }
+            }
+        }
+        try destinationContext.save()
+        if let sourceStore = sourceContainer.persistentStoreCoordinator.persistentStores.first {
+            try sourceContainer.persistentStoreCoordinator.remove(sourceStore)
+        }
+        if let destinationStore = destinationContainer.persistentStoreCoordinator.persistentStores.first {
+            try destinationContainer.persistentStoreCoordinator.remove(destinationStore)
+        }
+    }
+
+    private static func load(_ container: NSPersistentContainer) throws {
+        var loadError: Error?
+        container.loadPersistentStores { _, error in loadError = error }
+        if let loadError { throw loadError }
     }
 
     func fetchBudgets() throws -> [Budget] {
@@ -197,6 +341,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
 
     func deleteBudget(id: UUID) throws {
         if let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: id) {
+            try deletePopulatedMonths(budgetID: id)
             context.delete(budget)
             try save()
         }
@@ -266,6 +411,31 @@ final class CoreDataAccountDataStore: AccountDataStore {
         let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.plannedItem)
         request.predicate = NSPredicate(format: "accountID == %@", accountID as CVarArg)
         try context.fetch(request).forEach(context.delete)
+        try save()
+    }
+
+    func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID)
+            .map(CoreDataMapping.populatedMonth(from:))
+    }
+
+    func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws {
+        for month in months {
+            let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.populatedMonth)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "budgetID == %@", month.budgetID as CVarArg),
+                NSPredicate(format: "monthKey == %@", month.monthKey.rawValue)
+            ])
+            let managedObject = try context.fetch(request).first
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.populatedMonth, into: context)
+            CoreDataMapping.apply(month, to: managedObject)
+            try attachToBudgetRelationship(managedObject: managedObject, budgetID: month.budgetID)
+        }
+        try save()
+    }
+
+    func deletePopulatedMonths(budgetID: UUID) throws {
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID).forEach(context.delete)
         try save()
     }
 
@@ -381,6 +551,9 @@ final class CoreDataAccountDataStore: AccountDataStore {
             $0.setValue(budget, forKey: "budget")
         }
         try fetchObjects(entityName: CoreDataEntityName.wheelOfMoneyItem, budgetID: budgetID).forEach {
+            $0.setValue(budget, forKey: "budget")
+        }
+        try fetchObjects(entityName: CoreDataEntityName.populatedMonth, budgetID: budgetID).forEach {
             $0.setValue(budget, forKey: "budget")
         }
         try save()

@@ -41,12 +41,27 @@ enum MonthDueSelection: Hashable {
     }
 }
 
+enum MonthRepeatMode: Hashable, CaseIterable {
+    case oneOff
+    case calendar
+    case periodic
+}
+
 struct MonthItemEditorDraft {
     var label: String
     var matchingString: String
     var entryKind: MonthEntryKind
     var amountText: String
-    var dueSelection: MonthDueSelection
+    var dueSelection: MonthDueSelection {
+        didSet {
+            switch dueSelection {
+            case .floating: repeatMode = .oneOff
+            case .everyNDays: repeatMode = .periodic
+            case .day: repeatMode = .calendar
+            }
+        }
+    }
+    var repeatMode: MonthRepeatMode
     var repeatAnchorDay: Int?
     var repeatDaysText: String
     var isPlanned: Bool
@@ -58,7 +73,8 @@ struct MonthItemEditorDraft {
         matchingString = item.matchingString ?? ""
         entryKind = item.type == .credit ? .credit : .debit
         amountText = NSDecimalNumber(decimal: item.amount).stringValue
-        dueSelection = item.repeatDays.map { _ in .everyNDays } ?? MonthDueSelection(item.dueDay)
+        repeatMode = MonthRepeatMode(item.repeatMode)
+        dueSelection = item.repeatMode == .periodic ? .everyNDays : MonthDueSelection(item.dueDay)
         repeatAnchorDay = item.dueDay
         repeatDaysText = item.repeatDays.map(String.init) ?? ""
         isPlanned = item.source != .importedUnplanned
@@ -71,6 +87,7 @@ struct MonthItemEditorDraft {
         matchingString = ""
         entryKind = newType == .credit ? .credit : .debit
         amountText = "0"
+        repeatMode = dueDay == nil ? .oneOff : .calendar
         dueSelection = MonthDueSelection(dueDay)
         repeatAnchorDay = dueDay
         repeatDaysText = ""
@@ -81,7 +98,7 @@ struct MonthItemEditorDraft {
 
     var canSave: Bool {
         !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-            (dueSelection != .everyNDays || (repeatDaysAreValid && dueDay != nil))
+            (repeatMode != .periodic || (repeatDaysAreValid && dueDay != nil))
     }
 
     var amount: Decimal {
@@ -89,24 +106,29 @@ struct MonthItemEditorDraft {
     }
 
     var dueDay: Int? {
+        guard repeatMode != .oneOff else { return nil }
         switch dueSelection {
         case .floating:
             return nil
-        case .everyNDays:
+        case .everyNDays, .day:
             return repeatAnchorDay
-        case .day(let day):
-            return day
         }
     }
 
     var repeatDays: Int? {
-        guard dueSelection == .everyNDays,
+        guard repeatMode == .periodic || dueSelection == .everyNDays,
               repeatDaysText.allSatisfy(\.isNumber),
               let value = Int(repeatDaysText),
               value > 0 else {
             return nil
         }
         return value
+    }
+
+    init(repeatMode: MonthRepeatMode) {
+        self.init(newType: .fixedDebit, dueDay: nil)
+        self.repeatMode = repeatMode
+        if repeatMode == .periodic { repeatAnchorDay = 1 }
     }
 
     var repeatDaysAreValid: Bool {
@@ -130,5 +152,15 @@ struct MonthItemEditorDraft {
 
     private func absDecimal(_ value: Decimal) -> Decimal {
         value < 0 ? -value : value
+    }
+}
+
+private extension MonthRepeatMode {
+    init(_ mode: RepeatMode) {
+        switch mode {
+        case .oneOff: self = .oneOff
+        case .calendar: self = .calendar
+        case .periodic: self = .periodic
+        }
     }
 }
