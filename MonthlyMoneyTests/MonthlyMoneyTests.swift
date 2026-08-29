@@ -3418,6 +3418,10 @@ final class MonthlyMoneyTests: XCTestCase {
         )
 
         XCTAssertEqual(state.linkedImportedPayee(for: item), "TESCO STORES 1234")
+        XCTAssertEqual(
+            state.linkedImportedPostedAt(for: item),
+            Self.date(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 9)
+        )
     }
 
     func testMonthCalculationEngineDeterministicBudgetAndSuggestedLiving() {
@@ -3680,6 +3684,39 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(draft.canSave)
     }
 
+    func testMonthItemEditorDraftPreservesConcreteDayWhenRepeatIsTurnedOff() {
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Imported bill",
+            amount: 42,
+            dueDay: 17,
+            repeatMode: .calendar
+        )
+        var draft = MonthItemEditorDraft(item: item)
+
+        draft.repeatMode = .oneOff
+
+        XCTAssertEqual(draft.dueDay, 17)
+    }
+
+    func testMonthItemEditorDraftRecoversMissingDayFromImportedDate() {
+        let importedDate = Self.date(year: 2026, month: 3, day: 17)
+        let item = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Imported bill",
+            amount: 42,
+            repeatMode: .oneOff
+        )
+
+        let draft = MonthItemEditorDraft(item: item, importedPostedAt: importedDate)
+
+        XCTAssertEqual(draft.dueDay, 17)
+    }
+
     func testNewPlannedItemsCopyToNextMonthAutomaticallyByDefault() {
         let item = PlannedItem(
             accountID: UUID(),
@@ -3824,14 +3861,16 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
-    func testAutomaticMonthCopySkipsItemsMarkedNotToAutoCopy() {
+    func testAutomaticMonthCopyIncludesRepeatingItemsOnly() {
         let items = [
             PlannedItem(
                 accountID: UUID(),
                 monthKey: YearMonth(year: 2026, month: 3),
                 type: .fixedDebit,
                 label: "Rent",
-                amount: 1200
+                amount: 1200,
+                dueDay: 1,
+                repeatMode: .calendar
             ),
             PlannedItem(
                 accountID: UUID(),
@@ -3839,7 +3878,8 @@ final class MonthlyMoneyTests: XCTestCase {
                 type: .fixedDebit,
                 label: "One-off",
                 amount: 75,
-                copiesToNextMonthAutomatically: false
+                repeatMode: .oneOff,
+                copiesToNextMonthAutomatically: true
             )
         ]
 
@@ -4120,7 +4160,12 @@ final class MonthlyMoneyTests: XCTestCase {
 
     func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
         XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v2"])
-        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v3"])
+        XCTAssertEqual(CoreDataModelBuilder.v3Model.versionIdentifiers, ["MonthlyMoney.v3"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v4"])
+        XCTAssertEqual(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]?.attributesByName["importedPostedAt"]?.attributeType,
+            .dateAttributeType
+        )
 
         let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
         XCTAssertTrue(mapping.entityMappings.contains { $0.sourceEntityName == CoreDataEntityName.plannedItem })

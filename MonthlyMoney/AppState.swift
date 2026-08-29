@@ -1461,6 +1461,11 @@ final class AppState: ObservableObject {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    func linkedImportedPostedAt(for item: PlannedItem) -> Date? {
+        try? repository.importedTransactionRecords(accountIDs: [item.accountID])
+            .first(where: { $0.appliedPlannedItemID == item.id })?.postedAt
+    }
+
     func shiftMonth(by delta: Int) {
         guard delta <= 0 || canNavigateToNextMonth else { return }
         var year = selectedMonth.year

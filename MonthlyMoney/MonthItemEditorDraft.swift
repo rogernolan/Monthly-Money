@@ -68,14 +68,14 @@ struct MonthItemEditorDraft {
     var copiesToNextMonthAutomatically: Bool
     var notes: String
 
-    init(item: PlannedItem) {
+    init(item: PlannedItem, importedPostedAt: Date? = nil, calendar: Calendar = .current) {
         label = item.label
         matchingString = item.matchingString ?? ""
         entryKind = item.type == .credit ? .credit : .debit
         amountText = NSDecimalNumber(decimal: item.amount).stringValue
         repeatMode = MonthRepeatMode(item.repeatMode)
         dueSelection = item.repeatMode == .periodic ? .everyNDays : MonthDueSelection(item.dueDay)
-        repeatAnchorDay = item.dueDay
+        repeatAnchorDay = item.dueDay ?? importedPostedAt.map { calendar.component(.day, from: $0) }
         repeatDaysText = item.repeatDays.map(String.init) ?? ""
         isPlanned = item.source != .importedUnplanned
         copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
@@ -106,13 +106,7 @@ struct MonthItemEditorDraft {
     }
 
     var dueDay: Int? {
-        guard repeatMode != .oneOff else { return nil }
-        switch dueSelection {
-        case .floating:
-            return nil
-        case .everyNDays, .day:
-            return repeatAnchorDay
-        }
+        repeatAnchorDay
     }
 
     var repeatDays: Int? {

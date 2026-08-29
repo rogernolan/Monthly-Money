@@ -206,6 +206,7 @@ final class PlannedItem {
     var repeatDays: Int?
     var recurrenceID: UUID?
     var repeatMode: RepeatMode = RepeatMode.oneOff
+    var importedPostedAt: Date?
     var isPaid: Bool = false
     var copiesToNextMonthAutomatically: Bool = true
     var notes: String = ""
@@ -225,6 +226,7 @@ final class PlannedItem {
         repeatDays: Int? = nil,
         recurrenceID: UUID? = nil,
         repeatMode: RepeatMode? = nil,
+        importedPostedAt: Date? = nil,
         isPaid: Bool = false,
         copiesToNextMonthAutomatically: Bool = true,
         notes: String = ""
@@ -243,6 +245,7 @@ final class PlannedItem {
         self.repeatDays = repeatDays
         self.recurrenceID = recurrenceID
         self.repeatMode = repeatMode ?? Self.inferredRepeatMode(dueDay: dueDay, repeatDays: repeatDays, copiesAutomatically: copiesToNextMonthAutomatically)
+        self.importedPostedAt = importedPostedAt
         self.isPaid = isPaid
         self.copiesToNextMonthAutomatically = copiesToNextMonthAutomatically
         self.notes = notes
@@ -298,7 +301,7 @@ final class PlannedItem {
     }
 
     static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
-        items.filter(\.copiesToNextMonthAutomatically)
+        items.filter { $0.repeatMode != .oneOff }
     }
 
     static func everyNDaysOccurrences(
@@ -410,6 +413,7 @@ final class PlannedItem {
             repeatDays: item.repeatDays,
             recurrenceID: item.recurrenceID,
             repeatMode: item.repeatMode,
+            importedPostedAt: item.importedPostedAt,
             isPaid: false,
             copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
             notes: item.notes

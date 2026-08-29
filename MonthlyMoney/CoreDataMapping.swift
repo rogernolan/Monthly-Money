@@ -12,19 +12,21 @@ enum CoreDataEntityName {
 }
 
 enum CoreDataModelBuilder {
-    static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: false, includePopulatedMonth: false, versionIdentifier: "MonthlyMoney.v2")
-    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, versionIdentifier: "MonthlyMoney.v3")
+    static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: false, includePopulatedMonth: false, includeImportedPostedAt: false, versionIdentifier: "MonthlyMoney.v2")
+    static let v3Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: false, versionIdentifier: "MonthlyMoney.v3")
+    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, versionIdentifier: "MonthlyMoney.v4")
 
     static func makeModel(
         includeEveryNDaysAttributes: Bool = true,
         includeRepeatMode: Bool = true,
         includePopulatedMonth: Bool = true,
-        versionIdentifier: String = "MonthlyMoney.v3"
+        includeImportedPostedAt: Bool = true,
+        versionIdentifier: String = "MonthlyMoney.v4"
     ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         let budgetEntity = makeBudgetEntity()
         let accountEntity = makeAccountEntity()
-        let plannedItemEntity = makePlannedItemEntity()
+        let plannedItemEntity = makePlannedItemEntity(includeImportedPostedAt: includeImportedPostedAt)
         let transactionEntity = makeTransactionEntity()
         let importedTransactionRecordEntity = makeImportedTransactionRecordEntity()
         let wheelOfMoneyItemEntity = makeWheelOfMoneyItemEntity()
@@ -220,7 +222,7 @@ enum CoreDataModelBuilder {
         return entity
     }
 
-    private static func makePlannedItemEntity() -> NSEntityDescription {
+    private static func makePlannedItemEntity(includeImportedPostedAt: Bool) -> NSEntityDescription {
         let entity = NSEntityDescription()
         entity.name = CoreDataEntityName.plannedItem
         entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
@@ -242,6 +244,9 @@ enum CoreDataModelBuilder {
             attribute("copiesToNextMonthAutomatically", .booleanAttributeType, defaultValue: true),
             attribute("notes", .stringAttributeType, defaultValue: "")
         ]
+        if includeImportedPostedAt {
+            entity.properties.append(attribute("importedPostedAt", .dateAttributeType, isOptional: true))
+        }
         return entity
     }
 
@@ -504,6 +509,9 @@ enum CoreDataMapping {
         if managedObject.entity.attributesByName["repeatModeRaw"] != nil {
             managedObject.setValue(item.repeatMode.rawValue, forKey: "repeatModeRaw")
         }
+        if managedObject.entity.attributesByName["importedPostedAt"] != nil {
+            managedObject.setValue(item.importedPostedAt, forKey: "importedPostedAt")
+        }
         managedObject.setValue(item.isPaid, forKey: "isPaid")
         managedObject.setValue(item.source.rawValue, forKey: "sourceRaw")
         managedObject.setValue(item.copiesToNextMonthAutomatically, forKey: "copiesToNextMonthAutomatically")
@@ -525,6 +533,9 @@ enum CoreDataMapping {
         var recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
         let storedRepeatMode = managedObject.entity.attributesByName["repeatModeRaw"] != nil
             ? managedObject.value(forKey: "repeatModeRaw") as? String
+            : nil
+        let importedPostedAt = managedObject.entity.attributesByName["importedPostedAt"] != nil
+            ? managedObject.value(forKey: "importedPostedAt") as? Date
             : nil
         let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
@@ -553,6 +564,7 @@ enum CoreDataMapping {
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
             repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? (isLegacyFloating || repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
+            importedPostedAt: importedPostedAt,
             isPaid: isPaid,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
             notes: notes
