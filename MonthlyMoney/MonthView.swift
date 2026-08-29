@@ -202,7 +202,7 @@ struct MonthView: View {
                 .environmentObject(state)
         }
         .navigationDestination(item: $activeEditorItem) { item in
-            MonthItemEditorView(item: item)
+                            MonthItemEditorView(item: item, importedPostedAt: state.linkedImportedPostedAt(for: item))
                 .environmentObject(state)
         }
         .onChange(of: state.selectedMonth) { _, _ in
@@ -555,7 +555,7 @@ struct MonthView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             let metadataLines = MonthItemRowContent.metadataLines(for: item)
                             ForEach(Array(metadataLines.enumerated()), id: \.offset) { index, line in
-                                if index == 0 && item.copiesToNextMonthAutomatically {
+                                if index == 0 && item.repeatMode != .oneOff {
                                     HStack(spacing: 4) {
                                         Text(line)
                                         Image(systemName: "arrow.right")
@@ -641,9 +641,9 @@ private struct MonthItemEditorView: View {
     @State private var activeMatchSourceItem: PlannedItem?
     @State private var pendingSameMonthPopulationItem: PlannedItem?
 
-    init(item: PlannedItem) {
+    init(item: PlannedItem, importedPostedAt: Date? = nil) {
         _editingItem = State(initialValue: item)
-        _draft = State(initialValue: MonthItemEditorDraft(item: item))
+        _draft = State(initialValue: MonthItemEditorDraft(item: item, importedPostedAt: importedPostedAt))
     }
 
     init(newType: PlannedItemType, dueDay: Int?) {
@@ -687,10 +687,10 @@ private struct MonthItemEditorView: View {
                 }
                 .disabled(!isEditable)
 
-                if draft.repeatMode == .calendar {
+                if draft.repeatAnchorDay != nil {
                     Picker("Day", selection: Binding(
                         get: { draft.repeatAnchorDay ?? 1 },
-                        set: { draft.repeatAnchorDay = $0; draft.dueSelection = .day($0) }
+                        set: { draft.repeatAnchorDay = $0 }
                     )) {
                         ForEach(1...31, id: \.self) { day in
                             Text(MonthItemRowContent.ordinal(day)).tag(day)
@@ -707,8 +707,6 @@ private struct MonthItemEditorView: View {
                 Toggle("Planned", isOn: $draft.isPlanned)
                     .disabled(!isEditable)
 
-                Toggle("Copy to next month automatically", isOn: $draft.copiesToNextMonthAutomatically)
-                    .disabled(!isEditable)
             }
 
             if let editableItem, editableItem.source == .importedUnplanned, isEditable {
@@ -724,20 +722,32 @@ private struct MonthItemEditorView: View {
                     .frame(minHeight: 160)
                     .disabled(!isEditable)
 
-                if let editableItem,
-                   let statementText = state.linkedImportedPayee(for: editableItem) {
+                if let editableItem {
+                    let statementText = state.linkedImportedPayee(for: editableItem)
+                    let importedPostedAt = editableItem.importedPostedAt ?? state.linkedImportedPostedAt(for: editableItem)
+                    if statementText != nil || importedPostedAt != nil {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Shown on bank statement as")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text(statementText)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let statementText {
+                            Text(statementText)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if let importedPostedAt {
+                            Text("Original transaction date: \(importedPostedAt.formatted(date: .abbreviated, time: .omitted))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                     .accessibilityElement(children: .combine)
+                    }
                 }
             }
         }
@@ -748,14 +758,12 @@ private struct MonthItemEditorView: View {
         .onChange(of: draft.repeatMode) { _, mode in
             switch mode {
             case .oneOff:
-                draft.dueSelection = .floating
+                break
             case .calendar:
                 let day = draft.repeatAnchorDay ?? 1
                 draft.repeatAnchorDay = day
-                draft.dueSelection = .day(day)
             case .periodic:
                 if draft.repeatAnchorDay == nil { draft.repeatAnchorDay = 1 }
-                draft.dueSelection = .everyNDays
             }
         }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in

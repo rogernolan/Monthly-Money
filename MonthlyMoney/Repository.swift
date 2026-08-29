@@ -372,6 +372,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.repeatDays = item.repeatDays
                 existing.recurrenceID = item.recurrenceID
                 existing.repeatMode = item.repeatMode
+                existing.importedPostedAt = item.importedPostedAt
                 existing.isPaid = item.isPaid
                 existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes

@@ -553,14 +553,16 @@ final class SharingAndMonthTests: XCTestCase {
         XCTAssertTrue(nextItems.contains(where: { $0.id == nextItem.id }))
     }
 
-    func testAutomaticMonthCopySkipsItemsMarkedNotToAutoCopy() {
+    func testAutomaticMonthCopyIncludesRepeatingItemsOnly() {
         let items = [
             PlannedItem(
                 accountID: UUID(),
                 monthKey: YearMonth(year: 2026, month: 3),
                 type: .fixedDebit,
                 label: "Rent",
-                amount: 1200
+                amount: 1200,
+                dueDay: 1,
+                repeatMode: .calendar
             ),
             PlannedItem(
                 accountID: UUID(),
@@ -568,7 +570,8 @@ final class SharingAndMonthTests: XCTestCase {
                 type: .fixedDebit,
                 label: "One-off",
                 amount: 75,
-                copiesToNextMonthAutomatically: false
+                repeatMode: .oneOff,
+                copiesToNextMonthAutomatically: true
             )
         ]
 
@@ -576,6 +579,49 @@ final class SharingAndMonthTests: XCTestCase {
             PlannedItem.automaticallyCopiedItems(from: items).map(\.label),
             ["Rent"]
         )
+    }
+
+    func testAutomaticMonthCopyUsesRepeatModeInsteadOfLegacyCopyFlag() {
+        let oneOff = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "One-off",
+            amount: 75,
+            dueDay: 12,
+            repeatMode: .oneOff,
+            copiesToNextMonthAutomatically: true
+        )
+        let calendar = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            repeatMode: .calendar,
+            copiesToNextMonthAutomatically: false
+        )
+
+        XCTAssertEqual(PlannedItem.automaticallyCopiedItems(from: [oneOff, calendar]).map(\.label), ["Rent"])
+    }
+
+    func testCopiedItemPreservesImportedPostedAt() {
+        let importedDate = Date(timeIntervalSince1970: 1_234_567)
+        let source = PlannedItem(
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Rent",
+            amount: 1200,
+            dueDay: 1,
+            repeatMode: .calendar,
+            importedPostedAt: importedDate
+        )
+
+        let copy = PlannedItem.copied(from: source, into: YearMonth(year: 2026, month: 4))
+
+        XCTAssertEqual(copy.importedPostedAt, importedDate)
     }
 
     func testEveryNDaysOccurrencesAdvanceAcrossMonthBoundary() {
