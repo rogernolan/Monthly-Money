@@ -1415,16 +1415,21 @@ final class AppState: ObservableObject {
         let originalTargetDueText = targetItem.dueText
         let originalTargetIsPaid = targetItem.isPaid
         let originalTargetMatchingString = targetItem.matchingString
+        let originalTargetImportedPostedAt = targetItem.importedPostedAt
         let originalTargetSource = targetItem.source
 
         let accountIDs = Set([sourceItem.accountID])
         let importedRecords = try repository.importedTransactionRecords(accountIDs: accountIDs)
         let linkedRecords = importedRecords.filter { $0.appliedPlannedItemID == sourceItem.id }
         let fallbackMatchingString = normalizeMatchingString(sourceItem.matchingString) ?? sourceItem.label
+        let importedPostedAt = sourceItem.importedPostedAt ?? linkedRecords.first?.postedAt
 
         targetItem.amount = sourceItem.amount
         targetItem.dueDay = sourceItem.dueDay
         targetItem.dueText = sourceItem.dueText
+        if targetItem.importedPostedAt == nil {
+            targetItem.importedPostedAt = importedPostedAt
+        }
         targetItem.isPaid = true
         targetItem.source = originalTargetSource == .importedUnplanned ? .manual : originalTargetSource
         if normalizeMatchingString(targetItem.matchingString) == nil {
@@ -1446,6 +1451,7 @@ final class AppState: ObservableObject {
             targetItem.dueText = originalTargetDueText
             targetItem.isPaid = originalTargetIsPaid
             targetItem.matchingString = originalTargetMatchingString
+            targetItem.importedPostedAt = originalTargetImportedPostedAt
             targetItem.source = originalTargetSource
             throw error
         }

@@ -3292,6 +3292,7 @@ final class MonthlyMoneyTests: XCTestCase {
             label: "Coffee shop",
             amount: 14.50,
             dueDay: 17,
+            importedPostedAt: Self.date(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 17),
             isPaid: true,
             copiesToNextMonthAutomatically: false
         )
@@ -3330,10 +3331,52 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(savedTarget.id, target.id)
         XCTAssertEqual(savedTarget.amount, 14.50)
         XCTAssertEqual(savedTarget.dueDay, 17)
+        XCTAssertEqual(savedTarget.importedPostedAt, importRecord.postedAt)
         XCTAssertEqual(savedTarget.matchingString, "Coffee shop")
         XCTAssertTrue(savedTarget.isPaid)
         XCTAssertEqual(records.first?.appliedPlannedItemID, target.id)
         XCTAssertFalse(try repository.hasPlannedItem(id: source.id))
+    }
+
+    func testSwiftDataUpsertPreservesImportedPostedAt() throws {
+        let schema = Schema([
+            Budget.self,
+            Account.self,
+            PlannedItem.self,
+            PopulatedMonthRecord.self,
+            Transaction.self,
+            ImportedTransactionRecord.self,
+            WheelOfMoneyItem.self
+        ])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+        )
+        let store = SwiftDataAccountDataStore(modelContainer: container)
+        let date = Self.date(year: 2026, month: 3, day: 17)
+        let itemID = UUID()
+        let original = PlannedItem(
+            id: itemID,
+            accountID: UUID(),
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Imported",
+            amount: 10
+        )
+        try store.upsertPlannedItems([original])
+
+        let updated = PlannedItem(
+            id: itemID,
+            accountID: original.accountID,
+            monthKey: YearMonth(year: 2026, month: 3),
+            type: .fixedDebit,
+            label: "Imported",
+            amount: 10,
+            importedPostedAt: date
+        )
+        try store.upsertPlannedItems([updated])
+
+        XCTAssertEqual(try store.fetchPlannedItem(id: itemID)?.importedPostedAt, date)
     }
 
     func testManualMatchPreservesExistingMatchingString() async throws {
