@@ -555,6 +555,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    var allowsPreviousMonthEditing: Bool {
+        get { (try? repository.activeBudget()?.allowsPreviousMonthEditing) ?? false }
+        set {
+            do {
+                guard canEditBudgetSettings else { return }
+                guard let budget = try repository.activeBudget() else { return }
+                budget.allowsPreviousMonthEditing = newValue
+                try repository.saveBudget(budget)
+                try refresh()
+            } catch {
+                print("Update previous month editing setting failed: \(error)")
+            }
+        }
+    }
+
     var persistedMonthBalancePayload: String {
         PersistedMonthBalancesCodec.encode(
             openingBalances: openingBalances,
@@ -961,7 +976,7 @@ final class AppState: ObservableObject {
     var openingBalance: Decimal {
         get { effectiveOpeningBalance(for: selectedMonth) }
         set {
-            guard canEdit(month: selectedMonth) else { return }
+            guard canEditBalance(month: selectedMonth) else { return }
             openingBalances[selectedMonth.rawValue] = newValue
             markMonthlyBalanceUpdatedIfNeeded()
         }
@@ -970,7 +985,7 @@ final class AppState: ObservableObject {
     var primaryBankBalance: Decimal {
         get { primaryBankBalances[selectedMonth.rawValue] ?? 0 }
         set {
-            guard canEdit(month: selectedMonth) else { return }
+            guard canEditBalance(month: selectedMonth) else { return }
             primaryBankBalances[selectedMonth.rawValue] = newValue
             markMonthlyBalanceUpdatedIfNeeded()
             if !usesSeparateAccountForDailyBudget && selectedMonth == currentYearMonth {
@@ -1527,8 +1542,8 @@ final class AppState: ObservableObject {
         dailyBudgetMonthKey(for: nowProvider())
     }
 
-    private var canEditSelectedMonth: Bool {
-        canEdit(month: selectedMonth)
+    var canEditSelectedMonth: Bool {
+        !isSelectedMonthInPast || allowsPreviousMonthEditing
     }
 
     private func canEdit(item: PlannedItem) -> Bool {
@@ -1537,6 +1552,10 @@ final class AppState: ObservableObject {
     }
 
     private func canEdit(month: YearMonth) -> Bool {
+        month >= currentYearMonth || allowsPreviousMonthEditing
+    }
+
+    private func canEditBalance(month: YearMonth) -> Bool {
         month >= currentYearMonth
     }
 

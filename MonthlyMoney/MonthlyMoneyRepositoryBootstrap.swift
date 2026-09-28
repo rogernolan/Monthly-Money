@@ -8,14 +8,6 @@ enum MonthlyMoneyRepositoryBootstrap {
     }
 
     private static var schema: Schema {
-        Schema([
-            Budget.self,
-            Account.self,
-            PlannedItem.self,
-            PopulatedMonthRecord.self,
-            Transaction.self,
-            ImportedTransactionRecord.self,
-            WheelOfMoneyItem.self
-        ])
+        Schema(versionedSchema: MonthlyMoneySchemaV2.self)
     }
 }

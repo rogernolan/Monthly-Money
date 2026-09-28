@@ -67,6 +67,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
     static func makePersistentLocal(url: URL) throws -> CoreDataAccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
+        try migrateV4StoreIfNeeded(at: url)
         let container = NSPersistentContainer(
             name: "MonthlyMoneyCoreData",
             managedObjectModel: CoreDataModelBuilder.sharedModel
@@ -92,6 +93,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
     static func makePersistentCloudKitPrivate(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
+        try migrateV4StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
             managedObjectModel: CoreDataModelBuilder.sharedModel
@@ -120,6 +122,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
     static func makePersistentCloudKitShared(url: URL, containerIdentifier: String) throws -> CoreDataAccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
+        try migrateV4StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
             managedObjectModel: CoreDataModelBuilder.sharedModel
@@ -217,6 +220,59 @@ final class CoreDataAccountDataStore: AccountDataStore {
             destinationType: NSSQLiteStoreType,
             destinationOptions: nil
         )
+
+        for suffix in ["", "-shm", "-wal"] {
+            let oldURL = URL(fileURLWithPath: url.path + suffix)
+            if fileManager.fileExists(atPath: oldURL.path) {
+                try fileManager.removeItem(at: oldURL)
+            }
+            let migratedURL = URL(fileURLWithPath: destinationURL.path + suffix)
+            if fileManager.fileExists(atPath: migratedURL.path) {
+                try fileManager.moveItem(at: migratedURL, to: oldURL)
+            }
+        }
+        try? fileManager.removeItem(at: migrationDirectory)
+    }
+
+    private static func migrateV4StoreIfNeeded(at url: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else { return }
+
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: url,
+            options: nil
+        )
+        guard CoreDataModelBuilder.v4Model.isConfiguration(
+            withName: nil,
+            compatibleWithStoreMetadata: metadata
+        ) else {
+            return
+        }
+
+        let migrationDirectory = fileManager.temporaryDirectory
+            .appendingPathComponent("MonthlyMoney-v4-migration-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
+        try autoreleasepool {
+            let manager = NSMigrationManager(
+                sourceModel: CoreDataModelBuilder.v4Model,
+                destinationModel: CoreDataModelBuilder.sharedModel
+            )
+            let mapping = try NSMappingModel.inferredMappingModel(
+                forSourceModel: CoreDataModelBuilder.v4Model,
+                destinationModel: CoreDataModelBuilder.sharedModel
+            )
+            try manager.migrateStore(
+                from: url,
+                sourceType: NSSQLiteStoreType,
+                options: nil,
+                with: mapping,
+                toDestinationURL: destinationURL,
+                destinationType: NSSQLiteStoreType,
+                destinationOptions: nil
+            )
+        }
 
         for suffix in ["", "-shm", "-wal"] {
             let oldURL = URL(fileURLWithPath: url.path + suffix)
