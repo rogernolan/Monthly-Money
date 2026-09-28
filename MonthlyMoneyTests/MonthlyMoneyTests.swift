@@ -118,6 +118,21 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
     }
 
+    func testPreviousMonthEditingSettingPersistsOnActiveBudget() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        XCTAssertFalse(state.allowsPreviousMonthEditing)
+        XCTAssertFalse(try XCTUnwrap(try repository.activeBudget()).allowsPreviousMonthEditing)
+
+        state.allowsPreviousMonthEditing = true
+
+        XCTAssertTrue(state.allowsPreviousMonthEditing)
+        XCTAssertTrue(try XCTUnwrap(try repository.activeBudget()).allowsPreviousMonthEditing)
+    }
+
     func testCurrentBudgetMonthChangesOnPaydayBoundaryForBalanceEditing() async throws {
         let repository = try makeRepository()
         let state = AppState(
@@ -290,6 +305,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let budget = Budget(name: "Household", ownerParticipantID: "rog")
 
         XCTAssertFalse(budget.autoGenerateWoMSavingsEveryMonth)
+        XCTAssertFalse(budget.allowsPreviousMonthEditing)
     }
 
     func testWheelOfMoneyItemStoresCoreFields() {
@@ -1283,6 +1299,13 @@ final class MonthlyMoneyTests: XCTestCase {
             MonthEditableCardRules.allowsCurrentBalanceEditing(
                 isSelectedMonthInPast: false,
                 isSelectedMonthInFuture: true
+            )
+        )
+        XCTAssertTrue(
+            MonthEditableCardRules.allowsCurrentBalanceEditing(
+                isSelectedMonthInPast: true,
+                isSelectedMonthInFuture: false,
+                allowsPreviousMonthEditing: true
             )
         )
     }
@@ -2980,6 +3003,57 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testPastMonthMutationsAreEnabledWhenSettingIsOn() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let currentMonth = state.selectedMonth
+        let pastMonth = YearMonth(year: currentMonth.month == 1 ? currentMonth.year - 1 : currentMonth.year,
+                                  month: currentMonth.month == 1 ? 12 : currentMonth.month - 1)
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let item = PlannedItem(
+            accountID: account.id,
+            monthKey: pastMonth,
+            type: .fixedDebit,
+            label: "Historical bill",
+            amount: 42,
+            dueDay: 4,
+            isPaid: false
+        )
+        try repository.createPlannedItem(item)
+
+        state.allowsPreviousMonthEditing = true
+        state.selectedMonth = pastMonth
+        try state.refresh()
+        state.primaryBankBalance = 999
+        state.setPaid(item: item, paid: true)
+        state.update(
+            item: item,
+            label: "Updated historical bill",
+            amount: 88,
+            dueDay: 5,
+            dueText: nil,
+            type: .credit,
+            copiesToNextMonthAutomatically: false,
+            notes: "Updated note"
+        )
+        let created = state.createEntry(type: .fixedDebit, label: "Past add", amount: 11, dueDay: 7)
+
+        XCTAssertEqual(state.primaryBankBalance, 999)
+        let reloaded = try XCTUnwrap(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
+        XCTAssertTrue(reloaded.isPaid)
+        XCTAssertEqual(reloaded.label, "Updated historical bill")
+        XCTAssertEqual(reloaded.amount, 88)
+        XCTAssertEqual(reloaded.type, .credit)
+        XCTAssertEqual(reloaded.notes, "Updated note")
+        XCTAssertNotNil(created)
+
+        state.delete(item: reloaded)
+        XCTAssertNil(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
+    }
+
     func testUpdatingMonthItemPersistsMatchingStringAndAllowsClearing() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -4204,10 +4278,15 @@ final class MonthlyMoneyTests: XCTestCase {
     func testCoreDataEveryNDaysMigrationIsVersionedAndInferable() throws {
         XCTAssertEqual(CoreDataModelBuilder.legacyModel.versionIdentifiers, ["MonthlyMoney.v2"])
         XCTAssertEqual(CoreDataModelBuilder.v3Model.versionIdentifiers, ["MonthlyMoney.v3"])
-        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v4"])
+        XCTAssertEqual(CoreDataModelBuilder.v4Model.versionIdentifiers, ["MonthlyMoney.v4"])
+        XCTAssertEqual(CoreDataModelBuilder.sharedModel.versionIdentifiers, ["MonthlyMoney.v5"])
         XCTAssertEqual(
             CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.plannedItem]?.attributesByName["importedPostedAt"]?.attributeType,
             .dateAttributeType
+        )
+        XCTAssertEqual(
+            CoreDataModelBuilder.sharedModel.entitiesByName[CoreDataEntityName.budget]?.attributesByName["allowsPreviousMonthEditing"]?.defaultValue as? Bool,
+            false
         )
 
         let mapping = try CoreDataModelBuilder.inferredEveryNDaysMigrationModel()
@@ -4311,6 +4390,51 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertNotNil(migratedItem.recurrenceID)
         let migratedCopy = try XCTUnwrap(migratedItems.first { $0.id == copiedItemID })
         XCTAssertEqual(migratedCopy.recurrenceID, migratedItem.recurrenceID)
+    }
+
+    func testCoreDataV4StoreMigratesPreviousMonthEditingAsOff() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("PrivateStore.sqlite")
+        let budgetID = UUID()
+
+        try autoreleasepool {
+            let container = NSPersistentContainer(
+                name: "MonthlyMoneyCoreData",
+                managedObjectModel: CoreDataModelBuilder.v4Model
+            )
+            let description = NSPersistentStoreDescription(url: storeURL)
+            description.type = NSSQLiteStoreType
+            description.shouldAddStoreAsynchronously = false
+            container.persistentStoreDescriptions = [description]
+            var loadError: Error?
+            container.loadPersistentStores { _, error in loadError = error }
+            if let loadError { throw loadError }
+
+            let budget = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.budget,
+                into: container.viewContext
+            )
+            budget.setValue(budgetID, forKey: "id")
+            budget.setValue("Home", forKey: "name")
+            budget.setValue("owner", forKey: "ownerParticipantID")
+            try container.viewContext.save()
+            if let persistentStore = container.persistentStoreCoordinator.persistentStores.first {
+                try container.persistentStoreCoordinator.remove(persistentStore)
+            }
+        }
+
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType,
+            at: storeURL,
+            options: nil
+        )
+        XCTAssertTrue(
+            CoreDataModelBuilder.v4Model.isConfiguration(withName: nil, compatibleWithStoreMetadata: metadata)
+        )
+
+        let store = try CoreDataAccountDataStore.makePersistentLocal(url: storeURL)
+        XCTAssertFalse(try XCTUnwrap(store.fetchBudgets().first).allowsPreviousMonthEditing)
     }
 
     func testRepeatModeAndPopulatedMonthArePersistedInTheCurrentModel() throws {

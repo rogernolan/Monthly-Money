@@ -555,6 +555,21 @@ final class AppState: ObservableObject {
         }
     }
 
+    var allowsPreviousMonthEditing: Bool {
+        get { (try? repository.activeBudget()?.allowsPreviousMonthEditing) ?? false }
+        set {
+            do {
+                guard canEditBudgetSettings else { return }
+                guard let budget = try repository.activeBudget() else { return }
+                budget.allowsPreviousMonthEditing = newValue
+                try repository.saveBudget(budget)
+                try refresh()
+            } catch {
+                print("Update previous month editing setting failed: \(error)")
+            }
+        }
+    }
+
     var persistedMonthBalancePayload: String {
         PersistedMonthBalancesCodec.encode(
             openingBalances: openingBalances,
@@ -1027,7 +1042,7 @@ final class AppState: ObservableObject {
     }
 
     var canPopulateSelectedMonthFromPrevious: Bool {
-        !isSelectedMonthInPast && monthItems.isEmpty && !((try? repository.isMonthPopulated(selectedMonth)) ?? false)
+        canEditSelectedMonth && monthItems.isEmpty && !((try? repository.isMonthPopulated(selectedMonth)) ?? false)
     }
 
     var fundsTotal: Decimal {
@@ -1527,8 +1542,8 @@ final class AppState: ObservableObject {
         dailyBudgetMonthKey(for: nowProvider())
     }
 
-    private var canEditSelectedMonth: Bool {
-        canEdit(month: selectedMonth)
+    var canEditSelectedMonth: Bool {
+        !isSelectedMonthInPast || allowsPreviousMonthEditing
     }
 
     private func canEdit(item: PlannedItem) -> Bool {
@@ -1537,7 +1552,7 @@ final class AppState: ObservableObject {
     }
 
     private func canEdit(month: YearMonth) -> Bool {
-        month >= currentYearMonth
+        month >= currentYearMonth || allowsPreviousMonthEditing
     }
 
     private func normalizeMatchingString(_ value: String?) -> String? {

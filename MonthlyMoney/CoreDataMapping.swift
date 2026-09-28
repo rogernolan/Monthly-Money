@@ -14,17 +14,22 @@ enum CoreDataEntityName {
 enum CoreDataModelBuilder {
     static let legacyModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: false, includePopulatedMonth: false, includeImportedPostedAt: false, versionIdentifier: "MonthlyMoney.v2")
     static let v3Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: false, versionIdentifier: "MonthlyMoney.v3")
-    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, versionIdentifier: "MonthlyMoney.v4")
+    static let v4Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, versionIdentifier: "MonthlyMoney.v4")
+    static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, versionIdentifier: "MonthlyMoney.v5")
 
     static func makeModel(
         includeEveryNDaysAttributes: Bool = true,
         includeRepeatMode: Bool = true,
         includePopulatedMonth: Bool = true,
         includeImportedPostedAt: Bool = true,
+        includeAllowsPreviousMonthEditing: Bool = false,
         versionIdentifier: String = "MonthlyMoney.v4"
     ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
         let budgetEntity = makeBudgetEntity()
+        if includeAllowsPreviousMonthEditing {
+            budgetEntity.properties.append(attribute("allowsPreviousMonthEditing", .booleanAttributeType, defaultValue: false))
+        }
         let accountEntity = makeAccountEntity()
         let plannedItemEntity = makePlannedItemEntity(includeImportedPostedAt: includeImportedPostedAt)
         let transactionEntity = makeTransactionEntity()
@@ -449,6 +454,7 @@ enum CoreDataMapping {
         managedObject.setValue(Int16(budget.dailyBudgetPaydayDay), forKey: "dailyBudgetPaydayDay")
         managedObject.setValue(budget.dailyBudgetSeparateAccountBalance as NSDecimalNumber, forKey: "dailyBudgetSeparateAccountBalance")
         managedObject.setValue(budget.autoGenerateWoMSavingsEveryMonth, forKey: "autoGenerateWoMSavingsEveryMonth")
+        managedObject.setValue(budget.allowsPreviousMonthEditing, forKey: "allowsPreviousMonthEditing")
         managedObject.setValue(budget.monthBalancesPayload, forKey: "monthBalancesPayload")
         managedObject.setValue(budget.hiddenDailyAccountID, forKey: "hiddenDailyAccountID")
     }
@@ -468,6 +474,7 @@ enum CoreDataMapping {
             dailyBudgetPaydayDay: Int(managedObject.value(forKey: "dailyBudgetPaydayDay") as? Int16 ?? 1),
             dailyBudgetSeparateAccountBalance: (managedObject.value(forKey: "dailyBudgetSeparateAccountBalance") as? NSDecimalNumber)?.decimalValue ?? 0,
             autoGenerateWoMSavingsEveryMonth: managedObject.value(forKey: "autoGenerateWoMSavingsEveryMonth") as? Bool ?? false,
+            allowsPreviousMonthEditing: managedObject.value(forKey: "allowsPreviousMonthEditing") as? Bool ?? false,
             monthBalancesPayload: managedObject.value(forKey: "monthBalancesPayload") as? String ?? "{}",
             hiddenDailyAccountID: managedObject.value(forKey: "hiddenDailyAccountID") as? UUID
         )

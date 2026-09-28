@@ -19,6 +19,7 @@ final class SharingAndMonthTests: XCTestCase {
 
         XCTAssertEqual(budget.sharingState, .local)
         XCTAssertFalse(budget.usesSeparateAccountForDailyBudget)
+        XCTAssertFalse(budget.allowsPreviousMonthEditing)
         XCTAssertEqual(budget.dailyBudgetAmount, 0)
         XCTAssertEqual(budget.dailyBudgetPaydayDay, 1)
         XCTAssertEqual(account.budgetID, budget.id)

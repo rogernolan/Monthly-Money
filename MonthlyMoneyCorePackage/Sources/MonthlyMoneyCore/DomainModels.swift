@@ -107,6 +107,7 @@ public final class Budget {
     public var dailyBudgetPaydayDay: Int = 1
     public var dailyBudgetSeparateAccountBalance: Decimal = 0
     public var autoGenerateWoMSavingsEveryMonth: Bool = false
+    public var allowsPreviousMonthEditing: Bool = false
     public var monthBalancesPayload: String = "{}"
 
     public init(
@@ -121,6 +122,7 @@ public final class Budget {
         dailyBudgetPaydayDay: Int = 1,
         dailyBudgetSeparateAccountBalance: Decimal = 0,
         autoGenerateWoMSavingsEveryMonth: Bool = false,
+        allowsPreviousMonthEditing: Bool = false,
         monthBalancesPayload: String = "{}"
     ) {
         self.id = id
@@ -134,6 +136,7 @@ public final class Budget {
         self.dailyBudgetPaydayDay = dailyBudgetPaydayDay
         self.dailyBudgetSeparateAccountBalance = dailyBudgetSeparateAccountBalance
         self.autoGenerateWoMSavingsEveryMonth = autoGenerateWoMSavingsEveryMonth
+        self.allowsPreviousMonthEditing = allowsPreviousMonthEditing
         self.monthBalancesPayload = monthBalancesPayload
     }
 }

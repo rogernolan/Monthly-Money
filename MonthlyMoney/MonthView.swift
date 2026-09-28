@@ -133,9 +133,10 @@ enum MonthItemRowContent {
 enum MonthEditableCardRules {
     static func allowsCurrentBalanceEditing(
         isSelectedMonthInPast: Bool,
-        isSelectedMonthInFuture: Bool
+        isSelectedMonthInFuture: Bool,
+        allowsPreviousMonthEditing: Bool = false
     ) -> Bool {
-        !isSelectedMonthInPast && !isSelectedMonthInFuture
+        (!isSelectedMonthInPast || allowsPreviousMonthEditing) && !isSelectedMonthInFuture
     }
 }
 
@@ -232,14 +233,16 @@ struct MonthView: View {
                     }(),
                     editableValue: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
-                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture,
+                        allowsPreviousMonthEditing: state.allowsPreviousMonthEditing
                     ) ? Binding(
                             get: { state.primaryBankBalance },
                             set: { state.primaryBankBalance = $0 }
                         ) : nil,
                     editableFocusID: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
-                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture,
+                        allowsPreviousMonthEditing: state.allowsPreviousMonthEditing
                     ) ? MonthChipFocusID.currentBalance(for: state.selectedMonth) : nil
                 )
                 amountCard(
@@ -400,8 +403,8 @@ struct MonthView: View {
         }
         .buttonStyle(.plain)
         .padding(.trailing, 4)
-        .disabled(state.isSelectedMonthInPast)
-        .opacity(state.isSelectedMonthInPast ? 0.45 : 1.0)
+        .disabled(!state.canEditSelectedMonth)
+        .opacity(state.canEditSelectedMonth ? 1.0 : 0.45)
         .accessibilityLabel("New entry")
     }
 
@@ -540,8 +543,8 @@ struct MonthView: View {
                                     .foregroundStyle(item.isPaid ? Color.accentColor : .secondary)
                             }
                             .buttonStyle(.plain)
-                            .disabled(state.isSelectedMonthInPast)
-                            .opacity(state.isSelectedMonthInPast ? 0.6 : 1.0)
+                            .disabled(!state.canEditSelectedMonth)
+                            .opacity(state.canEditSelectedMonth ? 1.0 : 0.6)
                             .frame(width: 44)
 
                             Image(systemName: "chevron.right")
@@ -582,7 +585,7 @@ struct MonthView: View {
                         .fill(isOverdue(item) ? Color.red.opacity(0.12) : Color.clear)
                 )
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    if !state.isSelectedMonthInPast {
+                    if state.canEditSelectedMonth {
                         Button(role: .destructive) {
                             state.delete(item: item)
                         } label: {
@@ -822,7 +825,7 @@ private struct MonthItemEditorView: View {
     }
 
     private var isEditable: Bool {
-        !state.isSelectedMonthInPast
+        state.canEditSelectedMonth
     }
 
     private var editableItem: PlannedItem? {

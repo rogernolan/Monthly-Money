@@ -75,6 +75,17 @@ struct SettingsView: View {
                 }
             }
 
+            Section("History") {
+                Toggle(
+                    "Allow editing previous months",
+                    isOn: Binding(
+                        get: { state.allowsPreviousMonthEditing },
+                        set: { state.allowsPreviousMonthEditing = $0 }
+                    )
+                )
+                .disabled(!state.canEditBudgetSettings)
+            }
+
             Section("WoM") {
                 Toggle(
                     "Auto generate WoM savings every month",

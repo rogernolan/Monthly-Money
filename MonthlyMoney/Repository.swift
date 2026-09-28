@@ -291,6 +291,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.dailyBudgetPaydayDay = budget.dailyBudgetPaydayDay
             existing.dailyBudgetSeparateAccountBalance = budget.dailyBudgetSeparateAccountBalance
             existing.autoGenerateWoMSavingsEveryMonth = budget.autoGenerateWoMSavingsEveryMonth
+            existing.allowsPreviousMonthEditing = budget.allowsPreviousMonthEditing
             existing.monthBalancesPayload = budget.monthBalancesPayload
             existing.hiddenDailyAccountID = budget.hiddenDailyAccountID
         } else {
