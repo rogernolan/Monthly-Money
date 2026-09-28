@@ -133,10 +133,9 @@ enum MonthItemRowContent {
 enum MonthEditableCardRules {
     static func allowsCurrentBalanceEditing(
         isSelectedMonthInPast: Bool,
-        isSelectedMonthInFuture: Bool,
-        allowsPreviousMonthEditing: Bool = false
+        isSelectedMonthInFuture: Bool
     ) -> Bool {
-        (!isSelectedMonthInPast || allowsPreviousMonthEditing) && !isSelectedMonthInFuture
+        !isSelectedMonthInPast && !isSelectedMonthInFuture
     }
 }
 
@@ -233,16 +232,14 @@ struct MonthView: View {
                     }(),
                     editableValue: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
-                        isSelectedMonthInFuture: state.isSelectedMonthInFuture,
-                        allowsPreviousMonthEditing: state.allowsPreviousMonthEditing
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
                     ) ? Binding(
                             get: { state.primaryBankBalance },
                             set: { state.primaryBankBalance = $0 }
                         ) : nil,
                     editableFocusID: MonthEditableCardRules.allowsCurrentBalanceEditing(
                         isSelectedMonthInPast: state.isSelectedMonthInPast,
-                        isSelectedMonthInFuture: state.isSelectedMonthInFuture,
-                        allowsPreviousMonthEditing: state.allowsPreviousMonthEditing
+                        isSelectedMonthInFuture: state.isSelectedMonthInFuture
                     ) ? MonthChipFocusID.currentBalance(for: state.selectedMonth) : nil
                 )
                 amountCard(

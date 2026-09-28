@@ -260,6 +260,57 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(reloadedBudget.hiddenDailyAccountID, hiddenAccount.id)
     }
 
+    func testSwiftDataV1BudgetMigratesPreviousMonthEditingToOff() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("Budget.store")
+        let budgetID = UUID()
+
+        do {
+            let legacySchema = Schema(
+                MonthlyMoneySchemaV1.models,
+                version: MonthlyMoneySchemaV1.versionIdentifier
+            )
+            let configuration = ModelConfiguration(
+                "Legacy",
+                schema: legacySchema,
+                url: storeURL,
+                cloudKitDatabase: .none
+            )
+            let container = try ModelContainer(for: legacySchema, configurations: [configuration])
+            container.mainContext.insert(
+                MonthlyMoneySchemaV1.Budget(
+                    id: budgetID,
+                    name: "Legacy budget",
+                    ownerParticipantID: "owner"
+                )
+            )
+            try container.mainContext.save()
+        }
+
+        let currentSchema = Schema(versionedSchema: MonthlyMoneySchemaV2.self)
+        let configuration = ModelConfiguration(
+            "Current",
+            schema: currentSchema,
+            url: storeURL,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(
+            for: currentSchema,
+            migrationPlan: MonthlyMoneySchemaMigrationPlan.self,
+            configurations: [configuration]
+        )
+        let migratedBudget = try XCTUnwrap(
+            container.mainContext.fetch(
+                FetchDescriptor<Budget>(predicate: #Predicate { $0.id == budgetID })
+            ).first
+        )
+
+        XCTAssertFalse(migratedBudget.allowsPreviousMonthEditing)
+        XCTAssertEqual(migratedBudget.name, "Legacy budget")
+    }
+
     func testRefreshCreatesHiddenDailyAccountForExistingSeparateDailyBudget() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
@@ -1299,13 +1350,6 @@ final class MonthlyMoneyTests: XCTestCase {
             MonthEditableCardRules.allowsCurrentBalanceEditing(
                 isSelectedMonthInPast: false,
                 isSelectedMonthInFuture: true
-            )
-        )
-        XCTAssertTrue(
-            MonthEditableCardRules.allowsCurrentBalanceEditing(
-                isSelectedMonthInPast: true,
-                isSelectedMonthInFuture: false,
-                allowsPreviousMonthEditing: true
             )
         )
     }
@@ -2975,6 +3019,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let originalPastMonthBalance = state.primaryBankBalance
 
         state.primaryBankBalance = 999
+        state.openingBalance = 777
         state.setPaid(item: item, paid: true)
         state.update(
             item: item,
@@ -3041,7 +3086,8 @@ final class MonthlyMoneyTests: XCTestCase {
         )
         let created = state.createEntry(type: .fixedDebit, label: "Past add", amount: 11, dueDay: 7)
 
-        XCTAssertEqual(state.primaryBankBalance, 999)
+        XCTAssertEqual(state.primaryBankBalance, 0)
+        XCTAssertEqual(state.openingBalance, 0)
         let reloaded = try XCTUnwrap(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
         XCTAssertTrue(reloaded.isPaid)
         XCTAssertEqual(reloaded.label, "Updated historical bill")
@@ -3052,6 +3098,25 @@ final class MonthlyMoneyTests: XCTestCase {
 
         state.delete(item: reloaded)
         XCTAssertNil(try repository.plannedItems(for: pastMonth).first(where: { $0.id == item.id }))
+    }
+
+    func testPreviousMonthEditingDoesNotEnableBulkPopulation() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository)
+
+        await state.bootstrapIfNeeded()
+
+        let currentMonth = state.selectedMonth
+        let pastMonth = YearMonth(
+            year: currentMonth.month == 1 ? currentMonth.year - 1 : currentMonth.year,
+            month: currentMonth.month == 1 ? 12 : currentMonth.month - 1
+        )
+        state.allowsPreviousMonthEditing = true
+        state.selectedMonth = pastMonth
+        try state.refresh()
+
+        XCTAssertTrue(state.canEditSelectedMonth)
+        XCTAssertFalse(state.canPopulateSelectedMonthFromPrevious)
     }
 
     func testUpdatingMonthItemPersistsMatchingStringAndAllowsClearing() async throws {
@@ -4102,14 +4167,7 @@ final class MonthlyMoneyTests: XCTestCase {
     }
 
     private static func makeSchema() -> Schema {
-        Schema([
-            Budget.self,
-            Account.self,
-            PlannedItem.self,
-            ImportedTransactionRecord.self,
-            Transaction.self,
-            WheelOfMoneyItem.self
-        ])
+        Schema(versionedSchema: MonthlyMoneySchemaV2.self)
     }
 
     private static func date(year: Int, month: Int, day: Int) -> Date {
