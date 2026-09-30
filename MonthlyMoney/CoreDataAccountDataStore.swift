@@ -46,7 +46,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
     }
 
     static func makeInMemory() throws -> CoreDataAccountDataStore {
-        let model = CoreDataModelBuilder.sharedModel
+        let model = CoreDataModelBuilder.v6Model
         let container = NSPersistentContainer(name: "MonthlyMoneyCoreData", managedObjectModel: model)
         let description = NSPersistentStoreDescription()
         description.type = NSInMemoryStoreType
@@ -64,13 +64,231 @@ final class CoreDataAccountDataStore: AccountDataStore {
         return CoreDataAccountDataStore(persistentContainer: container)
     }
 
+    private static func migrateV5StoreIfNeeded(at url: URL) throws {
+        let fileManager = FileManager.default
+        guard fileManager.fileExists(atPath: url.path) else { return }
+        let metadata = try NSPersistentStoreCoordinator.metadataForPersistentStore(
+            ofType: NSSQLiteStoreType, at: url, options: nil
+        )
+        guard CoreDataModelBuilder.sharedModel.isConfiguration(
+            withName: nil, compatibleWithStoreMetadata: metadata
+        ) else { return }
+
+        let migrationDirectory = url.deletingLastPathComponent()
+            .appendingPathComponent(".MonthlyMoney-v5-migration-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: migrationDirectory) }
+        let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
+        let manager = NSMigrationManager(
+            sourceModel: CoreDataModelBuilder.sharedModel,
+            destinationModel: CoreDataModelBuilder.v6Model
+        )
+        let mapping = try NSMappingModel.inferredMappingModel(
+            forSourceModel: CoreDataModelBuilder.sharedModel,
+            destinationModel: CoreDataModelBuilder.v6Model
+        )
+        try manager.migrateStore(
+            from: url,
+            sourceType: NSSQLiteStoreType,
+            options: nil,
+            with: mapping,
+            toDestinationURL: destinationURL,
+            destinationType: NSSQLiteStoreType,
+            destinationOptions: nil
+        )
+
+        let container = NSPersistentContainer(
+            name: "MonthlyMoneyCoreData", managedObjectModel: CoreDataModelBuilder.v6Model
+        )
+        let description = NSPersistentStoreDescription(url: destinationURL)
+        description.type = NSSQLiteStoreType
+        description.shouldAddStoreAsynchronously = false
+        container.persistentStoreDescriptions = [description]
+        try load(container)
+        try backfillPeriodicRepeats(in: container.viewContext)
+        if let store = container.persistentStoreCoordinator.persistentStores.first {
+            try container.persistentStoreCoordinator.remove(store)
+        }
+
+        try replaceMigratedStore(from: destinationURL, at: url)
+    }
+
+    static func replaceMigratedStore(from migratedURL: URL, at storeURL: URL) throws {
+        let fileManager = FileManager.default
+        let backupDirectory = storeURL.deletingLastPathComponent()
+            .appendingPathComponent(".MonthlyMoney-store-backup-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: backupDirectory, withIntermediateDirectories: true)
+        let backupURL = backupDirectory.appendingPathComponent(storeURL.lastPathComponent)
+        let suffixes = ["", "-shm", "-wal"]
+
+        do {
+            for suffix in suffixes {
+                let currentURL = URL(fileURLWithPath: storeURL.path + suffix)
+                guard fileManager.fileExists(atPath: currentURL.path) else { continue }
+                let copyURL = URL(fileURLWithPath: backupURL.path + suffix)
+                try fileManager.copyItem(at: currentURL, to: copyURL)
+            }
+        } catch {
+            try? fileManager.removeItem(at: backupDirectory)
+            throw error
+        }
+
+        let coordinator = NSPersistentStoreCoordinator(managedObjectModel: CoreDataModelBuilder.v6Model)
+        do {
+            try coordinator.replacePersistentStore(
+                at: storeURL,
+                destinationOptions: nil,
+                withPersistentStoreFrom: migratedURL,
+                sourceOptions: nil,
+                type: .sqlite
+            )
+        } catch {
+            do {
+                let backupStoreExists = fileManager.fileExists(atPath: backupURL.path)
+                guard backupStoreExists else { throw error }
+                if fileManager.fileExists(atPath: storeURL.path) {
+                    try coordinator.replacePersistentStore(
+                        at: storeURL,
+                        destinationOptions: nil,
+                        withPersistentStoreFrom: backupURL,
+                        sourceOptions: nil,
+                        type: .sqlite
+                    )
+                } else {
+                    try fileManager.copyItem(at: backupURL, to: storeURL)
+                }
+                for suffix in suffixes.dropFirst() {
+                    let liveSidecarURL = URL(fileURLWithPath: storeURL.path + suffix)
+                    let savedSidecarURL = URL(fileURLWithPath: backupURL.path + suffix)
+                    if fileManager.fileExists(atPath: liveSidecarURL.path) {
+                        try fileManager.removeItem(at: liveSidecarURL)
+                    }
+                    if fileManager.fileExists(atPath: savedSidecarURL.path) {
+                        try fileManager.copyItem(at: savedSidecarURL, to: liveSidecarURL)
+                    }
+                }
+            } catch let recoveryError {
+                throw NSError(
+                    domain: "MonthlyMoney.StoreMigration",
+                    code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "Store replacement failed (\(error.localizedDescription)); recovery also failed (\(recoveryError.localizedDescription)). Original backup retained at \(backupDirectory.path)."]
+                )
+            }
+            try? fileManager.removeItem(at: backupDirectory)
+            throw error
+        }
+
+        try? fileManager.removeItem(at: backupDirectory)
+    }
+
+    private struct LegacyRepeatKey: Hashable {
+        let budgetID: UUID
+        let accountID: UUID
+        let recurrenceID: UUID
+    }
+
+    private static func backfillPeriodicRepeats(in context: NSManagedObjectContext) throws {
+        let budgetRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.budget)
+        let budgets = try context.fetch(budgetRequest)
+        let budgetsByID = Dictionary(uniqueKeysWithValues: budgets.compactMap { budget in
+            (budget.value(forKey: "id") as? UUID).map { ($0, budget) }
+        })
+        let itemRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.plannedItem)
+        let items = try context.fetch(itemRequest)
+        var groups: [LegacyRepeatKey: [(NSManagedObject, PlannedItem, CivilDate)]] = [:]
+
+        for managedItem in items {
+            let item = CoreDataMapping.plannedItem(from: managedItem)
+            guard item.repeatMode == .periodic,
+                  let days = item.repeatDays, days > 0,
+                  let recurrenceID = item.recurrenceID,
+                  let budget = budgetsByID[item.budgetID],
+                  let date = legacyConcreteDate(for: item, paydayDay: Int(budget.value(forKey: "dailyBudgetPaydayDay") as? Int16 ?? 1)) else {
+                continue
+            }
+            let key = LegacyRepeatKey(budgetID: item.budgetID, accountID: item.accountID, recurrenceID: recurrenceID)
+            groups[key, default: []].append((managedItem, item, date))
+        }
+
+        for (key, rows) in groups {
+            let ordered = rows.sorted {
+                if $0.2 != $1.2 { return $0.2 < $1.2 }
+                return $0.1.id.uuidString < $1.1.id.uuidString
+            }
+            guard let latest = ordered.last, let interval = latest.1.repeatDays,
+                  let budget = budgetsByID[key.budgetID] else { continue }
+            let repeatObject = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.periodicRepeat, into: context
+            )
+            repeatObject.setValue(UUID(), forKey: "id")
+            repeatObject.setValue(key.budgetID, forKey: "budgetID")
+            repeatObject.setValue(key.accountID, forKey: "accountID")
+            repeatObject.setValue(budget, forKey: "budget")
+
+            let repeatID = repeatObject.value(forKey: "id") as! UUID
+            let revision = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context
+            )
+            revision.setValue(UUID(), forKey: "id")
+            revision.setValue(repeatID, forKey: "repeatID")
+            revision.setValue(latest.2.rawValue, forKey: "effectiveDateRaw")
+            revision.setValue(latest.2.rawValue, forKey: "anchorDateRaw")
+            revision.setValue(Int32(interval), forKey: "repeatDays")
+            revision.setValue(latest.1.type.rawValue, forKey: "typeRaw")
+            revision.setValue(latest.1.label, forKey: "label")
+            revision.setValue(latest.1.matchingString, forKey: "matchingString")
+            revision.setValue(latest.1.amount as NSDecimalNumber, forKey: "amount")
+            revision.setValue(latest.1.notes, forKey: "notes")
+            revision.setValue(repeatObject, forKey: "repeat")
+
+            for (managedItem, item, date) in ordered {
+                let occurrence = NSEntityDescription.insertNewObject(
+                    forEntityName: CoreDataEntityName.periodicOccurrence, into: context
+                )
+                occurrence.setValue(item.id, forKey: "plannedItemID")
+                occurrence.setValue(item.budgetID, forKey: "budgetID")
+                occurrence.setValue(repeatID, forKey: "repeatID")
+                occurrence.setValue(date.rawValue, forKey: "scheduledDateRaw")
+                occurrence.setValue(date.rawValue, forKey: "dueDateRaw")
+                occurrence.setValue(
+                    item.type != latest.1.type || item.label != latest.1.label
+                        || item.matchingString != latest.1.matchingString || item.amount != latest.1.amount
+                        || item.repeatDays != latest.1.repeatDays || item.notes != latest.1.notes,
+                    forKey: "isOverride"
+                )
+                occurrence.setValue(repeatObject, forKey: "repeat")
+                _ = managedItem
+            }
+        }
+        if context.hasChanges { try context.save() }
+    }
+
+    private static func legacyConcreteDate(for item: PlannedItem, paydayDay: Int) -> CivilDate? {
+        guard let month = item.resolvedMonthKey, let dueDay = item.dueDay,
+              (1...31).contains(dueDay) else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let monthStart = calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1))!
+        let clippedPayday = min(max(paydayDay, 1), calendar.range(of: .day, in: .month, for: monthStart)!.count)
+        let dueMonth: YearMonth
+        if paydayDay <= 1 || dueDay < clippedPayday {
+            dueMonth = month
+        } else {
+            dueMonth = month.month == 1 ? YearMonth(year: month.year - 1, month: 12) : YearMonth(year: month.year, month: month.month - 1)
+        }
+        let firstDay = calendar.date(from: DateComponents(year: dueMonth.year, month: dueMonth.month, day: 1))!
+        let day = min(dueDay, calendar.range(of: .day, in: .month, for: firstDay)!.count)
+        return CivilDate(year: dueMonth.year, month: dueMonth.month, day: day)
+    }
+
     static func makePersistentLocal(url: URL) throws -> CoreDataAccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
         try migrateV4StoreIfNeeded(at: url)
+        try migrateV5StoreIfNeeded(at: url)
         let container = NSPersistentContainer(
             name: "MonthlyMoneyCoreData",
-            managedObjectModel: CoreDataModelBuilder.sharedModel
+            managedObjectModel: CoreDataModelBuilder.v6Model
         )
         let description = NSPersistentStoreDescription(url: url)
         description.type = NSSQLiteStoreType
@@ -94,9 +312,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
         try migrateV4StoreIfNeeded(at: url)
+        try migrateV5StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
-            managedObjectModel: CoreDataModelBuilder.sharedModel
+            managedObjectModel: CoreDataModelBuilder.v6Model
         )
         let description = CoreDataCloudKitProbe.makeStoreDescription(
             url: url,
@@ -123,9 +342,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
         try migrateV2StoreIfNeeded(at: url)
         try migrateV3StoreIfNeeded(at: url)
         try migrateV4StoreIfNeeded(at: url)
+        try migrateV5StoreIfNeeded(at: url)
         let container = NSPersistentCloudKitContainer(
             name: "MonthlyMoneyCoreData",
-            managedObjectModel: CoreDataModelBuilder.sharedModel
+            managedObjectModel: CoreDataModelBuilder.v6Model
         )
         let description = CoreDataCloudKitProbe.makeStoreDescription(
             url: url,
@@ -164,23 +384,14 @@ final class CoreDataAccountDataStore: AccountDataStore {
             return
         }
 
-        let migrationDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("MonthlyMoney-v2-migration-\(UUID().uuidString)", isDirectory: true)
+        let migrationDirectory = url.deletingLastPathComponent()
+            .appendingPathComponent(".MonthlyMoney-v2-migration-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: migrationDirectory) }
         let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
         try copyV2StoreContents(from: url, to: destinationURL)
 
-        for suffix in ["", "-shm", "-wal"] {
-            let oldURL = URL(fileURLWithPath: url.path + suffix)
-            if fileManager.fileExists(atPath: oldURL.path) {
-                try fileManager.removeItem(at: oldURL)
-            }
-            let migratedURL = URL(fileURLWithPath: destinationURL.path + suffix)
-            if fileManager.fileExists(atPath: migratedURL.path) {
-                try fileManager.moveItem(at: migratedURL, to: oldURL)
-            }
-        }
-        try? fileManager.removeItem(at: migrationDirectory)
+        try replaceMigratedStore(from: destinationURL, at: url)
     }
 
     private static func migrateV3StoreIfNeeded(at url: URL) throws {
@@ -199,9 +410,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
             return
         }
 
-        let migrationDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("MonthlyMoney-v3-migration-\(UUID().uuidString)", isDirectory: true)
+        let migrationDirectory = url.deletingLastPathComponent()
+            .appendingPathComponent(".MonthlyMoney-v3-migration-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: migrationDirectory) }
         let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
         let manager = NSMigrationManager(
             sourceModel: CoreDataModelBuilder.v3Model,
@@ -221,17 +433,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             destinationOptions: nil
         )
 
-        for suffix in ["", "-shm", "-wal"] {
-            let oldURL = URL(fileURLWithPath: url.path + suffix)
-            if fileManager.fileExists(atPath: oldURL.path) {
-                try fileManager.removeItem(at: oldURL)
-            }
-            let migratedURL = URL(fileURLWithPath: destinationURL.path + suffix)
-            if fileManager.fileExists(atPath: migratedURL.path) {
-                try fileManager.moveItem(at: migratedURL, to: oldURL)
-            }
-        }
-        try? fileManager.removeItem(at: migrationDirectory)
+        try replaceMigratedStore(from: destinationURL, at: url)
     }
 
     private static func migrateV4StoreIfNeeded(at url: URL) throws {
@@ -250,9 +452,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
             return
         }
 
-        let migrationDirectory = fileManager.temporaryDirectory
-            .appendingPathComponent("MonthlyMoney-v4-migration-\(UUID().uuidString)", isDirectory: true)
+        let migrationDirectory = url.deletingLastPathComponent()
+            .appendingPathComponent(".MonthlyMoney-v4-migration-\(UUID().uuidString)", isDirectory: true)
         try fileManager.createDirectory(at: migrationDirectory, withIntermediateDirectories: true)
+        defer { try? fileManager.removeItem(at: migrationDirectory) }
         let destinationURL = migrationDirectory.appendingPathComponent("Store.sqlite")
         try autoreleasepool {
             let manager = NSMigrationManager(
@@ -274,17 +477,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             )
         }
 
-        for suffix in ["", "-shm", "-wal"] {
-            let oldURL = URL(fileURLWithPath: url.path + suffix)
-            if fileManager.fileExists(atPath: oldURL.path) {
-                try fileManager.removeItem(at: oldURL)
-            }
-            let migratedURL = URL(fileURLWithPath: destinationURL.path + suffix)
-            if fileManager.fileExists(atPath: migratedURL.path) {
-                try fileManager.moveItem(at: migratedURL, to: oldURL)
-            }
-        }
-        try? fileManager.removeItem(at: migrationDirectory)
+        try replaceMigratedStore(from: destinationURL, at: url)
     }
 
     private static func copyV2StoreContents(from sourceURL: URL, to destinationURL: URL) throws {
@@ -333,21 +526,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
                     let dueDay = (source.value(forKey: "dueDay") as? NSNumber)?.intValue
                     let repeatDays = (source.value(forKey: "repeatDays") as? NSNumber)?.intValue
                     let copiesAutomatically = source.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
-                    if dueDay == nil && repeatDays == nil && copiesAutomatically {
-                        let seriesKey = CoreDataV2ToV3MigrationPolicy.legacySeriesKey(for: source)
-                        destination.setValue(1, forKey: "dueDay")
-                        destination.setValue(28, forKey: "repeatDays")
-                        destination.setValue(
-                            CoreDataV2ToV3MigrationPolicy.stableRecurrenceID(for: seriesKey),
-                            forKey: "recurrenceID"
-                        )
-                        destination.setValue(RepeatMode.periodic.rawValue, forKey: "repeatModeRaw")
-                    } else {
-                        let mode: RepeatMode = repeatDays != nil
-                            ? .periodic
-                            : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
-                        destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
-                    }
+                    let mode: RepeatMode = (repeatDays ?? 0) > 0
+                        ? .periodic
+                        : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
+                    destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
                 }
             }
         }
@@ -452,6 +634,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
     func deleteBudget(id: UUID) throws {
         if let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: id) {
             try deletePopulatedMonths(budgetID: id)
+            try deletePeriodicRepeats(budgetID: id)
+            let occurrenceRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+            occurrenceRequest.predicate = NSPredicate(format: "budgetID == %@", id as CVarArg)
+            try context.fetch(occurrenceRequest).forEach(context.delete)
             context.delete(budget)
             try save()
         }
@@ -475,6 +661,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
 
     func deleteAccount(id: UUID) throws {
         if let account = try fetchFirst(entityName: CoreDataEntityName.account, id: id) {
+            try deletePeriodicRepeats(accountID: id)
             context.delete(account)
             try save()
         }
@@ -512,6 +699,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
 
     func deletePlannedItem(id: UUID) throws {
         if let item = try fetchFirst(entityName: CoreDataEntityName.plannedItem, id: id) {
+            try deletePeriodicOccurrences(plannedItemIDs: [id])
             context.delete(item)
             try save()
         }
@@ -520,8 +708,193 @@ final class CoreDataAccountDataStore: AccountDataStore {
     func deletePlannedItems(accountID: UUID) throws {
         let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.plannedItem)
         request.predicate = NSPredicate(format: "accountID == %@", accountID as CVarArg)
+        let items = try context.fetch(request)
+        let ids = Set(items.compactMap { $0.value(forKey: "id") as? UUID })
+        try deletePeriodicOccurrences(plannedItemIDs: ids)
+        items.forEach(context.delete)
+        try save()
+    }
+
+    func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat] {
+        try fetchObjects(entityName: CoreDataEntityName.periodicRepeat, budgetID: budgetID)
+            .map(CoreDataMapping.periodicRepeat(from:))
+    }
+
+    func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision] {
+        guard !repeatIDs.isEmpty else { return [] }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeatRevision)
+        request.predicate = NSPredicate(format: "repeatID IN %@", Array(repeatIDs))
+        return try context.fetch(request).compactMap(CoreDataMapping.periodicRepeatRevision(from:))
+    }
+
+    func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip] {
+        guard !repeatIDs.isEmpty else { return [] }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeatSkip)
+        request.predicate = NSPredicate(format: "repeatID IN %@", Array(repeatIDs))
+        return try context.fetch(request).compactMap(CoreDataMapping.periodicRepeatSkip(from:))
+    }
+
+    func fetchPeriodicOccurrences(plannedItemIDs: Set<UUID>) throws -> [PeriodicOccurrenceRecord] {
+        guard !plannedItemIDs.isEmpty else { return [] }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+        request.predicate = NSPredicate(format: "plannedItemID IN %@", Array(plannedItemIDs))
+        return try context.fetch(request).compactMap(CoreDataMapping.periodicOccurrence(from:))
+    }
+
+    func deletePeriodicOccurrences(plannedItemIDs: Set<UUID>) throws {
+        guard !plannedItemIDs.isEmpty else { return }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+        request.predicate = NSPredicate(format: "plannedItemID IN %@", Array(plannedItemIDs))
         try context.fetch(request).forEach(context.delete)
         try save()
+    }
+
+    func upsertPeriodicRepeats(_ repeats: [PeriodicRepeat]) throws {
+        for value in repeats {
+            let object = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: value.id)
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicRepeat, into: context)
+            CoreDataMapping.apply(value, to: object)
+            if let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: value.budgetID) {
+                object.setValue(budget, forKey: "budget")
+            }
+        }
+        try save()
+    }
+
+    func upsertPeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision]) throws {
+        for value in revisions {
+            let object = try fetchFirst(entityName: CoreDataEntityName.periodicRepeatRevision, id: value.id)
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context)
+            CoreDataMapping.apply(value, to: object)
+            if let repeatObject = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: value.repeatID) {
+                object.setValue(repeatObject, forKey: "repeat")
+            }
+        }
+        try save()
+    }
+
+    func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws {
+        for value in skips {
+            let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeatSkip)
+            request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+                NSPredicate(format: "repeatID == %@", value.repeatID as CVarArg),
+                NSPredicate(format: "scheduledDateRaw == %@", value.scheduledDateRaw)
+            ])
+            let object = try context.fetch(request).first
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicRepeatSkip, into: context)
+            CoreDataMapping.apply(value, to: object)
+            if let repeatObject = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: value.repeatID) {
+                object.setValue(repeatObject, forKey: "repeat")
+            }
+        }
+        try save()
+    }
+
+    func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws {
+        for value in occurrences {
+            let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+            request.predicate = NSPredicate(format: "plannedItemID == %@", value.plannedItemID as CVarArg)
+            let object = try context.fetch(request).first
+                ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicOccurrence, into: context)
+            CoreDataMapping.apply(value, to: object)
+            if let repeatID = value.repeatID,
+               let repeatObject = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: repeatID) {
+                object.setValue(repeatObject, forKey: "repeat")
+            } else {
+                object.setValue(nil, forKey: "repeat")
+            }
+        }
+        try save()
+    }
+
+    func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        let managedItem = try fetchFirst(entityName: CoreDataEntityName.plannedItem, id: item.id)
+            ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.plannedItem, into: context)
+        CoreDataMapping.apply(item, to: managedItem)
+        try attachToBudgetRelationship(managedObject: managedItem, budgetID: item.budgetID)
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+        request.predicate = NSPredicate(format: "plannedItemID == %@", item.id as CVarArg)
+        let occurrenceObject = try context.fetch(request).first
+            ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicOccurrence, into: context)
+        CoreDataMapping.apply(occurrence, to: occurrenceObject)
+        if let repeatID = occurrence.repeatID,
+           let repeatObject = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: repeatID) {
+            occurrenceObject.setValue(repeatObject, forKey: "repeat")
+        }
+        try save()
+    }
+
+    func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard repeatRecord.id == revision.repeatID, repeatRecord.id == occurrence.repeatID,
+              item.id == occurrence.plannedItemID, item.budgetID == repeatRecord.budgetID,
+              item.accountID == repeatRecord.accountID else { throw RepositoryError.invalidCrossScopeReference }
+        let repeatObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.periodicRepeat, into: context
+        )
+        CoreDataMapping.apply(repeatRecord, to: repeatObject)
+        if let budget = try fetchFirst(entityName: CoreDataEntityName.budget, id: repeatRecord.budgetID) {
+            repeatObject.setValue(budget, forKey: "budget")
+        }
+        let revisionObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context
+        )
+        CoreDataMapping.apply(revision, to: revisionObject)
+        revisionObject.setValue(repeatObject, forKey: "repeat")
+        let itemObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.plannedItem, into: context
+        )
+        CoreDataMapping.apply(item, to: itemObject)
+        try attachToBudgetRelationship(managedObject: itemObject, budgetID: item.budgetID)
+        let occurrenceObject = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.periodicOccurrence, into: context
+        )
+        CoreDataMapping.apply(occurrence, to: occurrenceObject)
+        occurrenceObject.setValue(repeatObject, forKey: "repeat")
+        try save()
+    }
+
+    func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeatRevision)
+        request.predicate = NSPredicate(format: "repeatID == %@ AND effectiveDateRaw >= %@", repeatID as CVarArg, boundary.rawValue)
+        try context.fetch(request).forEach(context.delete)
+        let object = NSEntityDescription.insertNewObject(
+            forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context
+        )
+        CoreDataMapping.apply(revision, to: object)
+        if let repeatObject = try fetchFirst(entityName: CoreDataEntityName.periodicRepeat, id: repeatID) {
+            object.setValue(repeatObject, forKey: "repeat")
+        }
+        try save()
+    }
+
+    func deletePeriodicRepeats(budgetID: UUID) throws {
+        let repeats = try fetchObjects(entityName: CoreDataEntityName.periodicRepeat, budgetID: budgetID)
+        let ids = Set(repeats.compactMap { $0.value(forKey: "id") as? UUID })
+        try deleteRepeatDependents(ids: ids)
+        repeats.forEach(context.delete)
+        try save()
+    }
+
+    func deletePeriodicRepeats(accountID: UUID) throws {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeat)
+        request.predicate = NSPredicate(format: "accountID == %@", accountID as CVarArg)
+        let repeats = try context.fetch(request)
+        let ids = Set(repeats.compactMap { $0.value(forKey: "id") as? UUID })
+        try deleteRepeatDependents(ids: ids)
+        repeats.forEach(context.delete)
+        try save()
+    }
+
+    private func deleteRepeatDependents(ids: Set<UUID>) throws {
+        guard !ids.isEmpty else { return }
+        for entityName in [CoreDataEntityName.periodicRepeatRevision, CoreDataEntityName.periodicRepeatSkip, CoreDataEntityName.periodicOccurrence] {
+            let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+            request.predicate = NSPredicate(format: "repeatID IN %@", Array(ids))
+            try context.fetch(request).forEach(context.delete)
+        }
     }
 
     func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {

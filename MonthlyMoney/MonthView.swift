@@ -163,6 +163,7 @@ struct MonthView: View {
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
     @State private var activeEditorItem: PlannedItem?
+    @State private var isShowingRepeatingCopyWarning = false
 
     private var debits: [PlannedItem] {
         sorted(MonthItemFilterRules.filteredItems(state.monthItems, for: .debits))
@@ -207,6 +208,17 @@ struct MonthView: View {
         }
         .onChange(of: state.selectedMonth) { _, _ in
             focusedEditableChipID = nil
+        }
+        .alert(
+            "Repopulate \(monthName(for: nextMonth(after: state.selectedMonth)))?",
+            isPresented: $isShowingRepeatingCopyWarning
+        ) {
+            Button("OK", role: .destructive) {
+                state.copyRepeatingEntriesToNextMonth()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This may produce duplicate transactions, it cannot be undone")
         }
     }
 
@@ -284,6 +296,23 @@ struct MonthView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
             }
+
+            if state.canCopyRepeatingEntriesToNextMonth {
+                Button {
+                    if state.currentMonthHasEntries {
+                        isShowingRepeatingCopyWarning = true
+                    } else {
+                        state.copyRepeatingEntriesToNextMonth()
+                    }
+                } label: {
+                    Text("Copy repeating entries to \(monthName(for: nextMonth(after: state.selectedMonth)))")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
         }
     }
 
@@ -342,6 +371,16 @@ struct MonthView: View {
 
     private var previousMonthName: String {
         monthName(for: previousMonth(of: state.selectedMonth))
+    }
+
+    private func nextMonth(after month: YearMonth) -> YearMonth {
+        var year = month.year
+        var value = month.month + 1
+        if value > 12 {
+            value = 1
+            year += 1
+        }
+        return YearMonth(year: year, month: value)
     }
 
     private func previousMonth(of month: YearMonth) -> YearMonth {
@@ -640,6 +679,7 @@ private struct MonthItemEditorView: View {
     @State private var draft: MonthItemEditorDraft
     @State private var activeMatchSourceItem: PlannedItem?
     @State private var pendingSameMonthPopulationItem: PlannedItem?
+    @State private var periodicScope: PeriodicOccurrenceEditScope = .thisOccurrence
 
     init(item: PlannedItem, importedPostedAt: Date? = nil) {
         _editingItem = State(initialValue: item)
@@ -653,6 +693,21 @@ private struct MonthItemEditorView: View {
 
     var body: some View {
         Form {
+            if editableItem?.repeatMode == .periodic {
+                Section("Repeat changes") {
+                    Picker("Apply changes to", selection: $periodicScope) {
+                        ForEach(PeriodicOccurrenceEditScope.allCases) { scope in
+                            Text(scope.rawValue).tag(scope)
+                        }
+                    }
+                    Text(periodicScope == .thisOccurrence
+                         ? "Only this dated occurrence changes."
+                         : "This occurrence and later dates use the revised repeat.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Section("Details") {
                 labeledEditor(
                     title: "Display title",
@@ -685,7 +740,7 @@ private struct MonthItemEditorView: View {
                     Text("Calendar repeat").tag(MonthRepeatMode.calendar)
                     Text("Periodic").tag(MonthRepeatMode.periodic)
                 }
-                .disabled(!isEditable)
+                .disabled(!isEditable || editableItem?.repeatMode == .periodic)
 
                 if draft.repeatAnchorDay != nil {
                     Picker("Day", selection: Binding(
@@ -701,7 +756,7 @@ private struct MonthItemEditorView: View {
                 if draft.repeatMode == .periodic {
                     TextField("Repeat days", text: $draft.repeatDaysText)
                         .keyboardType(.numberPad)
-                        .disabled(!isEditable)
+                        .disabled(!isEditable || (editableItem?.repeatMode == .periodic && periodicScope == .thisOccurrence))
                 }
 
                 Toggle("Planned", isOn: $draft.isPlanned)
@@ -841,6 +896,30 @@ private struct MonthItemEditorView: View {
 
     private func save() {
         if let item = editableItem {
+            if item.repeatMode == .periodic,
+               let occurrence = state.periodicWomOccurrence(for: item) {
+                let dueDate = draft.dueDay == item.dueDay
+                    ? occurrence.dueDate
+                    : draft.dueDay.flatMap { state.periodicDueDate(for: $0, budgetMonth: occurrence.budgetMonth) }
+                guard let dueDate else { return }
+                let interval = periodicScope == .thisOccurrence
+                    ? occurrence.repeatDays
+                    : (draft.repeatDays ?? occurrence.repeatDays)
+                if state.savePeriodicOccurrence(
+                    occurrence,
+                    label: draft.label,
+                    matchingString: draft.matchingString,
+                    amount: draft.amount,
+                    dueDate: dueDate,
+                    type: draft.resolvedType(existingItemType: item.type),
+                    notes: draft.notes,
+                    repeatDays: interval,
+                    scope: periodicScope
+                ) {
+                    dismiss()
+                }
+                return
+            }
             let wasNotRepeating = item.repeatMode != .periodic
             let intervalChanged = item.repeatDays != draft.repeatDays
             state.update(

@@ -321,6 +321,40 @@ enum DailyBalanceChartCalculator {
     }
 }
 
+struct PeriodicOccurrenceIdentity: Hashable {
+    let repeatID: UUID
+    let scheduledDate: CivilDate
+}
+
+struct PeriodicWomOccurrence: Identifiable, Hashable {
+    let repeatID: UUID
+    let scheduledDate: CivilDate
+    let dueDate: CivilDate
+    let budgetMonth: YearMonth
+    let accountID: UUID
+    let plannedItemID: UUID?
+    let type: PlannedItemType
+    let label: String
+    let matchingString: String?
+    let repeatDays: Int
+    let amount: Decimal
+    let notes: String
+
+    var id: String { "\(repeatID.uuidString):\(scheduledDate.rawValue)" }
+}
+
+struct PeriodicWomMonthGroup: Identifiable {
+    let month: YearMonth
+    let occurrences: [PeriodicWomOccurrence]
+    var id: YearMonth { month }
+}
+
+enum PeriodicOccurrenceEditScope: String, CaseIterable, Identifiable {
+    case thisOccurrence = "This occurrence"
+    case thisAndFuture = "This and future"
+    var id: String { rawValue }
+}
+
 @MainActor
 final class AppState: ObservableObject {
     static let legacyOwnerParticipantID = "owner"
@@ -357,6 +391,148 @@ final class AppState: ObservableObject {
     @Published var monthItems: [PlannedItem] = []
     @Published var wheelOfMoneyItems: [WheelOfMoneyItem] = []
     @Published var wheelOfMoneyFilter: WheelOfMoneyFilter = .all
+
+    var womOccurrenceGroups: [PeriodicWomMonthGroup] {
+        guard let data = try? repository.periodicRepeatData() else { return [] }
+        let months = (0..<24).map { offset -> YearMonth in
+            var month = currentYearMonth
+            for _ in 0..<offset { month = nextMonth(of: month) }
+            return month
+        }
+        guard let firstMonth = months.first, let lastMonth = months.last else { return [] }
+        let from = Self.civilDate(from: budgetMonthStartDate(firstMonth))
+        let endExclusive = budgetMonthEndDate(after: lastMonth)
+        let through = Self.civilDate(from: endExclusive.addingTimeInterval(-86_400))
+        guard let from, let through else { return [] }
+
+        let plannedItemsByID = Dictionary(uniqueKeysWithValues: data.plannedItems.map { ($0.id, $0) })
+        let occurrenceRecords = data.occurrences.filter { $0.repeatID != nil }
+        let occurrencesByIdentity = Dictionary(grouping: occurrenceRecords) {
+            PeriodicOccurrenceIdentity(repeatID: $0.repeatID!, scheduledDate: $0.scheduledDate)
+        }
+        let skipsByRepeat = Dictionary(grouping: data.skips, by: \.repeatID)
+        let repeatsByID = Dictionary(uniqueKeysWithValues: data.repeats.map { ($0.id, $0) })
+        var rowsByMonth: [YearMonth: [PeriodicWomOccurrence]] = Dictionary(uniqueKeysWithValues: months.map { ($0, []) })
+        var emitted = Set<PeriodicOccurrenceIdentity>()
+
+        for repeatRecord in data.repeats {
+            let revisions = data.revisions.filter { $0.repeatID == repeatRecord.id }
+            let projections = PeriodicRepeatSchedule.project(
+                repeatID: repeatRecord.id,
+                revisions: revisions,
+                skips: skipsByRepeat[repeatRecord.id] ?? [],
+                from: from,
+                through: through
+            )
+            for projection in projections where repeatRecord.endDate.map({ projection.scheduledDate < $0 }) ?? true {
+                let identity = PeriodicOccurrenceIdentity(repeatID: repeatRecord.id, scheduledDate: projection.scheduledDate)
+                emitted.insert(identity)
+                let stored = occurrencesByIdentity[identity]?.first
+                let item = stored.flatMap { plannedItemsByID[$0.plannedItemID] }
+                let dueDate = stored?.dueDate ?? projection.scheduledDate
+                let month = budgetMonth(for: dueDate)
+                guard rowsByMonth[month] != nil else { continue }
+                rowsByMonth[month, default: []].append(PeriodicWomOccurrence(
+                    repeatID: repeatRecord.id,
+                    scheduledDate: projection.scheduledDate,
+                    dueDate: dueDate,
+                    budgetMonth: month,
+                    accountID: item?.accountID ?? repeatRecord.accountID,
+                    plannedItemID: stored?.plannedItemID,
+                    type: stored?.isOverride == true ? (item?.type ?? projection.type) : projection.type,
+                    label: stored?.isOverride == true ? (item?.label ?? projection.label) : projection.label,
+                    matchingString: stored?.isOverride == true ? (item?.matchingString ?? projection.matchingString) : projection.matchingString,
+                    repeatDays: stored?.isOverride == true ? (item?.repeatDays ?? revisions.first(where: { $0.effectiveDate <= projection.scheduledDate })?.repeatDays ?? 1) : (revisions.filter { $0.effectiveDate <= projection.scheduledDate }.max(by: { $0.effectiveDate < $1.effectiveDate })?.repeatDays ?? 1),
+                    amount: stored?.isOverride == true ? (item?.amount ?? projection.amount) : projection.amount,
+                    notes: stored?.isOverride == true ? (item?.notes ?? projection.notes) : projection.notes
+                ))
+            }
+        }
+
+        for stored in occurrenceRecords where stored.isOverride {
+            guard let repeatID = stored.repeatID,
+                  !emitted.contains(PeriodicOccurrenceIdentity(repeatID: repeatID, scheduledDate: stored.scheduledDate)),
+                  let repeatRecord = repeatsByID[repeatID],
+                  repeatRecord.endDate.map({ stored.scheduledDate < $0 }) ?? true,
+                  let item = plannedItemsByID[stored.plannedItemID] else { continue }
+            let month = budgetMonth(for: stored.dueDate)
+            guard rowsByMonth[month] != nil else { continue }
+            rowsByMonth[month, default: []].append(PeriodicWomOccurrence(
+                repeatID: repeatID,
+                scheduledDate: stored.scheduledDate,
+                dueDate: stored.dueDate,
+                budgetMonth: month,
+                accountID: item.accountID,
+                plannedItemID: item.id,
+                type: item.type,
+                label: item.label,
+                matchingString: item.matchingString,
+                repeatDays: item.repeatDays ?? 1,
+                amount: item.amount,
+                notes: item.notes
+            ))
+        }
+
+        return months.map { month in
+            PeriodicWomMonthGroup(
+                month: month,
+                occurrences: (rowsByMonth[month] ?? []).sorted {
+                    if $0.dueDate != $1.dueDate { return $0.dueDate < $1.dueDate }
+                    return $0.id < $1.id
+                }
+            )
+        }
+    }
+
+    var annualizedPeriodicRepeatCost: Decimal {
+        let date = Self.civilDate(from: nowProvider()) ?? CivilDate(year: 2000, month: 1, day: 1)!
+        guard let data = try? repository.periodicRepeatData() else { return .zero }
+        return PeriodicRepeatSchedule.annualizedCost(repeats: data.repeats, revisions: data.revisions, effectiveOn: date)
+    }
+
+    var monthlyPeriodicRepeatSavingsTarget: Decimal {
+        annualizedPeriodicRepeatCost / Decimal(12)
+    }
+
+    func monthlyPeriodicRepeatSavingsTarget(effectiveOn date: CivilDate) -> Decimal {
+        guard let data = try? repository.periodicRepeatData() else { return .zero }
+        return PeriodicRepeatSchedule.monthlySavingsTarget(
+            repeats: data.repeats,
+            revisions: data.revisions,
+            effectiveOn: date
+        )
+    }
+
+    func periodicWomOccurrence(for item: PlannedItem) -> PeriodicWomOccurrence? {
+        guard let data = try? repository.periodicRepeatData(),
+              let record = data.occurrences.first(where: { $0.plannedItemID == item.id }),
+              let repeatID = record.repeatID,
+              let repeatRecord = data.repeats.first(where: { $0.id == repeatID }),
+              let revision = data.revisions.filter({ $0.repeatID == repeatID && $0.effectiveDate <= record.scheduledDate })
+                .max(by: { $0.effectiveDate < $1.effectiveDate }) else { return nil }
+        return PeriodicWomOccurrence(
+            repeatID: repeatID,
+            scheduledDate: record.scheduledDate,
+            dueDate: record.dueDate,
+            budgetMonth: budgetMonth(for: record.dueDate),
+            accountID: item.accountID,
+            plannedItemID: item.id,
+            type: record.isOverride ? item.type : revision.type,
+            label: record.isOverride ? item.label : revision.label,
+            matchingString: record.isOverride ? item.matchingString : revision.matchingString,
+            repeatDays: revision.repeatDays,
+            amount: record.isOverride ? item.amount : revision.amount,
+            notes: record.isOverride ? item.notes : revision.notes
+        )
+    }
+
+    func periodicDueDate(for dueDay: Int, budgetMonth: YearMonth) -> CivilDate? {
+        let temporary = PlannedItem(
+            accountID: UUID(), monthKey: budgetMonth, type: .fixedDebit,
+            label: "", amount: 0, dueDay: dueDay
+        )
+        return concreteCivilDate(for: temporary)
+    }
 
     private let repository: AccountRepository
     private let shareBudgetAction: ShareBudgetAction
@@ -1042,7 +1218,19 @@ final class AppState: ObservableObject {
     }
 
     var canPopulateSelectedMonthFromPrevious: Bool {
-        !isSelectedMonthInPast && monthItems.isEmpty && !((try? repository.isMonthPopulated(selectedMonth)) ?? false)
+        selectedMonth == currentYearMonth &&
+            !currentMonthHasEntries &&
+            !((try? repository.isMonthPopulated(selectedMonth)) ?? false)
+    }
+
+    var currentMonthHasEntries: Bool {
+        ((try? repository.plannedItems(for: currentYearMonth)) ?? []).isEmpty == false
+    }
+
+    var canCopyRepeatingEntriesToNextMonth: Bool {
+        guard selectedMonth == previousMonth(of: currentYearMonth) else { return false }
+        let currentMonthWasPopulated = (try? repository.isMonthPopulated(currentYearMonth)) ?? false
+        return currentMonthHasEntries || currentMonthWasPopulated
     }
 
     var fundsTotal: Decimal {
@@ -1230,6 +1418,7 @@ final class AppState: ObservableObject {
             let accounts = try repository.accounts()
             guard let account = accounts.first else { return }
             let item = PlannedItem(
+                budgetID: account.budgetID,
                 accountID: account.id,
                 monthKey: selectedMonth,
                 type: .transfer,
@@ -1347,8 +1536,12 @@ final class AppState: ObservableObject {
             let accounts = try repository.accounts()
             guard let account = accounts.first else { return nil }
             let resolvedRepeatMode = repeatMode ?? (repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff))
+            if resolvedRepeatMode == .periodic {
+                guard let interval = repeatDays, interval > 0, dueDay != nil else { return nil }
+            }
 
             let item = PlannedItem(
+                budgetID: account.budgetID,
                 accountID: account.id,
                 monthKey: selectedMonth,
                 type: type,
@@ -1365,7 +1558,42 @@ final class AppState: ObservableObject {
                 copiesToNextMonthAutomatically: resolvedRepeatMode == .calendar && copiesToNextMonthAutomatically,
                 notes: notes
             )
-            try repository.createPlannedItem(item)
+            if resolvedRepeatMode == .periodic,
+               let repeatDays = item.repeatDays,
+               let scheduledDate = concreteCivilDate(for: item) {
+                let repeatRecord = PeriodicRepeat(
+                    id: item.recurrenceID ?? UUID(),
+                    budgetID: item.budgetID,
+                    accountID: item.accountID
+                )
+                item.recurrenceID = repeatRecord.id
+                let revision = PeriodicRepeatRevision(
+                    repeatID: repeatRecord.id,
+                    effectiveDate: scheduledDate,
+                    anchorDate: scheduledDate,
+                    repeatDays: repeatDays,
+                    type: item.type,
+                    label: item.label,
+                    matchingString: item.matchingString,
+                    amount: item.amount,
+                    notes: item.notes
+                )
+                let occurrence = PeriodicOccurrenceRecord(
+                    plannedItemID: item.id,
+                    budgetID: item.budgetID,
+                    repeatID: repeatRecord.id,
+                    scheduledDate: scheduledDate,
+                    dueDate: scheduledDate
+                )
+                try repository.createPeriodicRepeat(
+                    repeatRecord: repeatRecord,
+                    revision: revision,
+                    item: item,
+                    occurrence: occurrence
+                )
+            } else {
+                try repository.createPlannedItem(item)
+            }
             try refresh()
             return item
         } catch {
@@ -1392,22 +1620,38 @@ final class AppState: ObservableObject {
     }
 
     func sameMonthOccurrences(for item: PlannedItem) -> [PlannedItem] {
-        guard item.resolvedMonthKey == selectedMonth, item.repeatMode == .periodic else { return [] }
-        return PlannedItem.everyNDaysOccurrences(from: item, in: selectedMonth, paydayDay: dailyBudgetPaydayDay)
+        guard item.resolvedMonthKey == selectedMonth,
+              item.repeatMode == .periodic,
+              let repeatID = item.recurrenceID,
+              let group = womOccurrenceGroups.first(where: { $0.month == selectedMonth }),
+              let data = try? repository.periodicRepeatData(),
+              let repeatRecord = data.repeats.first(where: { $0.id == repeatID }) else { return [] }
+        return group.occurrences
+            .filter { $0.repeatID == repeatID && $0.plannedItemID == nil }
+            .map { occurrence in
+                PlannedItem(
+                    budgetID: repeatRecord.budgetID,
+                    accountID: occurrence.accountID,
+                    monthKey: selectedMonth,
+                    type: occurrence.type,
+                    source: .copiedFromPreviousMonth,
+                    label: occurrence.label,
+                    amount: occurrence.amount,
+                    matchingString: occurrence.matchingString,
+                    dueDay: occurrence.dueDate.day,
+                    repeatDays: occurrence.repeatDays,
+                    recurrenceID: occurrence.repeatID,
+                    repeatMode: .periodic,
+                    copiesToNextMonthAutomatically: false,
+                    notes: occurrence.notes
+                )
+            }
     }
 
     func populateSameMonth(for item: PlannedItem) {
         guard canEditSelectedMonth else { return }
         do {
-            let existingItems = try repository.plannedItems(for: selectedMonth)
-            let existingDays = Set<Int>(existingItems.compactMap { existing in
-                guard existing.recurrenceID == item.recurrenceID else { return nil }
-                return existing.dueDay
-            })
-            for occurrence in sameMonthOccurrences(for: item) {
-                guard let dueDay = occurrence.dueDay, !existingDays.contains(dueDay) else { continue }
-                try repository.createPlannedItem(occurrence)
-            }
+            try materializePeriodicOccurrences(in: selectedMonth, repeatID: item.recurrenceID)
             try refresh()
         } catch {
             print("Populate every-n-days occurrences failed: \(error)")
@@ -1508,19 +1752,7 @@ final class AppState: ObservableObject {
             let sourceItems = try repository.plannedItems(for: previousMonth(of: selectedMonth))
             try copyItems(sourceItems.filter { $0.repeatMode == .calendar }, to: selectedMonth)
 
-            let existing = try repository.plannedItems(for: selectedMonth)
-            let existingKeys = Set(existing.map { "\($0.recurrenceID?.uuidString ?? $0.id.uuidString):\($0.dueDay ?? 0)" })
-            let periodicCopies = PlannedItem.periodicOccurrences(
-                from: try repository.periodicItems(before: selectedMonth),
-                into: selectedMonth,
-                paydayDay: dailyBudgetPaydayDay
-            )
-            for copy in periodicCopies {
-                let key = "\(copy.recurrenceID?.uuidString ?? copy.id.uuidString):\(copy.dueDay ?? 0)"
-                if !existingKeys.contains(key) {
-                    try repository.createPlannedItem(copy)
-                }
-            }
+            try materializePeriodicOccurrences(in: selectedMonth)
             if autoGenerateWoMSavingsEveryMonth {
                 try ensureGeneratedWheelOfMoneySavingsItem(for: selectedMonth)
             }
@@ -1528,6 +1760,155 @@ final class AppState: ObservableObject {
             try refresh()
         } catch {
             print("Populate month failed: \(error)")
+        }
+    }
+
+    func copyRepeatingEntriesToNextMonth() {
+        guard canCopyRepeatingEntriesToNextMonth else { return }
+        let targetMonth = currentYearMonth
+
+        do {
+            let sourceItems = try repository.plannedItems(for: previousMonth(of: targetMonth))
+            try copyItems(sourceItems.filter { $0.repeatMode == .calendar }, to: targetMonth)
+
+            try materializePeriodicOccurrences(in: targetMonth)
+            if autoGenerateWoMSavingsEveryMonth {
+                try ensureGeneratedWheelOfMoneySavingsItem(for: targetMonth)
+            }
+            try repository.markMonthPopulated(targetMonth)
+            try refresh()
+        } catch {
+            print("Copy repeating entries failed: \(error)")
+        }
+    }
+
+    func savePeriodicOccurrence(
+        _ occurrence: PeriodicWomOccurrence,
+        label: String,
+        matchingString: String?,
+        amount: Decimal,
+        dueDate: CivilDate,
+        type: PlannedItemType,
+        notes: String,
+        repeatDays: Int,
+        scope: PeriodicOccurrenceEditScope
+    ) -> Bool {
+        let targetMonth = budgetMonth(for: dueDate)
+        guard canEdit(month: occurrence.budgetMonth), canEdit(month: targetMonth),
+              let data = try? repository.periodicRepeatData(),
+              let repeatRecord = data.repeats.first(where: { $0.id == occurrence.repeatID }) else { return false }
+
+        do {
+            switch scope {
+            case .thisOccurrence:
+                let existing = occurrence.plannedItemID.flatMap { id in data.plannedItems.first(where: { $0.id == id }) }
+                let item = existing ?? PlannedItem(
+                    budgetID: repeatRecord.budgetID,
+                    accountID: occurrence.accountID,
+                    monthKey: targetMonth,
+                    type: type,
+                    source: .manual,
+                    label: label,
+                    amount: amount,
+                    matchingString: normalizeMatchingString(matchingString),
+                    dueDay: dueDate.day,
+                    repeatDays: occurrence.repeatDays,
+                    recurrenceID: occurrence.repeatID,
+                    repeatMode: .periodic,
+                    isPaid: false,
+                    copiesToNextMonthAutomatically: false,
+                    notes: notes
+                )
+                item.type = type
+                item.label = label
+                item.matchingString = normalizeMatchingString(matchingString)
+                item.amount = amount
+                item.dueDay = dueDate.day
+                item.monthKey = targetMonth.rawValue
+                item.repeatDays = occurrence.repeatDays
+                item.recurrenceID = occurrence.repeatID
+                item.repeatMode = .periodic
+                item.copiesToNextMonthAutomatically = false
+                item.notes = notes
+                let record = PeriodicOccurrenceRecord(
+                    plannedItemID: item.id,
+                    budgetID: repeatRecord.budgetID,
+                    repeatID: occurrence.repeatID,
+                    scheduledDate: occurrence.scheduledDate,
+                    dueDate: dueDate,
+                    isOverride: true
+                )
+                try repository.savePeriodicOccurrence(item, record: record)
+
+            case .thisAndFuture:
+                guard dueDate >= occurrence.scheduledDate, repeatDays > 0,
+                      let oldRevision = data.revisions
+                        .filter({ $0.repeatID == occurrence.repeatID && $0.effectiveDate <= occurrence.scheduledDate })
+                        .max(by: { $0.effectiveDate < $1.effectiveDate }) else { return false }
+                let movesSchedule = dueDate != occurrence.dueDate || repeatDays != occurrence.repeatDays
+                let revision = PeriodicRepeatRevision(
+                    repeatID: occurrence.repeatID,
+                    effectiveDate: occurrence.scheduledDate,
+                    anchorDate: movesSchedule ? dueDate : oldRevision.anchorDate,
+                    repeatDays: repeatDays,
+                    type: type,
+                    label: label,
+                    matchingString: normalizeMatchingString(matchingString),
+                    amount: amount,
+                    notes: notes
+                )
+                try repository.replacePeriodicRepeatRevision(
+                    repeatID: occurrence.repeatID,
+                    from: occurrence.scheduledDate,
+                    with: revision,
+                    budgetID: repeatRecord.budgetID
+                )
+            }
+            try refresh()
+            return true
+        } catch {
+            print("Save periodic occurrence failed: \(error)")
+            return false
+        }
+    }
+
+    private func materializePeriodicOccurrences(in month: YearMonth, repeatID: UUID? = nil) throws {
+        guard let group = womOccurrenceGroups.first(where: { $0.month == month }),
+              let data = try? repository.periodicRepeatData() else { return }
+        let repeatsByID = Dictionary(uniqueKeysWithValues: data.repeats.map { ($0.id, $0) })
+        let storedIdentities = Set(data.occurrences.compactMap { record -> PeriodicOccurrenceIdentity? in
+            guard let repeatID = record.repeatID else { return nil }
+            return PeriodicOccurrenceIdentity(repeatID: repeatID, scheduledDate: record.scheduledDate)
+        })
+        for occurrence in group.occurrences where occurrence.plannedItemID == nil && (repeatID == nil || occurrence.repeatID == repeatID) {
+            guard !storedIdentities.contains(PeriodicOccurrenceIdentity(
+                repeatID: occurrence.repeatID,
+                scheduledDate: occurrence.scheduledDate
+            )), let repeatRecord = repeatsByID[occurrence.repeatID] else { continue }
+            let item = PlannedItem(
+                budgetID: repeatRecord.budgetID,
+                accountID: occurrence.accountID,
+                monthKey: month,
+                type: occurrence.type,
+                source: .copiedFromPreviousMonth,
+                label: occurrence.label,
+                amount: occurrence.amount,
+                matchingString: occurrence.matchingString,
+                dueDay: occurrence.dueDate.day,
+                repeatDays: occurrence.repeatDays,
+                recurrenceID: occurrence.repeatID,
+                repeatMode: .periodic,
+                copiesToNextMonthAutomatically: false,
+                notes: occurrence.notes
+            )
+            let record = PeriodicOccurrenceRecord(
+                plannedItemID: item.id,
+                budgetID: repeatRecord.budgetID,
+                repeatID: occurrence.repeatID,
+                scheduledDate: occurrence.scheduledDate,
+                dueDate: occurrence.dueDate
+            )
+            try repository.savePeriodicOccurrence(item, record: record)
         }
     }
 
@@ -1540,6 +1921,52 @@ final class AppState: ObservableObject {
 
     private var currentYearMonth: YearMonth {
         dailyBudgetMonthKey(for: nowProvider())
+    }
+
+    private func budgetMonth(for date: CivilDate) -> YearMonth {
+        guard dailyBudgetPaydayDay > 1 else { return YearMonth(year: date.year, month: date.month) }
+        let calendar = Self.fixedDailyCycleCalendar
+        let monthStart = calendar.date(from: DateComponents(year: date.year, month: date.month, day: 1))!
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)!.count
+        let payday = min(max(dailyBudgetPaydayDay, 1), daysInMonth)
+        guard date.day >= payday else { return YearMonth(year: date.year, month: date.month) }
+        return nextMonth(of: YearMonth(year: date.year, month: date.month))
+    }
+
+    private func concreteCivilDate(for item: PlannedItem) -> CivilDate? {
+        guard let month = item.resolvedMonthKey, let dueDay = item.dueDay,
+              (1...31).contains(dueDay) else { return nil }
+        let calendar = Self.fixedDailyCycleCalendar
+        let monthStart = calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1))!
+        let daysInMonth = calendar.range(of: .day, in: .month, for: monthStart)!.count
+        let payday = min(max(dailyBudgetPaydayDay, 1), daysInMonth)
+        let dueMonth = dailyBudgetPaydayDay <= 1 || dueDay < payday ? month : previousMonth(of: month)
+        let dueMonthStart = calendar.date(from: DateComponents(year: dueMonth.year, month: dueMonth.month, day: 1))!
+        let dueMonthDays = calendar.range(of: .day, in: .month, for: dueMonthStart)!.count
+        return CivilDate(year: dueMonth.year, month: dueMonth.month, day: min(dueDay, dueMonthDays))
+    }
+
+    private func budgetMonthStartDate(_ month: YearMonth) -> Date {
+        let calendar = Self.fixedDailyCycleCalendar
+        if dailyBudgetPaydayDay <= 1 {
+            return calendar.date(from: DateComponents(year: month.year, month: month.month, day: 1))!
+        }
+        return paydayDate(in: previousMonth(of: month), calendar: calendar)
+    }
+
+    private func budgetMonthEndDate(after month: YearMonth) -> Date {
+        let calendar = Self.fixedDailyCycleCalendar
+        let next = nextMonth(of: month)
+        if dailyBudgetPaydayDay <= 1 {
+            return calendar.date(from: DateComponents(year: next.year, month: next.month, day: 1))!
+        }
+        return paydayDate(in: month, calendar: calendar)
+    }
+
+    private static func civilDate(from date: Date) -> CivilDate? {
+        let components = fixedDailyCycleCalendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day else { return nil }
+        return CivilDate(year: year, month: month, day: day)
     }
 
     var canEditSelectedMonth: Bool {
@@ -1773,10 +2200,8 @@ final class AppState: ObservableObject {
         let existingMonthItems = try repository.plannedItems(for: month)
         guard !existingMonthItems.contains(where: { $0.label == "WoM savings" }) else { return }
 
-        let generatedAmount = WheelOfMoneyCalculator.metrics(
-            items: try repository.wheelOfMoneyItems(),
-            currentMonth: month.month
-        ).remainingAverage
+        guard let targetDate = Self.civilDate(from: budgetMonthStartDate(month)) else { return }
+        let generatedAmount = monthlyPeriodicRepeatSavingsTarget(effectiveOn: targetDate)
 
         guard let account = try repository.accounts().first else { return }
 
@@ -1796,8 +2221,40 @@ final class AppState: ObservableObject {
 
     private func copyItems(_ sourceItems: [PlannedItem], to month: YearMonth) throws {
         for copy in PlannedItem.copiedItems(from: sourceItems, into: month, paydayDay: dailyBudgetPaydayDay) {
-            try repository.createPlannedItem(copy)
+            try saveOrUpdateRepeatingCopy(copy)
         }
+    }
+
+    private func saveOrUpdateRepeatingCopy(_ copy: PlannedItem) throws {
+        let matchingString = copy.matchingString?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let matchingString, !matchingString.isEmpty, let dueDay = copy.dueDay else {
+            try repository.createPlannedItem(copy)
+            return
+        }
+
+        let existing = try repository.plannedItems(for: copy.resolvedMonthKey ?? currentYearMonth)
+            .first(where: {
+                $0.accountID == copy.accountID &&
+                    $0.matchingString == matchingString &&
+                    $0.dueDay == dueDay
+            })
+        guard let existing else {
+            try repository.createPlannedItem(copy)
+            return
+        }
+
+        existing.label = copy.label
+        existing.matchingString = matchingString
+        existing.amount = copy.amount
+        existing.dueDay = copy.dueDay
+        existing.dueText = copy.dueText
+        existing.repeatDays = copy.repeatDays
+        existing.recurrenceID = copy.recurrenceID
+        existing.repeatMode = copy.repeatMode
+        existing.importedPostedAt = copy.importedPostedAt
+        existing.copiesToNextMonthAutomatically = copy.copiesToNextMonthAutomatically
+        existing.notes = copy.notes
+        try repository.savePlannedItem(existing)
     }
 
     private func loadPersistedBudgetState() throws {

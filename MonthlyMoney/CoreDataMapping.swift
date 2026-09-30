@@ -9,6 +9,10 @@ enum CoreDataEntityName {
     static let transaction = "CDTransaction"
     static let importedTransactionRecord = "CDImportedTransactionRecord"
     static let wheelOfMoneyItem = "CDWheelOfMoneyItem"
+    static let periodicRepeat = "CDPeriodicRepeat"
+    static let periodicRepeatRevision = "CDPeriodicRepeatRevision"
+    static let periodicRepeatSkip = "CDPeriodicRepeatSkip"
+    static let periodicOccurrence = "CDPeriodicOccurrence"
 }
 
 enum CoreDataModelBuilder {
@@ -16,6 +20,7 @@ enum CoreDataModelBuilder {
     static let v3Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: false, versionIdentifier: "MonthlyMoney.v3")
     static let v4Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, versionIdentifier: "MonthlyMoney.v4")
     static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, versionIdentifier: "MonthlyMoney.v5")
+    static let v6Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, includePeriodicRepeats: true, versionIdentifier: "MonthlyMoney.v6")
 
     static func makeModel(
         includeEveryNDaysAttributes: Bool = true,
@@ -23,6 +28,7 @@ enum CoreDataModelBuilder {
         includePopulatedMonth: Bool = true,
         includeImportedPostedAt: Bool = true,
         includeAllowsPreviousMonthEditing: Bool = false,
+        includePeriodicRepeats: Bool = false,
         versionIdentifier: String = "MonthlyMoney.v4"
     ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -36,6 +42,10 @@ enum CoreDataModelBuilder {
         let importedTransactionRecordEntity = makeImportedTransactionRecordEntity()
         let wheelOfMoneyItemEntity = makeWheelOfMoneyItemEntity()
         let populatedMonthEntity = makePopulatedMonthEntity()
+        let periodicRepeatEntity = includePeriodicRepeats ? makePeriodicRepeatEntity() : nil
+        let periodicRepeatRevisionEntity = includePeriodicRepeats ? makePeriodicRepeatRevisionEntity() : nil
+        let periodicRepeatSkipEntity = includePeriodicRepeats ? makePeriodicRepeatSkipEntity() : nil
+        let periodicOccurrenceEntity = includePeriodicRepeats ? makePeriodicOccurrenceEntity() : nil
 
         let budgetAccounts = relationship(
             "accounts",
@@ -151,6 +161,37 @@ enum CoreDataModelBuilder {
             populatedMonthEntity.properties.append(populatedMonthBudget)
         }
 
+        if let periodicRepeatEntity,
+           let periodicRepeatRevisionEntity,
+           let periodicRepeatSkipEntity,
+           let periodicOccurrenceEntity {
+            let budgetRepeats = relationship("periodicRepeats", destination: periodicRepeatEntity, minCount: 0, maxCount: 0, deleteRule: .cascadeDeleteRule)
+            let repeatBudget = relationship("budget", destination: budgetEntity, minCount: 0, maxCount: 1, deleteRule: .nullifyDeleteRule)
+            budgetRepeats.inverseRelationship = repeatBudget
+            repeatBudget.inverseRelationship = budgetRepeats
+
+            let repeatRevisions = relationship("revisions", destination: periodicRepeatRevisionEntity, minCount: 0, maxCount: 0, deleteRule: .cascadeDeleteRule)
+            let revisionRepeat = relationship("repeat", destination: periodicRepeatEntity, minCount: 0, maxCount: 1, deleteRule: .nullifyDeleteRule)
+            repeatRevisions.inverseRelationship = revisionRepeat
+            revisionRepeat.inverseRelationship = repeatRevisions
+
+            let repeatSkips = relationship("skips", destination: periodicRepeatSkipEntity, minCount: 0, maxCount: 0, deleteRule: .cascadeDeleteRule)
+            let skipRepeat = relationship("repeat", destination: periodicRepeatEntity, minCount: 0, maxCount: 1, deleteRule: .nullifyDeleteRule)
+            repeatSkips.inverseRelationship = skipRepeat
+            skipRepeat.inverseRelationship = repeatSkips
+
+            let repeatOccurrences = relationship("occurrences", destination: periodicOccurrenceEntity, minCount: 0, maxCount: 0, deleteRule: .cascadeDeleteRule)
+            let occurrenceRepeat = relationship("repeat", destination: periodicRepeatEntity, minCount: 0, maxCount: 1, deleteRule: .nullifyDeleteRule)
+            repeatOccurrences.inverseRelationship = occurrenceRepeat
+            occurrenceRepeat.inverseRelationship = repeatOccurrences
+
+            budgetEntity.properties.append(budgetRepeats)
+            periodicRepeatEntity.properties.append(contentsOf: [repeatBudget, repeatRevisions, repeatSkips, repeatOccurrences])
+            periodicRepeatRevisionEntity.properties.append(revisionRepeat)
+            periodicRepeatSkipEntity.properties.append(skipRepeat)
+            periodicOccurrenceEntity.properties.append(occurrenceRepeat)
+        }
+
         if includeRepeatMode {
             plannedItemEntity.properties.append(attribute("repeatModeRaw", .stringAttributeType, isOptional: true))
         }
@@ -163,6 +204,12 @@ enum CoreDataModelBuilder {
         }
         var entities = [budgetEntity, accountEntity, plannedItemEntity, transactionEntity, importedTransactionRecordEntity, wheelOfMoneyItemEntity]
         if includePopulatedMonth { entities.append(populatedMonthEntity) }
+        if let periodicRepeatEntity,
+           let periodicRepeatRevisionEntity,
+           let periodicRepeatSkipEntity,
+           let periodicOccurrenceEntity {
+            entities.append(contentsOf: [periodicRepeatEntity, periodicRepeatRevisionEntity, periodicRepeatSkipEntity, periodicOccurrenceEntity])
+        }
         model.entities = entities
         model.versionIdentifiers = [versionIdentifier]
         return model
@@ -325,6 +372,65 @@ enum CoreDataModelBuilder {
         return entity
     }
 
+    private static func makePeriodicRepeatEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.periodicRepeat
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("id", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("budgetID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("accountID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("endDateRaw", .stringAttributeType, isOptional: true)
+        ]
+        return entity
+    }
+
+    private static func makePeriodicRepeatRevisionEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.periodicRepeatRevision
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("id", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("repeatID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("effectiveDateRaw", .stringAttributeType, defaultValue: "2000-01-01"),
+            attribute("anchorDateRaw", .stringAttributeType, defaultValue: "2000-01-01"),
+            attribute("repeatDays", .integer32AttributeType, defaultValue: 1),
+            attribute("typeRaw", .stringAttributeType, defaultValue: PlannedItemType.fixedDebit.rawValue),
+            attribute("label", .stringAttributeType, defaultValue: ""),
+            attribute("matchingString", .stringAttributeType, isOptional: true),
+            attribute("amount", .decimalAttributeType, defaultValue: NSDecimalNumber.zero),
+            attribute("notes", .stringAttributeType, defaultValue: "")
+        ]
+        return entity
+    }
+
+    private static func makePeriodicRepeatSkipEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.periodicRepeatSkip
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("id", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("repeatID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("scheduledDateRaw", .stringAttributeType, defaultValue: "2000-01-01")
+        ]
+        return entity
+    }
+
+    private static func makePeriodicOccurrenceEntity() -> NSEntityDescription {
+        let entity = NSEntityDescription()
+        entity.name = CoreDataEntityName.periodicOccurrence
+        entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
+        entity.properties = [
+            attribute("plannedItemID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("budgetID", .UUIDAttributeType, defaultValue: UUID()),
+            attribute("repeatID", .UUIDAttributeType, isOptional: true),
+            attribute("scheduledDateRaw", .stringAttributeType, defaultValue: "2000-01-01"),
+            attribute("dueDateRaw", .stringAttributeType, defaultValue: "2000-01-01"),
+            attribute("isOverride", .booleanAttributeType, defaultValue: false)
+        ]
+        return entity
+    }
+
     private static func attribute(
         _ name: String,
         _ type: NSAttributeType,
@@ -383,20 +489,10 @@ final class CoreDataV2ToV3MigrationPolicy: NSEntityMigrationPolicy {
         let dueDay = (sourceInstance.value(forKey: "dueDay") as? NSNumber)?.intValue
         let repeatDays = (sourceInstance.value(forKey: "repeatDays") as? NSNumber)?.intValue
         let copiesAutomatically = sourceInstance.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
-        let isLegacyFloating = dueDay == nil && repeatDays == nil && copiesAutomatically
-        if isLegacyFloating {
-            let seriesKey = Self.legacySeriesKey(for: sourceInstance)
-            let recurrenceID = Self.stableRecurrenceID(for: seriesKey)
-            destination.setValue(1, forKey: "dueDay")
-            destination.setValue(28, forKey: "repeatDays")
-            destination.setValue(recurrenceID, forKey: "recurrenceID")
-            destination.setValue(RepeatMode.periodic.rawValue, forKey: "repeatModeRaw")
-        } else {
-            let mode: RepeatMode = repeatDays != nil
-                ? .periodic
-                : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
-            destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
-        }
+        let mode: RepeatMode = (repeatDays ?? 0) > 0
+            ? .periodic
+            : (dueDay != nil && copiesAutomatically ? .calendar : .oneOff)
+        destination.setValue(mode.rawValue, forKey: "repeatModeRaw")
 
         manager.associate(
             sourceInstance: sourceInstance,
@@ -534,10 +630,10 @@ enum CoreDataMapping {
         let label = managedObject.value(forKey: "label") as? String ?? ""
         let matchingString = managedObject.value(forKey: "matchingString") as? String
         let amount = (managedObject.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0
-        var dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
+        let dueDay = (managedObject.value(forKey: "dueDay") as? NSNumber)?.intValue
         let dueText = managedObject.value(forKey: "dueText") as? String
-        var repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
-        var recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
+        let repeatDays = (managedObject.value(forKey: "repeatDays") as? NSNumber)?.intValue
+        let recurrenceID = managedObject.value(forKey: "recurrenceID") as? UUID
         let storedRepeatMode = managedObject.entity.attributesByName["repeatModeRaw"] != nil
             ? managedObject.value(forKey: "repeatModeRaw") as? String
             : nil
@@ -548,13 +644,6 @@ enum CoreDataMapping {
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
         let notes = managedObject.value(forKey: "notes") as? String ?? ""
-
-        let isLegacyFloating = storedRepeatMode == nil && dueDay == nil && repeatDays == nil && copiesToNextMonthAutomatically
-        if isLegacyFloating {
-            dueDay = 1
-            repeatDays = 28
-            recurrenceID = id
-        }
 
         return PlannedItem(
             id: id,
@@ -570,7 +659,7 @@ enum CoreDataMapping {
             dueText: dueText,
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
-            repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? (isLegacyFloating || repeatDays != nil ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
+            repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? ((repeatDays ?? 0) > 0 ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),
             importedPostedAt: importedPostedAt,
             isPaid: isPaid,
             copiesToNextMonthAutomatically: copiesToNextMonthAutomatically,
@@ -675,6 +764,89 @@ enum CoreDataMapping {
             isPaid: managedObject.value(forKey: "isPaid") as? Bool ?? false,
             notes: managedObject.value(forKey: "notes") as? String ?? "",
             isAutoGeneratedSavingsEntry: managedObject.value(forKey: "isAutoGeneratedSavingsEntry") as? Bool ?? false
+        )
+    }
+
+    static func apply(_ repeatRecord: PeriodicRepeat, to object: NSManagedObject) {
+        object.setValue(repeatRecord.id, forKey: "id")
+        object.setValue(repeatRecord.budgetID, forKey: "budgetID")
+        object.setValue(repeatRecord.accountID, forKey: "accountID")
+        object.setValue(repeatRecord.endDateRaw, forKey: "endDateRaw")
+    }
+
+    static func periodicRepeat(from object: NSManagedObject) -> PeriodicRepeat {
+        PeriodicRepeat(
+            id: object.value(forKey: "id") as? UUID ?? UUID(),
+            budgetID: object.value(forKey: "budgetID") as? UUID ?? UUID(),
+            accountID: object.value(forKey: "accountID") as? UUID ?? UUID(),
+            endDate: (object.value(forKey: "endDateRaw") as? String).flatMap(CivilDate.init(rawValue:))
+        )
+    }
+
+    static func apply(_ revision: PeriodicRepeatRevision, to object: NSManagedObject) {
+        object.setValue(revision.id, forKey: "id")
+        object.setValue(revision.repeatID, forKey: "repeatID")
+        object.setValue(revision.effectiveDateRaw, forKey: "effectiveDateRaw")
+        object.setValue(revision.anchorDateRaw, forKey: "anchorDateRaw")
+        object.setValue(Int32(revision.repeatDays), forKey: "repeatDays")
+        object.setValue(revision.type.rawValue, forKey: "typeRaw")
+        object.setValue(revision.label, forKey: "label")
+        object.setValue(revision.matchingString, forKey: "matchingString")
+        object.setValue(revision.amount as NSDecimalNumber, forKey: "amount")
+        object.setValue(revision.notes, forKey: "notes")
+    }
+
+    static func periodicRepeatRevision(from object: NSManagedObject) -> PeriodicRepeatRevision? {
+        guard let effective = CivilDate(rawValue: object.value(forKey: "effectiveDateRaw") as? String ?? ""),
+              let anchor = CivilDate(rawValue: object.value(forKey: "anchorDateRaw") as? String ?? "") else { return nil }
+        return PeriodicRepeatRevision(
+            id: object.value(forKey: "id") as? UUID ?? UUID(),
+            repeatID: object.value(forKey: "repeatID") as? UUID ?? UUID(),
+            effectiveDate: effective,
+            anchorDate: anchor,
+            repeatDays: Int(object.value(forKey: "repeatDays") as? Int32 ?? 1),
+            type: PlannedItemType(rawValue: object.value(forKey: "typeRaw") as? String ?? "") ?? .fixedDebit,
+            label: object.value(forKey: "label") as? String ?? "",
+            matchingString: object.value(forKey: "matchingString") as? String,
+            amount: (object.value(forKey: "amount") as? NSDecimalNumber)?.decimalValue ?? 0,
+            notes: object.value(forKey: "notes") as? String ?? ""
+        )
+    }
+
+    static func apply(_ skip: PeriodicRepeatSkip, to object: NSManagedObject) {
+        object.setValue(skip.id, forKey: "id")
+        object.setValue(skip.repeatID, forKey: "repeatID")
+        object.setValue(skip.scheduledDateRaw, forKey: "scheduledDateRaw")
+    }
+
+    static func periodicRepeatSkip(from object: NSManagedObject) -> PeriodicRepeatSkip? {
+        guard let date = CivilDate(rawValue: object.value(forKey: "scheduledDateRaw") as? String ?? "") else { return nil }
+        return PeriodicRepeatSkip(
+            id: object.value(forKey: "id") as? UUID ?? UUID(),
+            repeatID: object.value(forKey: "repeatID") as? UUID ?? UUID(),
+            scheduledDate: date
+        )
+    }
+
+    static func apply(_ occurrence: PeriodicOccurrenceRecord, to object: NSManagedObject) {
+        object.setValue(occurrence.plannedItemID, forKey: "plannedItemID")
+        object.setValue(occurrence.budgetID, forKey: "budgetID")
+        object.setValue(occurrence.repeatID, forKey: "repeatID")
+        object.setValue(occurrence.scheduledDateRaw, forKey: "scheduledDateRaw")
+        object.setValue(occurrence.dueDateRaw, forKey: "dueDateRaw")
+        object.setValue(occurrence.isOverride, forKey: "isOverride")
+    }
+
+    static func periodicOccurrence(from object: NSManagedObject) -> PeriodicOccurrenceRecord? {
+        guard let scheduledDate = CivilDate(rawValue: object.value(forKey: "scheduledDateRaw") as? String ?? ""),
+              let dueDate = CivilDate(rawValue: object.value(forKey: "dueDateRaw") as? String ?? "") else { return nil }
+        return PeriodicOccurrenceRecord(
+            plannedItemID: object.value(forKey: "plannedItemID") as? UUID ?? UUID(),
+            budgetID: object.value(forKey: "budgetID") as? UUID ?? UUID(),
+            repeatID: object.value(forKey: "repeatID") as? UUID,
+            scheduledDate: scheduledDate,
+            dueDate: dueDate,
+            isOverride: object.value(forKey: "isOverride") as? Bool ?? false
         )
     }
 }

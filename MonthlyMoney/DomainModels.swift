@@ -37,6 +37,111 @@ enum RepeatMode: String, Codable, CaseIterable {
     case periodic = "periodic"
 }
 
+@Model
+final class PeriodicRepeatRevision {
+    var id: UUID = UUID()
+    var repeatID: UUID = UUID()
+    var effectiveDateRaw: String = "2000-01-01"
+    var anchorDateRaw: String = "2000-01-01"
+    var repeatDays: Int = 1
+    var type: PlannedItemType = PlannedItemType.fixedDebit
+    var label: String = ""
+    var matchingString: String?
+    var amount: Decimal = 0
+    var notes: String = ""
+
+    var effectiveDate: CivilDate { CivilDate(rawValue: effectiveDateRaw)! }
+    var anchorDate: CivilDate { CivilDate(rawValue: anchorDateRaw)! }
+
+    init(
+        id: UUID = UUID(),
+        repeatID: UUID,
+        effectiveDate: CivilDate,
+        anchorDate: CivilDate,
+        repeatDays: Int,
+        type: PlannedItemType,
+        label: String,
+        matchingString: String?,
+        amount: Decimal,
+        notes: String
+    ) {
+        self.id = id
+        self.repeatID = repeatID
+        self.effectiveDateRaw = effectiveDate.rawValue
+        self.anchorDateRaw = anchorDate.rawValue
+        self.repeatDays = repeatDays
+        self.type = type
+        self.label = label
+        self.matchingString = matchingString
+        self.amount = amount
+        self.notes = notes
+    }
+}
+
+@Model
+final class PeriodicRepeat {
+    var id: UUID = UUID()
+    var budgetID: UUID = UUID()
+    var accountID: UUID = UUID()
+    var endDateRaw: String?
+
+    var endDate: CivilDate? {
+        get { endDateRaw.flatMap(CivilDate.init(rawValue:)) }
+        set { endDateRaw = newValue?.rawValue }
+    }
+
+    init(id: UUID = UUID(), budgetID: UUID, accountID: UUID, endDate: CivilDate? = nil) {
+        self.id = id
+        self.budgetID = budgetID
+        self.accountID = accountID
+        self.endDateRaw = endDate?.rawValue
+    }
+}
+
+@Model
+final class PeriodicRepeatSkip {
+    var id: UUID = UUID()
+    var repeatID: UUID = UUID()
+    var scheduledDateRaw: String = "2000-01-01"
+
+    var scheduledDate: CivilDate { CivilDate(rawValue: scheduledDateRaw)! }
+
+    init(id: UUID = UUID(), repeatID: UUID, scheduledDate: CivilDate) {
+        self.id = id
+        self.repeatID = repeatID
+        self.scheduledDateRaw = scheduledDate.rawValue
+    }
+}
+
+@Model
+final class PeriodicOccurrenceRecord {
+    var plannedItemID: UUID = UUID()
+    var budgetID: UUID = UUID()
+    var repeatID: UUID?
+    var scheduledDateRaw: String = "2000-01-01"
+    var dueDateRaw: String = "2000-01-01"
+    var isOverride: Bool = false
+
+    var scheduledDate: CivilDate { CivilDate(rawValue: scheduledDateRaw)! }
+    var dueDate: CivilDate { CivilDate(rawValue: dueDateRaw)! }
+
+    init(
+        plannedItemID: UUID,
+        budgetID: UUID,
+        repeatID: UUID?,
+        scheduledDate: CivilDate,
+        dueDate: CivilDate,
+        isOverride: Bool = false
+    ) {
+        self.plannedItemID = plannedItemID
+        self.budgetID = budgetID
+        self.repeatID = repeatID
+        self.scheduledDateRaw = scheduledDate.rawValue
+        self.dueDateRaw = dueDate.rawValue
+        self.isOverride = isOverride
+    }
+}
+
 enum WheelOfMoneyMonth: Int, Codable, CaseIterable {
     case january = 1
     case february = 2
