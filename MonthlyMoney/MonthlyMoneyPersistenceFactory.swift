@@ -136,6 +136,7 @@ enum MonthlyMoneySchemaMigrationPlan: SchemaMigrationPlan {
             guard let latest = ordered.last,
                   let interval = latest.0.repeatDays else { continue }
             let repeatRecord = PeriodicRepeat(
+                id: key.recurrenceID,
                 budgetID: key.budgetID,
                 accountID: key.accountID
             )

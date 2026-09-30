@@ -220,7 +220,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
             let repeatObject = NSEntityDescription.insertNewObject(
                 forEntityName: CoreDataEntityName.periodicRepeat, into: context
             )
-            repeatObject.setValue(UUID(), forKey: "id")
+            repeatObject.setValue(key.recurrenceID, forKey: "id")
             repeatObject.setValue(key.budgetID, forKey: "budgetID")
             repeatObject.setValue(key.accountID, forKey: "accountID")
             repeatObject.setValue(budget, forKey: "budget")

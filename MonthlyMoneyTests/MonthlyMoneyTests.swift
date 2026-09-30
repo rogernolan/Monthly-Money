@@ -629,6 +629,7 @@ final class MonthlyMoneyTests: XCTestCase {
         let plannedItems = try container.mainContext.fetch(FetchDescriptor<PlannedItem>())
 
         XCTAssertEqual(repeats.count, 1)
+        XCTAssertEqual(repeats.first?.id, recurrenceID)
         XCTAssertEqual(revisions.count, 1)
         XCTAssertEqual(revisions.first?.anchorDate, CivilDate(year: 2026, month: 5, day: 30))
         XCTAssertEqual(occurrences.count, 2)
@@ -636,6 +637,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(occurrences.first(where: { $0.plannedItemID == latestID })?.dueDate, CivilDate(year: 2026, month: 5, day: 30))
         XCTAssertEqual(plannedItems.first(where: { $0.id == latestID })?.monthKey, "2026-06")
         XCTAssertEqual(plannedItems.first(where: { $0.id == latestID })?.dueDay, 30)
+        XCTAssertEqual(plannedItems.first(where: { $0.id == latestID })?.recurrenceID, recurrenceID)
         XCTAssertTrue(plannedItems.first(where: { $0.id == latestID })?.isPaid ?? false)
         XCTAssertFalse(occurrences.contains { $0.plannedItemID == invalidID })
     }
@@ -734,10 +736,12 @@ final class MonthlyMoneyTests: XCTestCase {
         let savedItem = try XCTUnwrap(migrated.fetchPlannedItem(id: plannedItemID))
 
         XCTAssertEqual(repeats.count, 1)
+        XCTAssertEqual(repeats.first?.id, recurrenceID)
         XCTAssertEqual(revisions.first?.anchorDate, CivilDate(year: 2026, month: 5, day: 30))
         XCTAssertEqual(occurrences.first?.scheduledDate, CivilDate(year: 2026, month: 5, day: 30))
         XCTAssertEqual(savedItem.monthKey, "2026-06")
         XCTAssertEqual(savedItem.dueDay, 30)
+        XCTAssertEqual(savedItem.recurrenceID, recurrenceID)
         XCTAssertTrue(savedItem.isPaid)
         XCTAssertEqual(savedItem.importedPostedAt, Self.date(year: 2026, month: 5, day: 31))
     }
@@ -3728,6 +3732,160 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(updated.label, "Updated gym membership")
         XCTAssertEqual(updated.amount, 40)
         XCTAssertEqual(updated.repeatDays, 15)
+    }
+
+    func testPeriodicOverrideDoesNotBlockPopulationOfRemainingOccurrences() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+
+        await state.bootstrapIfNeeded()
+        let anchor = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1, repeatDays: 5
+        ))
+        let occurrence = try XCTUnwrap(state.womOccurrenceGroups.flatMap(\.occurrences).first {
+            $0.repeatID == anchor.recurrenceID && $0.plannedItemID == nil
+        })
+
+        XCTAssertTrue(state.savePeriodicOccurrence(
+            occurrence,
+            label: "Medicine",
+            matchingString: nil,
+            amount: 12,
+            dueDate: occurrence.dueDate,
+            type: .fixedDebit,
+            notes: "",
+            repeatDays: occurrence.repeatDays,
+            scope: .thisOccurrence
+        ))
+        XCTAssertTrue(state.currentMonthHasEntries)
+        XCTAssertTrue(state.canPopulateSelectedMonthFromPrevious)
+
+        state.populateSelectedMonthFromPrevious()
+
+        let data = try repository.periodicRepeatData()
+        let currentMonthOccurrences = data.occurrences.filter {
+            $0.repeatID == anchor.recurrenceID
+                && $0.dueDate.year == state.selectedMonth.year
+                && $0.dueDate.month == state.selectedMonth.month
+        }
+        XCTAssertGreaterThan(currentMonthOccurrences.count, 1)
+        XCTAssertTrue(try repository.isMonthPopulated(state.selectedMonth))
+    }
+
+    func testThisAndFutureEditReconcilesMaterializedRowsAndPreservesPaidAndOverriddenRows() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+
+        await state.bootstrapIfNeeded()
+        let anchor = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1, repeatDays: 5
+        ))
+
+        let projections = state.womOccurrenceGroups.flatMap(\.occurrences).filter {
+            $0.repeatID == anchor.recurrenceID && $0.plannedItemID == nil
+        }
+        for occurrence in projections {
+            let item = PlannedItem(
+                budgetID: anchor.budgetID,
+                accountID: occurrence.accountID,
+                monthKey: occurrence.budgetMonth,
+                type: occurrence.type,
+                source: .copiedFromPreviousMonth,
+                label: occurrence.label,
+                amount: occurrence.amount,
+                matchingString: occurrence.matchingString,
+                dueDay: occurrence.dueDate.day,
+                repeatDays: occurrence.repeatDays,
+                recurrenceID: occurrence.repeatID,
+                repeatMode: .periodic,
+                copiesToNextMonthAutomatically: false,
+                notes: occurrence.notes
+            )
+            try repository.savePeriodicOccurrence(item, record: PeriodicOccurrenceRecord(
+                plannedItemID: item.id,
+                budgetID: item.budgetID,
+                repeatID: occurrence.repeatID,
+                scheduledDate: occurrence.scheduledDate,
+                dueDate: occurrence.dueDate
+            ))
+        }
+        try state.refresh()
+
+        let projected = state.womOccurrenceGroups.flatMap(\.occurrences).filter {
+            $0.repeatID == anchor.recurrenceID && $0.plannedItemID != nil
+        }.sorted { $0.scheduledDate < $1.scheduledDate }
+        let paidOccurrence = try XCTUnwrap(projected.first(where: { $0.scheduledDate.day == 11 }))
+        let paidItem = try XCTUnwrap(try repository.periodicRepeatData().plannedItems.first { $0.id == paidOccurrence.plannedItemID })
+        paidItem.isPaid = true
+        try repository.savePlannedItem(paidItem)
+
+        let overriddenOccurrence = try XCTUnwrap(projected.first(where: { $0.scheduledDate.day == 16 }))
+        XCTAssertTrue(state.savePeriodicOccurrence(
+            overriddenOccurrence,
+            label: "Medicine override",
+            matchingString: nil,
+            amount: 99,
+            dueDate: overriddenOccurrence.dueDate,
+            type: .fixedDebit,
+            notes: "Personal override",
+            repeatDays: overriddenOccurrence.repeatDays,
+            scope: .thisOccurrence
+        ))
+
+        let importedOccurrence = try XCTUnwrap(projected.first(where: { $0.scheduledDate.day == 21 }))
+        let importedItem = try XCTUnwrap(try repository.periodicRepeatData().plannedItems.first { $0.id == importedOccurrence.plannedItemID })
+        try repository.createImportedTransactionRecord(ImportedTransactionRecord(
+            budgetID: importedItem.budgetID,
+            accountID: importedItem.accountID,
+            sourceKind: "test",
+            sourceAccountIdentifier: "test-account",
+            externalTransactionID: "medicine-import",
+            postedAt: Self.date(year: 2026, month: 6, day: 21),
+            amount: -10,
+            payee: "Medicine",
+            transactionType: "DIRECTDEBIT",
+            rawSourcePayload: "{}",
+            appliedPlannedItemID: importedItem.id
+        ))
+
+        let futureOccurrence = try XCTUnwrap(state.womOccurrenceGroups.flatMap(\.occurrences).first {
+            $0.repeatID == anchor.recurrenceID && $0.scheduledDate.day == 6 && $0.plannedItemID != nil
+        })
+        XCTAssertTrue(state.savePeriodicOccurrence(
+            futureOccurrence,
+            label: "Updated medicine",
+            matchingString: nil,
+            amount: 20,
+            dueDate: CivilDate(year: 2026, month: 6, day: 7)!,
+            type: .fixedDebit,
+            notes: "Updated",
+            repeatDays: 6,
+            scope: .thisAndFuture
+        ))
+
+        let reconciled = try repository.periodicRepeatData()
+        let paidAfter = try XCTUnwrap(reconciled.plannedItems.first { $0.id == paidItem.id })
+        let overriddenAfter = try XCTUnwrap(reconciled.plannedItems.first { $0.id == overriddenOccurrence.plannedItemID })
+        let importedAfter = try XCTUnwrap(reconciled.plannedItems.first { $0.id == importedItem.id })
+        let updatedOccurrences = reconciled.occurrences.filter {
+            $0.repeatID == anchor.recurrenceID && $0.scheduledDate >= futureOccurrence.scheduledDate
+        }
+        XCTAssertTrue(paidAfter.isPaid)
+        XCTAssertEqual(paidAfter.amount, 10)
+        XCTAssertEqual(overriddenAfter.amount, 99)
+        XCTAssertEqual(overriddenAfter.label, "Medicine override")
+        XCTAssertEqual(importedAfter.amount, 10)
+        XCTAssertEqual(importedAfter.dueDay, 21)
+        let movedItemID = try XCTUnwrap(futureOccurrence.plannedItemID)
+        let movedItem = try XCTUnwrap(reconciled.plannedItems.first { $0.id == movedItemID })
+        let movedRecord = try XCTUnwrap(reconciled.occurrences.first { $0.plannedItemID == movedItemID })
+        XCTAssertEqual(movedItem.amount, 20)
+        XCTAssertEqual(movedItem.dueDay, 7)
+        XCTAssertEqual(movedItem.repeatDays, 6)
+        XCTAssertEqual(movedRecord.scheduledDate, CivilDate(year: 2026, month: 6, day: 7)!)
+        XCTAssertTrue(updatedOccurrences.contains { record in
+            reconciled.plannedItems.first(where: { $0.id == record.plannedItemID })?.amount == 20
+        })
     }
 
     func testUpdatingMonthItemPersistsMatchingStringAndAllowsClearing() async throws {
