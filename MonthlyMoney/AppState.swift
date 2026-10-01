@@ -411,6 +411,8 @@ final class AppState: ObservableObject {
             PeriodicOccurrenceIdentity(repeatID: $0.repeatID!, scheduledDate: $0.scheduledDate)
         }
         let skipsByRepeat = Dictionary(grouping: data.skips, by: \.repeatID)
+        let skippedDatesByRepeat = Dictionary(grouping: data.skips, by: \.repeatID)
+            .mapValues { Set($0.map(\.scheduledDate)) }
         let repeatsByID = Dictionary(uniqueKeysWithValues: data.repeats.map { ($0.id, $0) })
         var rowsByMonth: [YearMonth: [PeriodicWomOccurrence]] = Dictionary(uniqueKeysWithValues: months.map { ($0, []) })
         var emitted = Set<PeriodicOccurrenceIdentity>()
@@ -452,6 +454,7 @@ final class AppState: ObservableObject {
         for stored in occurrenceRecords where stored.isOverride {
             guard let repeatID = stored.repeatID,
                   !emitted.contains(PeriodicOccurrenceIdentity(repeatID: repeatID, scheduledDate: stored.scheduledDate)),
+                  !skippedDatesByRepeat[repeatID, default: []].contains(stored.scheduledDate),
                   let repeatRecord = repeatsByID[repeatID],
                   repeatRecord.endDate.map({ stored.scheduledDate < $0 }) ?? true,
                   let item = plannedItemsByID[stored.plannedItemID] else { continue }
@@ -1879,6 +1882,74 @@ final class AppState: ObservableObject {
         } catch {
             print("Save periodic occurrence failed: \(error)")
             return false
+        }
+    }
+
+    @discardableResult
+    func deletePeriodicOccurrence(
+        _ occurrence: PeriodicWomOccurrence,
+        scope: PeriodicOccurrenceEditScope
+    ) -> Bool {
+        guard canEdit(month: occurrence.budgetMonth),
+              let data = try? repository.periodicRepeatData(),
+              let repeatRecord = data.repeats.first(where: { $0.id == occurrence.repeatID }) else { return false }
+
+        do {
+            switch scope {
+            case .thisOccurrence:
+                if !data.skips.contains(where: {
+                    $0.repeatID == occurrence.repeatID && $0.scheduledDate == occurrence.scheduledDate
+                }) {
+                    try repository.savePeriodicRepeatSkips(
+                        [PeriodicRepeatSkip(repeatID: occurrence.repeatID, scheduledDate: occurrence.scheduledDate)],
+                        budgetID: repeatRecord.budgetID
+                    )
+                }
+                try deleteGeneratedPeriodicOccurrences(
+                    repeatID: occurrence.repeatID,
+                    from: occurrence.scheduledDate,
+                    through: occurrence.scheduledDate,
+                    data: data
+                )
+
+            case .thisAndFuture:
+                repeatRecord.endDate = occurrence.scheduledDate
+                try repository.savePeriodicRepeat(repeatRecord)
+                try deleteGeneratedPeriodicOccurrences(
+                    repeatID: occurrence.repeatID,
+                    from: occurrence.scheduledDate,
+                    through: nil,
+                    data: data
+                )
+            }
+
+            try refresh()
+            return true
+        } catch {
+            print("Delete periodic occurrence failed: \(error)")
+            return false
+        }
+    }
+
+    private func deleteGeneratedPeriodicOccurrences(
+        repeatID: UUID,
+        from boundary: CivilDate,
+        through endBoundary: CivilDate?,
+        data: PeriodicRepeatData
+    ) throws {
+        let plannedItemsByID = Dictionary(uniqueKeysWithValues: data.plannedItems.map { ($0.id, $0) })
+        let recordsToDelete = data.occurrences.filter { record in
+            guard record.repeatID == repeatID,
+                  record.scheduledDate >= boundary,
+                  endBoundary.map({ record.scheduledDate <= $0 }) ?? true,
+                  let item = plannedItemsByID[record.plannedItemID] else { return false }
+            return !record.isOverride
+                && !item.isPaid
+                && item.importedPostedAt == nil
+                && linkedImportedPostedAt(for: item) == nil
+        }
+        for record in recordsToDelete {
+            try repository.deletePlannedItem(id: record.plannedItemID)
         }
     }
 

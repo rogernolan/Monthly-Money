@@ -61,6 +61,12 @@ struct WheelOfMoneyView: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityIdentifier("wom-occurrence-\(occurrence.id)")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("Delete", systemImage: "trash", role: .destructive) {
+                                    _ = state.deletePeriodicOccurrence(occurrence, scope: .thisOccurrence)
+                                }
+                                .accessibilityIdentifier("wom-occurrence-delete-\(occurrence.id)")
+                            }
                         }
                     }
                 }
@@ -165,6 +171,7 @@ private struct PeriodicWomOccurrenceEditorView: View {
     @State private var notes: String
     @State private var type: PlannedItemType
     @State private var scope: PeriodicOccurrenceEditScope = .thisOccurrence
+    @State private var isShowingDeleteConfirmation = false
 
     init(occurrence: PeriodicWomOccurrence) {
         self.occurrence = occurrence
@@ -272,8 +279,31 @@ private struct PeriodicWomOccurrenceEditorView: View {
                 TextEditor(text: $notes)
                     .frame(minHeight: 100)
             }
+
+            Section {
+                Button("Delete repeat", systemImage: "trash", role: .destructive) {
+                    isShowingDeleteConfirmation = true
+                }
+                .accessibilityIdentifier("wom-occurrence-delete")
+            }
         }
         .navigationTitle(label.isEmpty ? "Repeat occurrence" : label)
+        .confirmationDialog(
+            scope == .thisOccurrence ? "Delete this occurrence?" : "Delete this and future repeats?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if state.deletePeriodicOccurrence(occurrence, scope: scope) {
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(scope == .thisOccurrence
+                 ? "Only this occurrence will be deleted."
+                 : "This repeat and its future occurrences will be deleted. Earlier occurrences will remain.")
+        }
         .onChange(of: scope) { _, newScope in
             if newScope == .thisAndFuture,
                Self.civilDate(from: startDate).map({ $0 < occurrence.scheduledDate }) == true {
