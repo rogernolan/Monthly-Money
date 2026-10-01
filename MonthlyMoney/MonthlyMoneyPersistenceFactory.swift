@@ -81,11 +81,49 @@ enum MonthlyMoneySchemaV3: VersionedSchema {
             PeriodicOccurrenceRecord.self
         ]
     }
+
+    @Model
+    final class PlannedItem {
+        var id: UUID = UUID()
+        var budgetID: UUID = UUID()
+        var accountID: UUID = UUID()
+        var monthKey: String = "2000-01"
+        var type: PlannedItemType = PlannedItemType.fixedDebit
+        var source: PlannedItemSource = PlannedItemSource.manual
+        var label: String = ""
+        var matchingString: String?
+        var amount: Decimal = 0
+        var dueDay: Int?
+        var dueText: String?
+        var repeatDays: Int?
+        var recurrenceID: UUID?
+        var repeatMode: RepeatMode = RepeatMode.oneOff
+        var importedPostedAt: Date?
+        var isPaid: Bool = false
+        var copiesToNextMonthAutomatically: Bool = true
+        var notes: String = ""
+
+        init() {}
+    }
+}
+
+enum MonthlyMoneySchemaV4: VersionedSchema {
+    static var versionIdentifier = Schema.Version(4, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            Budget.self, Account.self, PlannedItem.self, PopulatedMonthRecord.self,
+            Transaction.self, ImportedTransactionRecord.self, WheelOfMoneyItem.self,
+            PeriodicRepeat.self, PeriodicRepeatRevision.self, PeriodicRepeatSkip.self,
+            PeriodicOccurrenceRecord.self
+        ]
+    }
 }
 
 enum MonthlyMoneySchemaMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [MonthlyMoneySchemaV1.self, MonthlyMoneySchemaV2.self, MonthlyMoneySchemaV3.self]
+        [MonthlyMoneySchemaV1.self, MonthlyMoneySchemaV2.self, MonthlyMoneySchemaV3.self,
+         MonthlyMoneySchemaV4.self]
     }
 
     static var stages: [MigrationStage] {
@@ -96,7 +134,8 @@ enum MonthlyMoneySchemaMigrationPlan: SchemaMigrationPlan {
                 toVersion: MonthlyMoneySchemaV3.self,
                 willMigrate: nil,
                 didMigrate: migratePeriodicRepeats
-            )
+            ),
+            MigrationStage.lightweight(fromVersion: MonthlyMoneySchemaV3.self, toVersion: MonthlyMoneySchemaV4.self)
         ]
     }
 
@@ -109,8 +148,8 @@ enum MonthlyMoneySchemaMigrationPlan: SchemaMigrationPlan {
     private static func migratePeriodicRepeats(in context: ModelContext) throws {
         let budgets = try context.fetch(FetchDescriptor<Budget>())
         let budgetsByID = Dictionary(uniqueKeysWithValues: budgets.map { ($0.id, $0) })
-        let items = try context.fetch(FetchDescriptor<PlannedItem>())
-        var groups: [LegacyRepeatKey: [(PlannedItem, CivilDate)]] = [:]
+        let items = try context.fetch(FetchDescriptor<MonthlyMoneySchemaV3.PlannedItem>())
+        var groups: [LegacyRepeatKey: [(MonthlyMoneySchemaV3.PlannedItem, CivilDate)]] = [:]
 
         for item in items {
             guard item.repeatMode == .periodic,
@@ -174,7 +213,7 @@ enum MonthlyMoneySchemaMigrationPlan: SchemaMigrationPlan {
         try context.save()
     }
 
-    private static func legacyConcreteDate(for item: PlannedItem, paydayDay: Int) -> CivilDate? {
+    private static func legacyConcreteDate(for item: MonthlyMoneySchemaV3.PlannedItem, paydayDay: Int) -> CivilDate? {
         guard let month = YearMonth(rawValue: item.monthKey),
               let dueDay = item.dueDay,
               (1...31).contains(dueDay) else { return nil }

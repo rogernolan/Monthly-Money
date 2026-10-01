@@ -21,6 +21,7 @@ enum CoreDataModelBuilder {
     static let v4Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, versionIdentifier: "MonthlyMoney.v4")
     static let sharedModel: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, versionIdentifier: "MonthlyMoney.v5")
     static let v6Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, includePeriodicRepeats: true, versionIdentifier: "MonthlyMoney.v6")
+    static let v7Model: NSManagedObjectModel = makeModel(includeEveryNDaysAttributes: true, includeRepeatMode: true, includePopulatedMonth: true, includeImportedPostedAt: true, includeAllowsPreviousMonthEditing: true, includePeriodicRepeats: true, includeCalendarContinuation: true, versionIdentifier: "MonthlyMoney.v7")
 
     static func makeModel(
         includeEveryNDaysAttributes: Bool = true,
@@ -29,6 +30,7 @@ enum CoreDataModelBuilder {
         includeImportedPostedAt: Bool = true,
         includeAllowsPreviousMonthEditing: Bool = false,
         includePeriodicRepeats: Bool = false,
+        includeCalendarContinuation: Bool = false,
         versionIdentifier: String = "MonthlyMoney.v4"
     ) -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -37,7 +39,10 @@ enum CoreDataModelBuilder {
             budgetEntity.properties.append(attribute("allowsPreviousMonthEditing", .booleanAttributeType, defaultValue: false))
         }
         let accountEntity = makeAccountEntity()
-        let plannedItemEntity = makePlannedItemEntity(includeImportedPostedAt: includeImportedPostedAt)
+        let plannedItemEntity = makePlannedItemEntity(
+            includeImportedPostedAt: includeImportedPostedAt,
+            includeCalendarContinuation: includeCalendarContinuation
+        )
         let transactionEntity = makeTransactionEntity()
         let importedTransactionRecordEntity = makeImportedTransactionRecordEntity()
         let wheelOfMoneyItemEntity = makeWheelOfMoneyItemEntity()
@@ -274,7 +279,10 @@ enum CoreDataModelBuilder {
         return entity
     }
 
-    private static func makePlannedItemEntity(includeImportedPostedAt: Bool) -> NSEntityDescription {
+    private static func makePlannedItemEntity(
+        includeImportedPostedAt: Bool,
+        includeCalendarContinuation: Bool
+    ) -> NSEntityDescription {
         let entity = NSEntityDescription()
         entity.name = CoreDataEntityName.plannedItem
         entity.managedObjectClassName = NSStringFromClass(NSManagedObject.self)
@@ -298,6 +306,9 @@ enum CoreDataModelBuilder {
         ]
         if includeImportedPostedAt {
             entity.properties.append(attribute("importedPostedAt", .dateAttributeType, isOptional: true))
+        }
+        if includeCalendarContinuation {
+            entity.properties.append(attribute("calendarContinuationPayload", .stringAttributeType, isOptional: true))
         }
         return entity
     }
@@ -615,6 +626,9 @@ enum CoreDataMapping {
         if managedObject.entity.attributesByName["importedPostedAt"] != nil {
             managedObject.setValue(item.importedPostedAt, forKey: "importedPostedAt")
         }
+        if managedObject.entity.attributesByName["calendarContinuationPayload"] != nil {
+            managedObject.setValue(item.calendarContinuationPayload, forKey: "calendarContinuationPayload")
+        }
         managedObject.setValue(item.isPaid, forKey: "isPaid")
         managedObject.setValue(item.source.rawValue, forKey: "sourceRaw")
         managedObject.setValue(item.copiesToNextMonthAutomatically, forKey: "copiesToNextMonthAutomatically")
@@ -640,6 +654,9 @@ enum CoreDataMapping {
         let importedPostedAt = managedObject.entity.attributesByName["importedPostedAt"] != nil
             ? managedObject.value(forKey: "importedPostedAt") as? Date
             : nil
+        let calendarContinuationPayload = managedObject.entity.attributesByName["calendarContinuationPayload"] != nil
+            ? managedObject.value(forKey: "calendarContinuationPayload") as? String
+            : nil
         let isPaid = managedObject.value(forKey: "isPaid") as? Bool ?? false
         let source = PlannedItemSource(rawValue: managedObject.value(forKey: "sourceRaw") as? String ?? "") ?? .manual
         let copiesToNextMonthAutomatically = managedObject.value(forKey: "copiesToNextMonthAutomatically") as? Bool ?? true
@@ -657,6 +674,7 @@ enum CoreDataMapping {
             matchingString: matchingString,
             dueDay: dueDay,
             dueText: dueText,
+            calendarContinuationPayload: calendarContinuationPayload,
             repeatDays: repeatDays,
             recurrenceID: recurrenceID,
             repeatMode: RepeatMode(rawValue: storedRepeatMode ?? "") ?? ((repeatDays ?? 0) > 0 ? .periodic : (dueDay != nil && copiesToNextMonthAutomatically ? .calendar : .oneOff)),

@@ -37,6 +37,42 @@ enum RepeatMode: String, Codable, CaseIterable {
     case periodic = "periodic"
 }
 
+struct CalendarRepeatTemplate: Codable {
+    let type: PlannedItemType
+    let label: String
+    let matchingString: String?
+    let amountRaw: String
+    let dueDay: Int?
+    let dueText: String?
+    let importedPostedAt: Date?
+    let notes: String
+
+    init(item: PlannedItem) {
+        type = item.type
+        label = item.label
+        matchingString = item.matchingString
+        amountRaw = NSDecimalNumber(decimal: item.amount).stringValue
+        dueDay = item.dueDay
+        dueText = item.dueText
+        importedPostedAt = item.importedPostedAt
+        notes = item.notes
+    }
+
+    var amount: Decimal {
+        Decimal(string: amountRaw, locale: Locale(identifier: "en_US_POSIX")) ?? 0
+    }
+
+    var payload: String? {
+        (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    init?(payload: String) {
+        guard let data = payload.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(Self.self, from: data) else { return nil }
+        self = decoded
+    }
+}
+
 @Model
 final class PeriodicRepeatRevision {
     var id: UUID = UUID()
@@ -311,6 +347,7 @@ final class PlannedItem {
     var amount: Decimal = 0
     var dueDay: Int?
     var dueText: String?
+    var calendarContinuationPayload: String?
     var repeatDays: Int?
     var recurrenceID: UUID?
     var repeatMode: RepeatMode = RepeatMode.oneOff
@@ -331,6 +368,7 @@ final class PlannedItem {
         matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
+        calendarContinuationPayload: String? = nil,
         repeatDays: Int? = nil,
         recurrenceID: UUID? = nil,
         repeatMode: RepeatMode? = nil,
@@ -350,6 +388,7 @@ final class PlannedItem {
         self.amount = amount
         self.dueDay = dueDay
         self.dueText = dueText
+        self.calendarContinuationPayload = calendarContinuationPayload
         self.repeatDays = repeatDays
         self.recurrenceID = recurrenceID
         self.repeatMode = repeatMode ?? Self.inferredRepeatMode(dueDay: dueDay, repeatDays: repeatDays, copiesAutomatically: copiesToNextMonthAutomatically)
@@ -408,8 +447,17 @@ final class PlannedItem {
         YearMonth(rawValue: monthKey)
     }
 
+    var calendarContinuationTemplate: CalendarRepeatTemplate? {
+        calendarContinuationPayload.flatMap(CalendarRepeatTemplate.init(payload:))
+    }
+
+    // A one-off exception keeps the original calendar definition for the following month.
+    var resumesCalendarRepeatNextMonth: Bool {
+        repeatMode == .oneOff && calendarContinuationTemplate != nil
+    }
+
     static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
-        items.filter { $0.repeatMode != .oneOff }
+        items.filter { $0.repeatMode != .oneOff || $0.resumesCalendarRepeatNextMonth }
     }
 
     static func everyNDaysOccurrences(
@@ -506,25 +554,26 @@ final class PlannedItem {
     }
 
     static func copied(from item: PlannedItem, into monthKey: YearMonth) -> PlannedItem {
-        PlannedItem(
+        let template = item.calendarContinuationTemplate
+        return PlannedItem(
             id: UUID(),
             budgetID: item.budgetID,
             accountID: item.accountID,
             monthKey: monthKey,
-            type: item.type,
+            type: template?.type ?? item.type,
             source: .copiedFromPreviousMonth,
-            label: item.label,
-            amount: item.amount,
-            matchingString: item.matchingString,
-            dueDay: item.dueDay,
-            dueText: item.dueText,
-            repeatDays: item.repeatDays,
-            recurrenceID: item.recurrenceID,
-            repeatMode: item.repeatMode,
-            importedPostedAt: item.importedPostedAt,
+            label: template?.label ?? item.label,
+            amount: template?.amount ?? item.amount,
+            matchingString: template == nil ? item.matchingString : template?.matchingString,
+            dueDay: template == nil ? item.dueDay : template?.dueDay,
+            dueText: template == nil ? item.dueText : template?.dueText,
+            repeatDays: template == nil ? item.repeatDays : nil,
+            recurrenceID: template == nil ? item.recurrenceID : nil,
+            repeatMode: item.resumesCalendarRepeatNextMonth ? .calendar : item.repeatMode,
+            importedPostedAt: template == nil ? item.importedPostedAt : template?.importedPostedAt,
             isPaid: false,
-            copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
-            notes: item.notes
+            copiesToNextMonthAutomatically: template == nil ? item.copiesToNextMonthAutomatically : true,
+            notes: template?.notes ?? item.notes
         )
     }
 

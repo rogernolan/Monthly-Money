@@ -170,6 +170,7 @@ private struct PeriodicWomOccurrenceEditorView: View {
     @State private var repeatDaysText: String
     @State private var notes: String
     @State private var type: PlannedItemType
+    @State private var repeatMode: MonthRepeatMode = .periodic
     @State private var scope: PeriodicOccurrenceEditScope = .thisOccurrence
     @State private var isShowingDeleteConfirmation = false
 
@@ -186,54 +187,15 @@ private struct PeriodicWomOccurrenceEditorView: View {
 
     var body: some View {
         Form {
-            Section("Change scope") {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Apply to")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Picker("Apply to", selection: $scope) {
-                        ForEach(PeriodicOccurrenceEditScope.allCases) { option in
-                            Text(option.rawValue).tag(option)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .accessibilityIdentifier("wom-occurrence-apply-to")
-
-                    Text(scope == .thisOccurrence
-                         ? "Only this occurrence will change."
-                         : "This date and later dates will use a new schedule revision.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
             Section("Details") {
-                labeledTextField(title: "Display title", text: $label, identifier: "wom-occurrence-title")
-                labeledTextField(title: "Search string for import", text: $matchingString, identifier: "wom-occurrence-matching-text")
+                labeledTextField(title: "Title", text: $label, identifier: "wom-occurrence-title")
+                labeledTextField(title: "Match string", text: $matchingString, identifier: "wom-occurrence-matching-text")
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
 
-                VStack(alignment: .leading, spacing: 6) {
-                    fieldTitle("Type")
-                    Picker("Type", selection: Binding(
-                        get: { type == .credit ? MonthEntryKind.credit : .debit },
-                        set: { type = $0 == .credit ? .credit : .fixedDebit }
-                    )) {
-                        ForEach(MonthEntryKind.allCases) { kind in
-                            Text(kind.title).tag(kind)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .accessibilityIdentifier("wom-occurrence-type")
-                }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    fieldTitle("Amount")
+                EntryEditorField(title: "Amount") {
                     HStack(spacing: 2) {
-                        Text("£")
-                            .foregroundStyle(.secondary)
+                        Text("£").foregroundStyle(.secondary)
                         TextField("", text: $amountText)
                             .keyboardType(.decimalPad)
                             .frame(width: 96)
@@ -241,47 +203,71 @@ private struct PeriodicWomOccurrenceEditorView: View {
                             .accessibilityLabel("Amount")
                             .accessibilityIdentifier("wom-occurrence-amount")
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    fieldTitle("Start date")
-                    Group {
-                        if scope == .thisAndFuture {
-                            DatePicker(
-                                "Start date",
-                                selection: $startDate,
-                                in: Self.date(from: occurrence.scheduledDate)...,
-                                displayedComponents: .date
-                            )
-                        } else {
-                            DatePicker("Start date", selection: $startDate, displayedComponents: .date)
+                EntryEditorTypePicker(selection: Binding(
+                        get: { type == .credit ? MonthEntryKind.credit : .debit },
+                        set: { type = $0 == .credit ? .credit : .fixedDebit }
+                    ))
+                    .accessibilityIdentifier("wom-occurrence-type")
+
+                EntryEditorRepeatPicker(selection: $repeatMode, existingMode: .periodic)
+
+            }
+
+            if repeatMode == .periodic {
+                Section("Repeat details") {
+                    EntryEditorField(title: "Apply to") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Picker("Apply to", selection: $scope) {
+                                ForEach(PeriodicOccurrenceEditScope.allCases) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("wom-occurrence-apply-to")
+                            Text(scope == .thisOccurrence
+                                 ? "Only this occurrence will change."
+                                 : "This date and later dates will use a new schedule revision.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .labelsHidden()
-                    .datePickerStyle(.compact)
-                    .accessibilityIdentifier("wom-occurrence-start-date")
-                }
+                    EntryEditorField(title: "Start date") {
+                        Group {
+                            if scope == .thisAndFuture {
+                                DatePicker("Start date", selection: $startDate,
+                                           in: Self.date(from: occurrence.scheduledDate)...,
+                                           displayedComponents: .date)
+                            } else {
+                                DatePicker("Start date", selection: $startDate, displayedComponents: .date)
+                            }
+                        }
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                        .accessibilityIdentifier("wom-occurrence-start-date")
+                    }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    labeledTextField(title: "Repeat period (days)", text: $repeatDaysText, identifier: "wom-occurrence-repeat-days")
-                        .keyboardType(.numberPad)
-                        .disabled(scope != .thisAndFuture)
-                    Text(scope == .thisOccurrence
-                         ? WheelOfMoneyRowContent.singleOccurrenceRepeatPeriodHelp
-                         : "The start date must be on or after \(occurrence.scheduledDate.rawValue).")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    EntryEditorField(title: "Repeat period (days)") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("", text: $repeatDaysText)
+                                .keyboardType(.numberPad)
+                                .disabled(scope != .thisAndFuture)
+                                .accessibilityIdentifier("wom-occurrence-repeat-days")
+                            Text(scope == .thisOccurrence
+                                 ? WheelOfMoneyRowContent.singleOccurrenceRepeatPeriodHelp
+                                 : "The start date must be on or after \(occurrence.scheduledDate.rawValue).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
             }
 
             Section("Notes") {
                 TextEditor(text: $notes)
-                    .frame(minHeight: 100)
-            }
-
-            Section {
-                Button("Delete repeat", systemImage: "trash", role: .destructive) {
+                    .frame(minHeight: 160)
+                Button("Delete", systemImage: "trash", role: .destructive) {
                     isShowingDeleteConfirmation = true
                 }
                 .accessibilityIdentifier("wom-occurrence-delete")
@@ -304,6 +290,9 @@ private struct PeriodicWomOccurrenceEditorView: View {
             }
         }
         .navigationTitle(label.isEmpty ? "Repeat occurrence" : label)
+        .onChange(of: repeatMode) { _, mode in
+            if mode == .oneOff { scope = .thisOccurrence }
+        }
         .onChange(of: scope) { _, newScope in
             if newScope == .thisAndFuture,
                Self.civilDate(from: startDate).map({ $0 < occurrence.scheduledDate }) == true {
@@ -321,6 +310,18 @@ private struct PeriodicWomOccurrenceEditorView: View {
     private func save() {
         guard let amount = Self.decimal(from: amountText),
               let dueDate = Self.civilDate(from: startDate) else { return }
+        if repeatMode == .oneOff {
+            if state.savePeriodicOccurrenceAsOneOff(
+                occurrence,
+                label: label,
+                matchingString: matchingString,
+                amount: amount,
+                dueDate: occurrence.dueDate,
+                type: type,
+                notes: notes
+            ) { dismiss() }
+            return
+        }
         let interval = scope == .thisOccurrence ? occurrence.repeatDays : (Int(repeatDaysText) ?? 0)
         guard state.savePeriodicOccurrence(
             occurrence,
@@ -337,19 +338,11 @@ private struct PeriodicWomOccurrenceEditorView: View {
     }
 
     private func labeledTextField(title: String, text: Binding<String>, identifier: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            fieldTitle(title)
+        EntryEditorField(title: title) {
             TextField("", text: text)
                 .accessibilityLabel(title)
                 .accessibilityIdentifier(identifier)
         }
-    }
-
-    private func fieldTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private static func decimal(from text: String) -> Decimal? {

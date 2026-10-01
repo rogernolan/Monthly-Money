@@ -41,6 +41,7 @@ protocol AccountDataStore {
     func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws
     func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws
     func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws
     func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws
     func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws
     func deletePeriodicRepeats(budgetID: UUID) throws
@@ -79,6 +80,11 @@ extension AccountDataStore {
     func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws { _ = skips }
     func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws { _ = occurrences }
     func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws { _ = item; _ = occurrence }
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        try upsertPlannedItems([item])
+        try upsertPeriodicOccurrences([occurrence])
+        try upsertPeriodicRepeatSkips([skip])
+    }
     func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws { _ = repeatRecord; _ = revision; _ = item; _ = occurrence }
     func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws { _ = repeatID; _ = boundary; _ = revision }
     func deletePeriodicRepeats(budgetID: UUID) throws { _ = budgetID }
@@ -256,6 +262,15 @@ final class InMemoryAccountDataStore: AccountDataStore {
         }
         plannedItemsByID[item.id] = item
         periodicOccurrencesByPlannedItemID[item.id] = occurrence
+    }
+
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID,
+              item.repeatMode == .oneOff, occurrence.repeatID == nil,
+              occurrence.scheduledDate == skip.scheduledDate else { throw RepositoryError.invalidCrossScopeReference }
+        plannedItemsByID[item.id] = item
+        periodicOccurrencesByPlannedItemID[item.id] = occurrence
+        periodicRepeatSkipsByID[skip.id] = skip
     }
 
     func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
@@ -505,6 +520,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.isPaid = item.isPaid
                 existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes
+                existing.calendarContinuationPayload = item.calendarContinuationPayload
             } else {
                 modelContext.insert(item)
             }
@@ -614,6 +630,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
             existing.isPaid = item.isPaid
             existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
             existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
         } else {
             modelContext.insert(item)
         }
@@ -629,13 +646,63 @@ final class SwiftDataAccountDataStore: AccountDataStore {
         try modelContext.save()
     }
 
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID,
+              item.repeatMode == .oneOff, occurrence.repeatID == nil,
+              occurrence.scheduledDate == skip.scheduledDate else { throw RepositoryError.invalidCrossScopeReference }
+        let itemID = item.id
+        if let existing = try modelContext.fetch(FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })).first {
+            existing.monthKey = item.monthKey
+            existing.type = item.type
+            existing.label = item.label
+            existing.matchingString = item.matchingString
+            existing.amount = item.amount
+            existing.dueDay = item.dueDay
+            existing.repeatDays = nil
+            existing.recurrenceID = nil
+            existing.repeatMode = .oneOff
+            existing.copiesToNextMonthAutomatically = false
+            existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
+        } else {
+            modelContext.insert(item)
+        }
+        let occurrenceID = occurrence.plannedItemID
+        if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(predicate: #Predicate { $0.plannedItemID == occurrenceID })).first {
+            existing.repeatID = nil
+            existing.scheduledDateRaw = occurrence.scheduledDateRaw
+            existing.dueDateRaw = occurrence.dueDateRaw
+            existing.isOverride = true
+        } else {
+            modelContext.insert(occurrence)
+        }
+        modelContext.insert(skip)
+        try modelContext.save()
+    }
+
     func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
         guard repeatRecord.id == revision.repeatID, repeatRecord.id == occurrence.repeatID,
               item.id == occurrence.plannedItemID, item.budgetID == repeatRecord.budgetID,
               item.accountID == repeatRecord.accountID else { throw RepositoryError.invalidCrossScopeReference }
         modelContext.insert(repeatRecord)
         modelContext.insert(revision)
-        modelContext.insert(item)
+        let itemID = item.id
+        if let existing = try modelContext.fetch(FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })).first {
+            existing.monthKey = item.monthKey
+            existing.type = item.type
+            existing.label = item.label
+            existing.matchingString = item.matchingString
+            existing.amount = item.amount
+            existing.dueDay = item.dueDay
+            existing.repeatDays = item.repeatDays
+            existing.recurrenceID = item.recurrenceID
+            existing.repeatMode = item.repeatMode
+            existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
+            existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
+        } else {
+            modelContext.insert(item)
+        }
         modelContext.insert(occurrence)
         try modelContext.save()
     }
@@ -1268,6 +1335,17 @@ final class AccountRepository {
             throw RepositoryError.invalidCrossScopeReference
         }
         try store.upsertPlannedItemAndPeriodicOccurrence(item, occurrence: record)
+        try touchBudget(id: item.budgetID, in: store)
+    }
+
+    func saveDetachedPeriodicOccurrence(_ item: PlannedItem, record: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == record.plannedItemID, item.budgetID == record.budgetID,
+              record.repeatID == nil, item.repeatMode == .oneOff,
+              let (store, account) = try storeAndAccount(for: item.accountID), account.budgetID == item.budgetID,
+              try store.fetchPeriodicRepeats(budgetID: item.budgetID).contains(where: { $0.id == skip.repeatID }) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.upsertDetachedPeriodicOccurrence(item, occurrence: record, skip: skip)
         try touchBudget(id: item.budgetID, in: store)
     }
 

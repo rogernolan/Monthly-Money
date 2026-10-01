@@ -543,7 +543,7 @@ final class MonthlyMoneyTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let currentSchema = Schema(versionedSchema: MonthlyMoneySchemaV3.self)
+        let currentSchema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
         let configuration = ModelConfiguration(
             "Current",
             schema: currentSchema,
@@ -614,9 +614,9 @@ final class MonthlyMoneyTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let currentSchema = Schema(versionedSchema: MonthlyMoneySchemaV3.self)
+        let currentSchema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
         let configuration = ModelConfiguration(
-            "CurrentV3", schema: currentSchema, url: storeURL, cloudKitDatabase: .none
+            "CurrentV4", schema: currentSchema, url: storeURL, cloudKitDatabase: .none
         )
         let container = try ModelContainer(
             for: currentSchema,
@@ -3759,6 +3759,269 @@ final class MonthlyMoneyTests: XCTestCase {
         })
     }
 
+    func testChangingPeriodicOccurrenceToNonePreservesRowAndLaterRepeat() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let anchor = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1, repeatDays: 5
+        ))
+        let occurrences = state.womOccurrenceGroups.flatMap(\.occurrences)
+            .filter { $0.repeatID == anchor.recurrenceID && $0.budgetMonth == state.selectedMonth }
+            .sorted { $0.scheduledDate < $1.scheduledDate }
+        let selected = try XCTUnwrap(occurrences.first { $0.plannedItemID == nil })
+        let later = try XCTUnwrap(occurrences.first { $0.scheduledDate > selected.scheduledDate })
+
+        XCTAssertTrue(state.savePeriodicOccurrenceAsOneOff(
+            selected, label: "Special medicine", matchingString: "PHARMACY", amount: 12,
+            dueDate: selected.dueDate, type: .fixedDebit, notes: "One-time change"
+        ))
+
+        let data = try repository.periodicRepeatData()
+        let detached = try XCTUnwrap(data.plannedItems.first { $0.label == "Special medicine" })
+        XCTAssertEqual(detached.repeatMode, .oneOff)
+        XCTAssertNil(detached.recurrenceID)
+        XCTAssertNil(detached.repeatDays)
+        XCTAssertEqual(detached.amount, 12)
+        XCTAssertEqual(detached.notes, "One-time change")
+        XCTAssertTrue(data.skips.contains { $0.repeatID == selected.repeatID && $0.scheduledDate == selected.scheduledDate })
+        XCTAssertFalse(state.womOccurrenceGroups.flatMap(\.occurrences).contains { $0.id == selected.id })
+        XCTAssertTrue(state.womOccurrenceGroups.flatMap(\.occurrences).contains { $0.id == later.id })
+    }
+
+    func testPromotingOneOffEntryToPeriodicPreservesItsIdentityAndPaidState() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let original = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1, repeatMode: .oneOff
+        ))
+        state.setPaid(item: original, paid: true)
+        let start = try XCTUnwrap(state.periodicDueDate(for: 1, budgetMonth: state.selectedMonth))
+
+        XCTAssertTrue(state.promoteOneOffToPeriodic(
+            original, label: "Medicine", matchingString: "PHARMACY", amount: 10,
+            startDate: start, type: .fixedDebit, notes: "Every week", repeatDays: 7
+        ))
+
+        let data = try repository.periodicRepeatData()
+        let saved = try XCTUnwrap(data.plannedItems.first { $0.id == original.id })
+        XCTAssertEqual(data.plannedItems.filter { $0.id == original.id }.count, 1)
+        XCTAssertEqual(saved.repeatMode, .periodic)
+        XCTAssertTrue(saved.isPaid)
+        XCTAssertEqual(saved.notes, "Every week")
+        XCTAssertTrue(state.womOccurrenceGroups.flatMap(\.occurrences).contains {
+            $0.repeatID == saved.recurrenceID && $0.scheduledDate > start
+        })
+    }
+
+    func testChangingCalendarEntryToNoneKeepsNextMonthCalendarRepeat() async throws {
+        var today = Self.date(year: 2026, month: 6, day: 15)
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { today })
+        await state.bootstrapIfNeeded()
+        let current = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Rent", amount: 100, dueDay: 1,
+            repeatMode: .calendar
+        ))
+
+        state.update(
+            item: current, label: "Rent this month", amount: 100,
+            dueDay: 1, dueText: nil, type: .fixedDebit,
+            repeatMode: .oneOff, copiesToNextMonthAutomatically: true,
+            notes: "Only June differs"
+        )
+        XCTAssertEqual(current.repeatMode, .oneOff)
+
+        today = Self.date(year: 2026, month: 7, day: 15)
+        state.selectedMonth = YearMonth(year: 2026, month: 7)
+        state.populateSelectedMonthFromPrevious()
+
+        let next = try repository.plannedItems(for: YearMonth(year: 2026, month: 7))
+        XCTAssertEqual(next.count, 1)
+        XCTAssertEqual(next.first?.repeatMode, .calendar)
+        XCTAssertEqual(next.first?.dueDay, 1)
+        XCTAssertEqual(next.first?.label, "Rent")
+        XCTAssertEqual(next.first?.notes, "")
+
+        today = Self.date(year: 2026, month: 8, day: 15)
+        state.selectedMonth = YearMonth(year: 2026, month: 8)
+        state.populateSelectedMonthFromPrevious()
+        XCTAssertEqual(try repository.plannedItems(for: YearMonth(year: 2026, month: 8)).first?.repeatMode, .calendar)
+    }
+
+    func testCoreDataV6MigratesToV7AndStoresCalendarContinuation() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("Budget.sqlite")
+        let item = PlannedItem(
+            accountID: UUID(), monthKey: YearMonth(year: 2026, month: 6),
+            type: .fixedDebit, label: "Rent", amount: 100, dueDay: 1,
+            repeatMode: .calendar
+        )
+        do {
+            let container = NSPersistentContainer(
+                name: "MonthlyMoneyCoreData", managedObjectModel: CoreDataModelBuilder.v6Model
+            )
+            let description = NSPersistentStoreDescription(url: storeURL)
+            description.type = NSSQLiteStoreType
+            description.shouldAddStoreAsynchronously = false
+            container.persistentStoreDescriptions = [description]
+            var loadError: Error?
+            container.loadPersistentStores { _, error in loadError = error }
+            if let loadError { throw loadError }
+            let object = NSEntityDescription.insertNewObject(
+                forEntityName: CoreDataEntityName.plannedItem, into: container.viewContext
+            )
+            CoreDataMapping.apply(item, to: object)
+            try container.viewContext.save()
+            if let store = container.persistentStoreCoordinator.persistentStores.first {
+                try container.persistentStoreCoordinator.remove(store)
+            }
+        }
+
+        let migrated = try CoreDataAccountDataStore.makePersistentLocal(url: storeURL)
+        let saved = try XCTUnwrap(migrated.fetchPlannedItem(id: item.id))
+        XCTAssertEqual(saved.label, "Rent")
+        XCTAssertNil(saved.calendarContinuationPayload)
+        saved.calendarContinuationPayload = CalendarRepeatTemplate(item: saved).payload
+        try migrated.upsertPlannedItems([saved])
+        XCTAssertNotNil(try migrated.fetchPlannedItem(id: item.id)?.calendarContinuationPayload)
+    }
+
+    func testSwiftDataV3MigratesToV4WithEmptyCalendarContinuation() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let storeURL = directory.appendingPathComponent("Budget.store")
+        let itemID = UUID()
+        do {
+            let schema = Schema(versionedSchema: MonthlyMoneySchemaV3.self)
+            let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(
+                "LegacyV3", schema: schema, url: storeURL, cloudKitDatabase: .none
+            )])
+            let legacyItem = MonthlyMoneySchemaV3.PlannedItem()
+            legacyItem.id = itemID
+            legacyItem.accountID = UUID()
+            legacyItem.monthKey = YearMonth(year: 2026, month: 6).rawValue
+            legacyItem.type = .fixedDebit
+            legacyItem.label = "Rent"
+            legacyItem.amount = 100
+            legacyItem.dueDay = 1
+            legacyItem.repeatMode = .calendar
+            container.mainContext.insert(legacyItem)
+            try container.mainContext.save()
+        }
+
+        let schema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
+        let container = try ModelContainer(
+            for: schema, migrationPlan: MonthlyMoneySchemaMigrationPlan.self,
+            configurations: [ModelConfiguration(
+                "CurrentV4", schema: schema, url: storeURL, cloudKitDatabase: .none
+            )]
+        )
+        let saved = try XCTUnwrap(container.mainContext.fetch(
+            FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })
+        ).first)
+        XCTAssertEqual(saved.label, "Rent")
+        XCTAssertNil(saved.calendarContinuationPayload)
+        saved.calendarContinuationPayload = CalendarRepeatTemplate(item: saved).payload
+        try container.mainContext.save()
+        XCTAssertNotNil(saved.calendarContinuationPayload)
+    }
+
+    func testCoreDataPromotesAndDetachesPeriodicEntryWithoutDuplicateRows() throws {
+        let store = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(store)
+        try assertPromoteAndDetachRoundTrip(in: store)
+    }
+
+    func testSwiftDataPromotesAndDetachesPeriodicEntryWithoutDuplicateRows() throws {
+        let schema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(
+                "PeriodicEditorTest", schema: schema,
+                url: directory.appendingPathComponent("Budget.store"), cloudKitDatabase: .none
+            )]
+        )
+        try assertPromoteAndDetachRoundTrip(in: SwiftDataAccountDataStore(modelContainer: container))
+    }
+
+    private func assertPromoteAndDetachRoundTrip(in store: AccountDataStore) throws {
+        let budget = Budget(name: "Household", ownerParticipantID: "owner")
+        let account = Account(budgetID: budget.id, name: "Current", role: .regular, type: .current)
+        try store.upsertBudget(budget)
+        try store.upsertAccount(account)
+        let month = YearMonth(year: 2026, month: 6)
+        let date = try XCTUnwrap(CivilDate(year: 2026, month: 6, day: 15))
+        let original = PlannedItem(
+            accountID: account.id, monthKey: month, type: .fixedDebit,
+            label: "Medicine", amount: 10, dueDay: 15, repeatMode: .oneOff, isPaid: true
+        )
+        original.budgetID = budget.id
+        try store.upsertPlannedItems([original])
+        let repeatRecord = PeriodicRepeat(budgetID: budget.id, accountID: account.id)
+        let revision = PeriodicRepeatRevision(
+            repeatID: repeatRecord.id, effectiveDate: date, anchorDate: date,
+            repeatDays: 7, type: .fixedDebit, label: "Medicine",
+            matchingString: nil, amount: 10, notes: ""
+        )
+        let promoted = PlannedItem(
+            id: original.id, budgetID: budget.id, accountID: account.id,
+            monthKey: month, type: .fixedDebit, label: "Medicine", amount: 10,
+            dueDay: 15, repeatDays: 7, recurrenceID: repeatRecord.id,
+            repeatMode: .periodic, isPaid: true
+        )
+        let occurrence = PeriodicOccurrenceRecord(
+            plannedItemID: original.id, budgetID: budget.id,
+            repeatID: repeatRecord.id, scheduledDate: date, dueDate: date
+        )
+        try store.createPeriodicRepeat(
+            repeatRecord: repeatRecord, revision: revision, item: promoted, occurrence: occurrence
+        )
+        XCTAssertEqual(try store.fetchPlannedItems().filter { $0.id == original.id }.count, 1)
+        XCTAssertEqual(try store.fetchPlannedItem(id: original.id)?.repeatMode, .periodic)
+
+        let detached = PlannedItem(
+            id: original.id, budgetID: budget.id, accountID: account.id,
+            monthKey: month, type: .fixedDebit, label: "One-time medicine", amount: 12,
+            dueDay: 15, repeatMode: .oneOff, isPaid: true
+        )
+        let detachedOccurrence = PeriodicOccurrenceRecord(
+            plannedItemID: original.id, budgetID: budget.id,
+            repeatID: nil, scheduledDate: date, dueDate: date, isOverride: true
+        )
+        let skip = PeriodicRepeatSkip(repeatID: repeatRecord.id, scheduledDate: date)
+        try store.upsertDetachedPeriodicOccurrence(detached, occurrence: detachedOccurrence, skip: skip)
+        let saved = try XCTUnwrap(store.fetchPlannedItem(id: original.id))
+        XCTAssertEqual(saved.repeatMode, .oneOff)
+        XCTAssertNil(saved.recurrenceID)
+        XCTAssertTrue(saved.isPaid)
+        XCTAssertEqual(saved.amount, 12)
+        XCTAssertNil(try store.fetchPeriodicOccurrences(plannedItemIDs: [original.id]).first?.repeatID)
+        XCTAssertTrue(try store.fetchPeriodicRepeatSkips(repeatIDs: [repeatRecord.id]).contains {
+            $0.scheduledDate == date
+        })
+    }
+
+    func testPeriodicStartDateRangeUsesPaydayMonthBoundaries() async throws {
+        let state = AppState(repository: try makeRepository())
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 26
+
+        let range = state.periodicStartDateRange(for: YearMonth(year: 2026, month: 7))
+        let calendar = Calendar(identifier: .gregorian)
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.lowerBound),
+                       DateComponents(year: 2026, month: 6, day: 26))
+        XCTAssertEqual(calendar.dateComponents([.year, .month, .day], from: range.upperBound),
+                       DateComponents(year: 2026, month: 7, day: 25))
+    }
+
     func testDeletingAnOverriddenOccurrenceKeepsItsMonthEntryButHidesItFromWom() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
@@ -4383,7 +4646,7 @@ final class MonthlyMoneyTests: XCTestCase {
     }
 
     func testSwiftDataUpsertPreservesImportedPostedAt() throws {
-        let schema = Schema(versionedSchema: MonthlyMoneySchemaV3.self)
+        let schema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -4687,7 +4950,7 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(budget, 90)
     }
 
-    func testMonthItemEditorDraftRequiresNameButAllowsZeroAmountToSave() {
+func testMonthItemEditorDraftRequiresNameButAllowsZeroAmountToSave() {
         var draft = MonthItemEditorDraft(newType: .fixedDebit, dueDay: 11)
 
         XCTAssertFalse(draft.canSave)
@@ -5072,7 +5335,7 @@ final class MonthlyMoneyTests: XCTestCase {
     }
 
     private static func makeSchema() -> Schema {
-        Schema(versionedSchema: MonthlyMoneySchemaV3.self)
+        Schema(versionedSchema: MonthlyMoneySchemaV4.self)
     }
 
     private static func date(year: Int, month: Int, day: Int) -> Date {
@@ -5470,6 +5733,14 @@ final class MonthlyMoneyTests: XCTestCase {
         if let loadError { throw loadError }
         return container.viewContext
     }
+}
+
+func testExistingRepeatTypeCanOnlyBecomeNoneOrStayTheSame() {
+    XCTAssertEqual(MonthRepeatMode.availableModes(existing: nil), [.oneOff, .calendar, .periodic])
+    XCTAssertEqual(MonthRepeatMode.availableModes(existing: .oneOff), [.oneOff, .calendar, .periodic])
+    XCTAssertEqual(MonthRepeatMode.availableModes(existing: .calendar), [.oneOff, .calendar])
+    XCTAssertEqual(MonthRepeatMode.availableModes(existing: .periodic), [.oneOff, .periodic])
+    XCTAssertEqual(MonthRepeatMode.availableModes(existing: .oneOff, calendarContinuation: true), [.oneOff, .calendar])
 }
 
 @MainActor

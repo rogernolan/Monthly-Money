@@ -45,6 +45,23 @@ enum MonthRepeatMode: Hashable, CaseIterable {
     case oneOff
     case calendar
     case periodic
+
+    var title: String {
+        switch self {
+        case .oneOff: "None"
+        case .calendar: "Calendar"
+        case .periodic: "Periodic"
+        }
+    }
+
+    static func availableModes(existing: RepeatMode?, calendarContinuation: Bool = false) -> [Self] {
+        switch existing {
+        case nil: [.oneOff, .calendar, .periodic]
+        case .oneOff: calendarContinuation ? [.oneOff, .calendar] : [.oneOff, .calendar, .periodic]
+        case .calendar: [.oneOff, .calendar]
+        case .periodic: [.oneOff, .periodic]
+        }
+    }
 }
 
 struct MonthItemEditorDraft {

@@ -510,7 +510,7 @@ final class AppState: ObservableObject {
         guard let data = try? repository.periodicRepeatData(),
               let record = data.occurrences.first(where: { $0.plannedItemID == item.id }),
               let repeatID = record.repeatID,
-              let repeatRecord = data.repeats.first(where: { $0.id == repeatID }),
+              data.repeats.contains(where: { $0.id == repeatID }),
               let revision = data.revisions.filter({ $0.repeatID == repeatID && $0.effectiveDate <= record.scheduledDate })
                 .max(by: { $0.effectiveDate < $1.effectiveDate }) else { return nil }
         return PeriodicWomOccurrence(
@@ -535,6 +535,16 @@ final class AppState: ObservableObject {
             label: "", amount: 0, dueDay: dueDay
         )
         return concreteCivilDate(for: temporary)
+    }
+
+    func periodicStartDateRange(for budgetMonth: YearMonth) -> ClosedRange<Date> {
+        let calendar = Calendar.current
+        let components: (Date) -> DateComponents = {
+            Self.fixedDailyCycleCalendar.dateComponents([.year, .month, .day], from: $0)
+        }
+        let start = calendar.date(from: components(budgetMonthStartDate(budgetMonth)))!
+        let end = calendar.date(from: components(budgetMonthEndDate(after: budgetMonth)))!
+        return start...end.addingTimeInterval(-1)
     }
 
     private let repository: AccountRepository
@@ -1485,24 +1495,38 @@ final class AppState: ObservableObject {
         notes: String
     ) {
         guard canEdit(item: item) else { return }
+        let originalRepeatDays = item.repeatDays
+        let originalRecurrenceID = item.recurrenceID
+        let originalRepeatMode = item.repeatMode
+        let originalCopiesAutomatically = item.copiesToNextMonthAutomatically
+        let originalContinuationPayload = item.calendarContinuationPayload
+        let resolvedRepeatMode = repeatMode ?? item.repeatMode
+        let continuationPayload: String?
+        if originalRepeatMode == .calendar && resolvedRepeatMode == .oneOff {
+            guard let payload = CalendarRepeatTemplate(item: item).payload else { return }
+            continuationPayload = payload
+        } else if resolvedRepeatMode == .oneOff {
+            continuationPayload = originalContinuationPayload
+        } else {
+            continuationPayload = nil
+        }
         item.label = label
         item.matchingString = normalizeMatchingString(matchingString)
         item.amount = amount
         item.dueDay = dueDay
         item.dueText = dueText
-        let originalRepeatDays = item.repeatDays
-        let originalRecurrenceID = item.recurrenceID
-        let originalRepeatMode = item.repeatMode
-        let originalCopiesAutomatically = item.copiesToNextMonthAutomatically
-        let resolvedRepeatMode = repeatMode ?? item.repeatMode
         let normalizedRepeatDays = resolvedRepeatMode == .periodic
             ? repeatDays.flatMap { $0 > 0 ? $0 : nil }
             : originalRepeatDays
         item.repeatMode = resolvedRepeatMode
         item.repeatDays = normalizedRepeatDays
-        item.recurrenceID = normalizedRepeatDays == nil
-            ? item.recurrenceID
-            : (normalizedRepeatDays != originalRepeatDays ? UUID() : (recurrenceID ?? item.recurrenceID ?? UUID()))
+        item.calendarContinuationPayload = continuationPayload
+        if normalizedRepeatDays == nil {
+            item.recurrenceID = originalRecurrenceID
+        } else {
+            item.recurrenceID = normalizedRepeatDays != originalRepeatDays
+                ? UUID() : (recurrenceID ?? originalRecurrenceID ?? UUID())
+        }
         item.type = type
         item.copiesToNextMonthAutomatically = resolvedRepeatMode == .calendar && copiesToNextMonthAutomatically
         item.notes = notes
@@ -1520,6 +1544,7 @@ final class AppState: ObservableObject {
             item.recurrenceID = originalRecurrenceID
             item.repeatMode = originalRepeatMode
             item.copiesToNextMonthAutomatically = originalCopiesAutomatically
+            item.calendarContinuationPayload = originalContinuationPayload
             print("Edit failed: \(error)")
         }
     }
@@ -1757,7 +1782,7 @@ final class AppState: ObservableObject {
 
         do {
             let sourceItems = try repository.plannedItems(for: previousMonth(of: selectedMonth))
-            try copyItems(sourceItems.filter { $0.repeatMode == .calendar }, to: selectedMonth)
+            try copyItems(sourceItems.filter { $0.repeatMode == .calendar || $0.resumesCalendarRepeatNextMonth }, to: selectedMonth)
 
             try materializePeriodicOccurrences(in: selectedMonth)
             if autoGenerateWoMSavingsEveryMonth {
@@ -1776,7 +1801,7 @@ final class AppState: ObservableObject {
 
         do {
             let sourceItems = try repository.plannedItems(for: previousMonth(of: targetMonth))
-            try copyItems(sourceItems.filter { $0.repeatMode == .calendar }, to: targetMonth)
+            try copyItems(sourceItems.filter { $0.repeatMode == .calendar || $0.resumesCalendarRepeatNextMonth }, to: targetMonth)
 
             try materializePeriodicOccurrences(in: targetMonth)
             if autoGenerateWoMSavingsEveryMonth {
@@ -1881,6 +1906,123 @@ final class AppState: ObservableObject {
             return true
         } catch {
             print("Save periodic occurrence failed: \(error)")
+            return false
+        }
+    }
+
+    @discardableResult
+    func savePeriodicOccurrenceAsOneOff(
+        _ occurrence: PeriodicWomOccurrence,
+        label: String,
+        matchingString: String?,
+        amount: Decimal,
+        dueDate: CivilDate,
+        type: PlannedItemType,
+        notes: String
+    ) -> Bool {
+        let targetMonth = budgetMonth(for: dueDate)
+        guard canEdit(month: occurrence.budgetMonth), canEdit(month: targetMonth),
+              let data = try? repository.periodicRepeatData(),
+              let repeatRecord = data.repeats.first(where: { $0.id == occurrence.repeatID }),
+              !data.skips.contains(where: {
+                  $0.repeatID == occurrence.repeatID && $0.scheduledDate == occurrence.scheduledDate
+              }) else { return false }
+        let existing = occurrence.plannedItemID.flatMap { id in data.plannedItems.first { $0.id == id } }
+        if let existing, !canEdit(item: existing) { return false }
+
+        let item = PlannedItem(
+            id: existing?.id ?? UUID(),
+            budgetID: repeatRecord.budgetID,
+            accountID: occurrence.accountID,
+            monthKey: targetMonth,
+            type: type,
+            source: existing?.source ?? .manual,
+            label: label,
+            amount: amount,
+            matchingString: normalizeMatchingString(matchingString),
+            dueDay: dueDate.day,
+            dueText: existing?.dueText,
+            repeatDays: nil,
+            recurrenceID: nil,
+            repeatMode: .oneOff,
+            importedPostedAt: existing?.importedPostedAt,
+            isPaid: existing?.isPaid ?? false,
+            copiesToNextMonthAutomatically: false,
+            notes: notes
+        )
+        let record = PeriodicOccurrenceRecord(
+            plannedItemID: item.id,
+            budgetID: repeatRecord.budgetID,
+            repeatID: nil,
+            scheduledDate: occurrence.scheduledDate,
+            dueDate: dueDate,
+            isOverride: true
+        )
+        let skip = PeriodicRepeatSkip(repeatID: occurrence.repeatID, scheduledDate: occurrence.scheduledDate)
+        do {
+            try repository.saveDetachedPeriodicOccurrence(item, record: record, skip: skip)
+            try refresh()
+            return true
+        } catch {
+            print("Detach periodic occurrence failed: \(error)")
+            return false
+        }
+    }
+
+    @discardableResult
+    func promoteOneOffToPeriodic(
+        _ existing: PlannedItem,
+        label: String,
+        matchingString: String?,
+        amount: Decimal,
+        startDate: CivilDate,
+        type: PlannedItemType,
+        notes: String,
+        repeatDays: Int
+    ) -> Bool {
+        guard existing.repeatMode == .oneOff, canEdit(item: existing), repeatDays > 0,
+              budgetMonth(for: startDate) == existing.resolvedMonthKey else { return false }
+        let repeatID = UUID()
+        let item = PlannedItem(
+            id: existing.id,
+            budgetID: existing.budgetID,
+            accountID: existing.accountID,
+            monthKey: budgetMonth(for: startDate),
+            type: type,
+            source: existing.source,
+            label: label,
+            amount: amount,
+            matchingString: normalizeMatchingString(matchingString),
+            dueDay: startDate.day,
+            dueText: existing.dueText,
+            repeatDays: repeatDays,
+            recurrenceID: repeatID,
+            repeatMode: .periodic,
+            importedPostedAt: existing.importedPostedAt,
+            isPaid: existing.isPaid,
+            copiesToNextMonthAutomatically: false,
+            notes: notes
+        )
+        let repeatRecord = PeriodicRepeat(
+            id: repeatID, budgetID: existing.budgetID, accountID: existing.accountID
+        )
+        let revision = PeriodicRepeatRevision(
+            repeatID: repeatID, effectiveDate: startDate, anchorDate: startDate,
+            repeatDays: repeatDays, type: type, label: label,
+            matchingString: item.matchingString, amount: amount, notes: notes
+        )
+        let record = PeriodicOccurrenceRecord(
+            plannedItemID: item.id, budgetID: item.budgetID,
+            repeatID: repeatID, scheduledDate: startDate, dueDate: startDate
+        )
+        do {
+            try repository.createPeriodicRepeat(
+                repeatRecord: repeatRecord, revision: revision, item: item, occurrence: record
+            )
+            try refresh()
+            return true
+        } catch {
+            print("Promote one-off entry to periodic failed: \(error)")
             return false
         }
     }
