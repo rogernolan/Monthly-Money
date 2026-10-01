@@ -285,25 +285,25 @@ private struct PeriodicWomOccurrenceEditorView: View {
                     isShowingDeleteConfirmation = true
                 }
                 .accessibilityIdentifier("wom-occurrence-delete")
+                .confirmationDialog(
+                    scope == .thisOccurrence ? "Delete this occurrence?" : "Delete this and future repeats?",
+                    isPresented: $isShowingDeleteConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        if state.deletePeriodicOccurrence(occurrence, scope: scope) {
+                            dismiss()
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text(scope == .thisOccurrence
+                         ? "Only this occurrence will be deleted."
+                         : "This repeat and its future occurrences will be deleted. Earlier occurrences will remain.")
+                }
             }
         }
         .navigationTitle(label.isEmpty ? "Repeat occurrence" : label)
-        .confirmationDialog(
-            scope == .thisOccurrence ? "Delete this occurrence?" : "Delete this and future repeats?",
-            isPresented: $isShowingDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                if state.deletePeriodicOccurrence(occurrence, scope: scope) {
-                    dismiss()
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text(scope == .thisOccurrence
-                 ? "Only this occurrence will be deleted."
-                 : "This repeat and its future occurrences will be deleted. Earlier occurrences will remain.")
-        }
         .onChange(of: scope) { _, newScope in
             if newScope == .thisAndFuture,
                Self.civilDate(from: startDate).map({ $0 < occurrence.scheduledDate }) == true {
