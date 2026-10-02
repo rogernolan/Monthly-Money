@@ -37,6 +37,147 @@ enum RepeatMode: String, Codable, CaseIterable {
     case periodic = "periodic"
 }
 
+struct CalendarRepeatTemplate: Codable {
+    let type: PlannedItemType
+    let label: String
+    let matchingString: String?
+    let amountRaw: String
+    let dueDay: Int?
+    let dueText: String?
+    let importedPostedAt: Date?
+    let notes: String
+
+    init(item: PlannedItem) {
+        type = item.type
+        label = item.label
+        matchingString = item.matchingString
+        amountRaw = NSDecimalNumber(decimal: item.amount).stringValue
+        dueDay = item.dueDay
+        dueText = item.dueText
+        importedPostedAt = item.importedPostedAt
+        notes = item.notes
+    }
+
+    var amount: Decimal {
+        Decimal(string: amountRaw, locale: Locale(identifier: "en_US_POSIX")) ?? 0
+    }
+
+    var payload: String? {
+        (try? JSONEncoder().encode(self)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    init?(payload: String) {
+        guard let data = payload.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode(Self.self, from: data) else { return nil }
+        self = decoded
+    }
+}
+
+@Model
+final class PeriodicRepeatRevision {
+    var id: UUID = UUID()
+    var repeatID: UUID = UUID()
+    var effectiveDateRaw: String = "2000-01-01"
+    var anchorDateRaw: String = "2000-01-01"
+    var repeatDays: Int = 1
+    var type: PlannedItemType = PlannedItemType.fixedDebit
+    var label: String = ""
+    var matchingString: String?
+    var amount: Decimal = 0
+    var notes: String = ""
+
+    var effectiveDate: CivilDate { CivilDate(rawValue: effectiveDateRaw)! }
+    var anchorDate: CivilDate { CivilDate(rawValue: anchorDateRaw)! }
+
+    init(
+        id: UUID = UUID(),
+        repeatID: UUID,
+        effectiveDate: CivilDate,
+        anchorDate: CivilDate,
+        repeatDays: Int,
+        type: PlannedItemType,
+        label: String,
+        matchingString: String?,
+        amount: Decimal,
+        notes: String
+    ) {
+        self.id = id
+        self.repeatID = repeatID
+        self.effectiveDateRaw = effectiveDate.rawValue
+        self.anchorDateRaw = anchorDate.rawValue
+        self.repeatDays = repeatDays
+        self.type = type
+        self.label = label
+        self.matchingString = matchingString
+        self.amount = amount
+        self.notes = notes
+    }
+}
+
+@Model
+final class PeriodicRepeat {
+    var id: UUID = UUID()
+    var budgetID: UUID = UUID()
+    var accountID: UUID = UUID()
+    var endDateRaw: String?
+
+    var endDate: CivilDate? {
+        get { endDateRaw.flatMap(CivilDate.init(rawValue:)) }
+        set { endDateRaw = newValue?.rawValue }
+    }
+
+    init(id: UUID = UUID(), budgetID: UUID, accountID: UUID, endDate: CivilDate? = nil) {
+        self.id = id
+        self.budgetID = budgetID
+        self.accountID = accountID
+        self.endDateRaw = endDate?.rawValue
+    }
+}
+
+@Model
+final class PeriodicRepeatSkip {
+    var id: UUID = UUID()
+    var repeatID: UUID = UUID()
+    var scheduledDateRaw: String = "2000-01-01"
+
+    var scheduledDate: CivilDate { CivilDate(rawValue: scheduledDateRaw)! }
+
+    init(id: UUID = UUID(), repeatID: UUID, scheduledDate: CivilDate) {
+        self.id = id
+        self.repeatID = repeatID
+        self.scheduledDateRaw = scheduledDate.rawValue
+    }
+}
+
+@Model
+final class PeriodicOccurrenceRecord {
+    var plannedItemID: UUID = UUID()
+    var budgetID: UUID = UUID()
+    var repeatID: UUID?
+    var scheduledDateRaw: String = "2000-01-01"
+    var dueDateRaw: String = "2000-01-01"
+    var isOverride: Bool = false
+
+    var scheduledDate: CivilDate { CivilDate(rawValue: scheduledDateRaw)! }
+    var dueDate: CivilDate { CivilDate(rawValue: dueDateRaw)! }
+
+    init(
+        plannedItemID: UUID,
+        budgetID: UUID,
+        repeatID: UUID?,
+        scheduledDate: CivilDate,
+        dueDate: CivilDate,
+        isOverride: Bool = false
+    ) {
+        self.plannedItemID = plannedItemID
+        self.budgetID = budgetID
+        self.repeatID = repeatID
+        self.scheduledDateRaw = scheduledDate.rawValue
+        self.dueDateRaw = dueDate.rawValue
+        self.isOverride = isOverride
+    }
+}
+
 enum WheelOfMoneyMonth: Int, Codable, CaseIterable {
     case january = 1
     case february = 2
@@ -206,6 +347,7 @@ final class PlannedItem {
     var amount: Decimal = 0
     var dueDay: Int?
     var dueText: String?
+    var calendarContinuationPayload: String?
     var repeatDays: Int?
     var recurrenceID: UUID?
     var repeatMode: RepeatMode = RepeatMode.oneOff
@@ -226,6 +368,7 @@ final class PlannedItem {
         matchingString: String? = nil,
         dueDay: Int? = nil,
         dueText: String? = nil,
+        calendarContinuationPayload: String? = nil,
         repeatDays: Int? = nil,
         recurrenceID: UUID? = nil,
         repeatMode: RepeatMode? = nil,
@@ -245,6 +388,7 @@ final class PlannedItem {
         self.amount = amount
         self.dueDay = dueDay
         self.dueText = dueText
+        self.calendarContinuationPayload = calendarContinuationPayload
         self.repeatDays = repeatDays
         self.recurrenceID = recurrenceID
         self.repeatMode = repeatMode ?? Self.inferredRepeatMode(dueDay: dueDay, repeatDays: repeatDays, copiesAutomatically: copiesToNextMonthAutomatically)
@@ -303,8 +447,17 @@ final class PlannedItem {
         YearMonth(rawValue: monthKey)
     }
 
+    var calendarContinuationTemplate: CalendarRepeatTemplate? {
+        calendarContinuationPayload.flatMap(CalendarRepeatTemplate.init(payload:))
+    }
+
+    // A one-off exception keeps the original calendar definition for the following month.
+    var resumesCalendarRepeatNextMonth: Bool {
+        repeatMode == .oneOff && calendarContinuationTemplate != nil
+    }
+
     static func automaticallyCopiedItems(from items: [PlannedItem]) -> [PlannedItem] {
-        items.filter { $0.repeatMode != .oneOff }
+        items.filter { $0.repeatMode != .oneOff || $0.resumesCalendarRepeatNextMonth }
     }
 
     static func everyNDaysOccurrences(
@@ -401,25 +554,26 @@ final class PlannedItem {
     }
 
     static func copied(from item: PlannedItem, into monthKey: YearMonth) -> PlannedItem {
-        PlannedItem(
+        let template = item.calendarContinuationTemplate
+        return PlannedItem(
             id: UUID(),
             budgetID: item.budgetID,
             accountID: item.accountID,
             monthKey: monthKey,
-            type: item.type,
+            type: template?.type ?? item.type,
             source: .copiedFromPreviousMonth,
-            label: item.label,
-            amount: item.amount,
-            matchingString: item.matchingString,
-            dueDay: item.dueDay,
-            dueText: item.dueText,
-            repeatDays: item.repeatDays,
-            recurrenceID: item.recurrenceID,
-            repeatMode: item.repeatMode,
-            importedPostedAt: item.importedPostedAt,
+            label: template?.label ?? item.label,
+            amount: template?.amount ?? item.amount,
+            matchingString: template == nil ? item.matchingString : template?.matchingString,
+            dueDay: template == nil ? item.dueDay : template?.dueDay,
+            dueText: template == nil ? item.dueText : template?.dueText,
+            repeatDays: template == nil ? item.repeatDays : nil,
+            recurrenceID: template == nil ? item.recurrenceID : nil,
+            repeatMode: item.resumesCalendarRepeatNextMonth ? .calendar : item.repeatMode,
+            importedPostedAt: template == nil ? item.importedPostedAt : template?.importedPostedAt,
             isPaid: false,
-            copiesToNextMonthAutomatically: item.copiesToNextMonthAutomatically,
-            notes: item.notes
+            copiesToNextMonthAutomatically: template == nil ? item.copiesToNextMonthAutomatically : true,
+            notes: template?.notes ?? item.notes
         )
     }
 

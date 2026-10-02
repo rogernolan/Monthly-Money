@@ -163,6 +163,7 @@ struct MonthView: View {
     @State private var filter: MonthItemFilter = .all
     @State private var activeNewEntry: NewMonthItemSeed?
     @State private var activeEditorItem: PlannedItem?
+    @State private var isShowingRepeatingCopyWarning = false
 
     private var debits: [PlannedItem] {
         sorted(MonthItemFilterRules.filteredItems(state.monthItems, for: .debits))
@@ -207,6 +208,17 @@ struct MonthView: View {
         }
         .onChange(of: state.selectedMonth) { _, _ in
             focusedEditableChipID = nil
+        }
+        .alert(
+            "Repopulate \(monthName(for: nextMonth(after: state.selectedMonth)))?",
+            isPresented: $isShowingRepeatingCopyWarning
+        ) {
+            Button("OK", role: .destructive) {
+                state.copyRepeatingEntriesToNextMonth()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This may produce duplicate transactions, it cannot be undone")
         }
     }
 
@@ -284,6 +296,23 @@ struct MonthView: View {
                 .buttonStyle(.borderedProminent)
                 .tint(.green)
             }
+
+            if state.canCopyRepeatingEntriesToNextMonth {
+                Button {
+                    if state.currentMonthHasEntries {
+                        isShowingRepeatingCopyWarning = true
+                    } else {
+                        state.copyRepeatingEntriesToNextMonth()
+                    }
+                } label: {
+                    Text("Copy repeating entries to \(monthName(for: nextMonth(after: state.selectedMonth)))")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+            }
         }
     }
 
@@ -342,6 +371,16 @@ struct MonthView: View {
 
     private var previousMonthName: String {
         monthName(for: previousMonth(of: state.selectedMonth))
+    }
+
+    private func nextMonth(after month: YearMonth) -> YearMonth {
+        var year = month.year
+        var value = month.month + 1
+        if value > 12 {
+            value = 1
+            year += 1
+        }
+        return YearMonth(year: year, month: value)
     }
 
     private func previousMonth(of month: YearMonth) -> YearMonth {
@@ -584,7 +623,12 @@ struct MonthView: View {
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                     if state.canEditSelectedMonth {
                         Button(role: .destructive) {
-                            state.delete(item: item)
+                            if item.repeatMode == .periodic,
+                               let occurrence = state.periodicWomOccurrence(for: item) {
+                                _ = state.deletePeriodicOccurrence(occurrence, scope: .thisOccurrence)
+                            } else {
+                                state.delete(item: item)
+                            }
                         } label: {
                             Label("Delete", systemImage: "trash")
                         }
@@ -640,6 +684,9 @@ private struct MonthItemEditorView: View {
     @State private var draft: MonthItemEditorDraft
     @State private var activeMatchSourceItem: PlannedItem?
     @State private var pendingSameMonthPopulationItem: PlannedItem?
+    @State private var periodicScope: PeriodicOccurrenceEditScope = .thisOccurrence
+    @State private var periodicStartDate = Date()
+    @State private var isShowingDeleteConfirmation = false
 
     init(item: PlannedItem, importedPostedAt: Date? = nil) {
         _editingItem = State(initialValue: item)
@@ -655,58 +702,102 @@ private struct MonthItemEditorView: View {
         Form {
             Section("Details") {
                 labeledEditor(
-                    title: "Display title",
+                    title: "Title",
                     text: $draft.label
                 )
                 .disabled(!isEditable)
 
                 labeledEditor(
-                    title: "Search string for import",
+                    title: "Match string",
                     text: $draft.matchingString
                 )
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .disabled(!isEditable)
 
-                Picker("Type", selection: $draft.entryKind) {
-                    ForEach(MonthEntryKind.allCases) { kind in
-                        Text(kind.title).tag(kind)
+                EntryEditorField(title: "Amount") {
+                    HStack(spacing: 2) {
+                        Text("£").foregroundStyle(.secondary)
+                        TextField("", text: $draft.amountText)
+                            .keyboardType(.decimalPad)
+                            .frame(width: 96)
+                            .multilineTextAlignment(.leading)
+                            .accessibilityLabel("Amount")
                     }
                 }
-                .pickerStyle(.segmented)
                 .disabled(!isEditable)
 
-                TextField("Amount", text: $draft.amountText)
-                    .keyboardType(.decimalPad)
+                EntryEditorTypePicker(selection: $draft.entryKind)
                     .disabled(!isEditable)
 
-                Picker("Repeat", selection: $draft.repeatMode) {
-                    Text("Does not repeat").tag(MonthRepeatMode.oneOff)
-                    Text("Calendar repeat").tag(MonthRepeatMode.calendar)
-                    Text("Periodic").tag(MonthRepeatMode.periodic)
-                }
-                .disabled(!isEditable)
+                EntryEditorRepeatPicker(
+                    selection: $draft.repeatMode,
+                    existingMode: editableItem?.repeatMode,
+                    calendarContinuation: editableItem?.resumesCalendarRepeatNextMonth ?? false
+                )
+                    .disabled(!isEditable)
 
-                if draft.repeatAnchorDay != nil {
-                    Picker("Day", selection: Binding(
-                        get: { draft.repeatAnchorDay ?? 1 },
-                        set: { draft.repeatAnchorDay = $0 }
-                    )) {
-                        ForEach(1...31, id: \.self) { day in
-                            Text(MonthItemRowContent.ordinal(day)).tag(day)
-                        }
-                    }
-                }
-
-                if draft.repeatMode == .periodic {
-                    TextField("Repeat days", text: $draft.repeatDaysText)
-                        .keyboardType(.numberPad)
+                if draft.repeatMode == .oneOff {
+                    Toggle("Planned", isOn: $draft.isPlanned)
                         .disabled(!isEditable)
                 }
 
-                Toggle("Planned", isOn: $draft.isPlanned)
-                    .disabled(!isEditable)
+            }
 
+            if draft.repeatMode == .calendar {
+                Section("Repeat details") {
+                    EntryEditorField(title: "Day of month") {
+                        Picker("Day of month", selection: Binding(
+                            get: { draft.repeatAnchorDay ?? 1 },
+                            set: { draft.repeatAnchorDay = $0 }
+                        )) {
+                            ForEach(1...31, id: \.self) { day in
+                                Text(MonthItemRowContent.ordinal(day)).tag(day)
+                            }
+                        }
+                        .labelsHidden()
+                    }
+                    .disabled(!isEditable)
+                }
+            } else if draft.repeatMode == .periodic {
+                Section("Repeat details") {
+                    if editableItem?.repeatMode == .periodic {
+                        EntryEditorField(title: "Apply to") {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Picker("Apply to", selection: $periodicScope) {
+                                    ForEach(PeriodicOccurrenceEditScope.allCases) { scope in
+                                        Text(scope.rawValue).tag(scope)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                Text(periodicScope == .thisOccurrence
+                                     ? "Only this occurrence will change."
+                                     : "This occurrence and later dates will use the revised repeat.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    EntryEditorField(title: "Start date") {
+                        DatePicker("Start date", selection: $periodicStartDate,
+                                   in: periodicStartDateRange, displayedComponents: .date)
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                    }
+                    .disabled(!isEditable)
+                    EntryEditorField(title: "Repeat period (days)") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("", text: $draft.repeatDaysText)
+                                .keyboardType(.numberPad)
+                                .disabled(!isEditable || (editableItem?.repeatMode == .periodic && periodicScope == .thisOccurrence))
+                            if editableItem?.repeatMode == .periodic && periodicScope == .thisOccurrence {
+                                Text(WheelOfMoneyRowContent.singleOccurrenceRepeatPeriodHelp)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
             }
 
             if let editableItem, editableItem.source == .importedUnplanned, isEditable {
@@ -749,21 +840,74 @@ private struct MonthItemEditorView: View {
                     .accessibilityElement(children: .combine)
                     }
                 }
+
+                if let editableItem, isEditable {
+                    Button("Delete", systemImage: "trash", role: .destructive) {
+                        isShowingDeleteConfirmation = true
+                    }
+                    .confirmationDialog(
+                        editableItem.repeatMode == .periodic && periodicScope == .thisAndFuture
+                            ? "Delete this and future repeats?"
+                            : (editableItem.repeatMode == .periodic ? "Delete this occurrence?" : "Delete this entry?"),
+                        isPresented: $isShowingDeleteConfirmation,
+                        titleVisibility: .visible
+                    ) {
+                        Button("Delete", role: .destructive) {
+                            if editableItem.repeatMode == .periodic,
+                               let occurrence = state.periodicWomOccurrence(for: editableItem) {
+                                if state.deletePeriodicOccurrence(occurrence, scope: periodicScope) { dismiss() }
+                            } else {
+                                state.delete(item: editableItem)
+                                dismiss()
+                            }
+                        }
+                        Button("Cancel", role: .cancel) { }
+                    } message: {
+                        if editableItem.repeatMode == .periodic {
+                            Text(periodicScope == .thisOccurrence
+                                 ? "Only this occurrence will be deleted."
+                                 : "This repeat and its future occurrences will be deleted. Earlier occurrences will remain.")
+                        }
+                    }
+                }
             }
         }
         .navigationTitle(draft.label.isEmpty ? "Entry" : draft.label)
+        .onAppear {
+            if let editableItem, editableItem.repeatMode == .periodic,
+               let occurrence = state.periodicWomOccurrence(for: editableItem) {
+                periodicStartDate = Self.date(from: occurrence.dueDate)
+            } else {
+                periodicStartDate = Self.date(from: state.periodicDueDate(
+                    for: draft.repeatAnchorDay ?? 1, budgetMonth: state.selectedMonth
+                ) ?? CivilDate(year: state.selectedMonth.year, month: state.selectedMonth.month, day: 1)!)
+            }
+        }
         .onChange(of: draft.amountText) { _, _ in
             draft.normalizeAmountInput()
         }
         .onChange(of: draft.repeatMode) { _, mode in
             switch mode {
             case .oneOff:
-                break
+                periodicScope = .thisOccurrence
             case .calendar:
                 let day = draft.repeatAnchorDay ?? 1
                 draft.repeatAnchorDay = day
             case .periodic:
-                if draft.repeatAnchorDay == nil { draft.repeatAnchorDay = 1 }
+                draft.repeatAnchorDay = Self.civilDate(from: periodicStartDate)?.day ?? 1
+            }
+        }
+        .onChange(of: periodicStartDate) { _, date in
+            if draft.repeatMode == .periodic {
+                draft.repeatAnchorDay = Self.civilDate(from: date)?.day
+            }
+        }
+        .onChange(of: periodicScope) { _, newScope in
+            if newScope == .thisAndFuture,
+               let item = editableItem,
+               let occurrence = state.periodicWomOccurrence(for: item),
+               Self.civilDate(from: periodicStartDate).map({ $0 < occurrence.scheduledDate }) == true {
+                periodicStartDate = Self.date(from: occurrence.scheduledDate)
             }
         }
         .navigationDestination(item: $activeMatchSourceItem) { sourceItem in
@@ -829,8 +973,30 @@ private struct MonthItemEditorView: View {
         editingItem
     }
 
+    private var periodicStartDateRange: ClosedRange<Date> {
+        if let editableItem, editableItem.repeatMode == .periodic,
+           let occurrence = state.periodicWomOccurrence(for: editableItem) {
+            let lower = periodicScope == .thisAndFuture
+                ? Self.date(from: occurrence.scheduledDate) : Date.distantPast
+            return lower...Date.distantFuture
+        }
+        return state.periodicStartDateRange(for: state.selectedMonth)
+    }
+
+    private static func date(from civilDate: CivilDate) -> Date {
+        Calendar(identifier: .gregorian).date(from: DateComponents(
+            year: civilDate.year, month: civilDate.month, day: civilDate.day
+        )) ?? .now
+    }
+
+    private static func civilDate(from date: Date) -> CivilDate? {
+        let parts = Calendar(identifier: .gregorian).dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
+        return CivilDate(year: year, month: month, day: day)
+    }
+
     private var sourceOverride: PlannedItemSource {
-        if !draft.isPlanned {
+        if draft.repeatMode == .oneOff && !draft.isPlanned {
             return .importedUnplanned
         }
         guard let editableItem else {
@@ -841,6 +1007,57 @@ private struct MonthItemEditorView: View {
 
     private func save() {
         if let item = editableItem {
+            if item.repeatMode == .oneOff && draft.repeatMode == .periodic {
+                guard let startDate = Self.civilDate(from: periodicStartDate),
+                      let interval = draft.repeatDays else { return }
+                if state.promoteOneOffToPeriodic(
+                    item,
+                    label: draft.label,
+                    matchingString: draft.matchingString,
+                    amount: draft.amount,
+                    startDate: startDate,
+                    type: draft.resolvedType(existingItemType: item.type),
+                    notes: draft.notes,
+                    repeatDays: interval
+                ) { dismiss() }
+                return
+            }
+            if item.repeatMode == .periodic,
+               let occurrence = state.periodicWomOccurrence(for: item) {
+                let dueDate = draft.repeatMode == .oneOff
+                    ? occurrence.dueDate : Self.civilDate(from: periodicStartDate)
+                guard let dueDate else { return }
+                if draft.repeatMode == .oneOff {
+                    if state.savePeriodicOccurrenceAsOneOff(
+                        occurrence,
+                        label: draft.label,
+                        matchingString: draft.matchingString,
+                        amount: draft.amount,
+                        dueDate: dueDate,
+                        type: draft.resolvedType(existingItemType: item.type),
+                        notes: draft.notes,
+                        isPlanned: draft.isPlanned
+                    ) { dismiss() }
+                    return
+                }
+                let interval = periodicScope == .thisOccurrence
+                    ? occurrence.repeatDays
+                    : (draft.repeatDays ?? occurrence.repeatDays)
+                if state.savePeriodicOccurrence(
+                    occurrence,
+                    label: draft.label,
+                    matchingString: draft.matchingString,
+                    amount: draft.amount,
+                    dueDate: dueDate,
+                    type: draft.resolvedType(existingItemType: item.type),
+                    notes: draft.notes,
+                    repeatDays: interval,
+                    scope: periodicScope
+                ) {
+                    dismiss()
+                }
+                return
+            }
             let wasNotRepeating = item.repeatMode != .periodic
             let intervalChanged = item.repeatDays != draft.repeatDays
             state.update(
@@ -866,6 +1083,9 @@ private struct MonthItemEditorView: View {
                 dismiss()
             }
             return
+        }
+        if draft.repeatMode == .periodic {
+            draft.repeatAnchorDay = Self.civilDate(from: periodicStartDate)?.day
         }
         if state.createEntry(
             type: draft.resolvedType(),

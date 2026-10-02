@@ -49,16 +49,12 @@ final class MonthlyMoneyUITests: XCTestCase {
         XCTAssertTrue(womTab.waitForExistence(timeout: 5))
         womTab.tap()
 
-        XCTAssertTrue(chipValue(in: app, id: "wom-chip-annual-total-value").waitForExistence(timeout: 5))
-        XCTAssertTrue(chipValue(in: app, id: "wom-chip-monthly-average-value").exists)
-        XCTAssertTrue(chipValue(in: app, id: "wom-chip-pending-total-value").exists)
-        XCTAssertTrue(chipValue(in: app, id: "wom-chip-remaining-average-value").exists)
-
-        XCTAssertTrue(app.staticTexts["No items"].exists)
-
-        let pendingFilter = app.buttons["Pending"].firstMatch
-        XCTAssertTrue(pendingFilter.exists)
-        pendingFilter.tap()
+        XCTAssertTrue(app.staticTexts["Annualised cost"].waitForExistence(timeout: 5))
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-annualised-cost-value").exists)
+        XCTAssertTrue(chipValue(in: app, id: "wom-chip-monthly-savings-target-value").exists)
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "wom-fixed-summary").firstMatch.exists)
+        XCTAssertTrue(app.staticTexts["Monthly savings target"].exists)
+        XCTAssertTrue(app.staticTexts["No periodic repeats"].exists)
     }
 
     private func chipValue(in app: XCUIApplication, id: String) -> XCUIElement {

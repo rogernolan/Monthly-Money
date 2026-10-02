@@ -8,6 +8,6 @@ enum MonthlyMoneyRepositoryBootstrap {
     }
 
     private static var schema: Schema {
-        Schema(versionedSchema: MonthlyMoneySchemaV2.self)
+        Schema(versionedSchema: MonthlyMoneySchemaV4.self)
     }
 }

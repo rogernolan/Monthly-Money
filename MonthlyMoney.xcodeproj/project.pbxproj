@@ -3,10 +3,11 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 110;
 	objects = {
 
 /* Begin PBXBuildFile section */
+		34A8FDE52D9F43C8A6249E12 /* AppIcon-Development.icon in Resources */ = {isa = PBXBuildFile; fileRef = C89FC5112F645FE300BA911 /* AppIcon-Development.icon */; };
 		0326AB391B4D3E03C1AB130E /* WatchDailyBudgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BEF26BF918F40085E2D3C82 /* WatchDailyBudgetSnapshot.swift */; };
 		04335193EFD24AF39A4D0F26 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
 		31F41EF487745961DA374722 /* DailyBudgetSummaryWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7EEEC4D2202C8B3022A65CA /* DailyBudgetSummaryWidget.swift */; };
@@ -73,40 +74,35 @@
 /* Begin PBXCopyFilesBuildPhase section */
 		475E500A366BBE981E008159 /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstSubfolder = PlugIns;
 			files = (
 				E9AB7103DF6993EB1B0FD72D /* MonthlyMoneyWatchWidgets.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7F6CD975D71B4414A0FF8BDD /* Embed Watch Content */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
-			dstSubfolderSpec = 16;
+			dstSubfolder = Product;
 			files = (
 				4F4A590C597F4F0DB95DA5EB /* MonthlyMoneyWatch.app in Embed Watch Content */,
 			);
 			name = "Embed Watch Content";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CB14E188904CDB8E0BB10AC1 /* Embed App Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
-			buildActionMask = 2147483647;
 			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstSubfolder = PlugIns;
 			files = (
 				383F179847CEA475E45D11CF /* MonthlyMoneyWidgets.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		C89FC5112F645FE300BA911 /* AppIcon-Development.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon-Development.icon; sourceTree = "<group>"; };
 		023DED4428C1CCEAD81BC98D /* DailyBudgetWidgetSnapshot.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = DailyBudgetWidgetSnapshot.swift; path = ../MonthlyMoney/DailyBudgetWidgetSnapshot.swift; sourceTree = "<group>"; };
 		05089CDFB8D49B992231217E /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		0991A5D69EB096496889763C /* MonthlyMoneyWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = MonthlyMoneyWidgets.entitlements; sourceTree = "<group>"; };
@@ -170,48 +166,36 @@
 /* Begin PBXFrameworksBuildPhase section */
 		781FE064F0C898EEEA611A95 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				8E6C1A2BF11A59771B93CBBC /* Foundation.framework in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		837DAD127A4F8D4FF4E6C274 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				544A60BAE59DFB02D4411601 /* Foundation.framework in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		98BBF31FE22F187D5F5970F6 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				DEE5CFC4B6129C50ECEAF0AC /* Foundation.framework in Frameworks */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560A42F505D1E0021D18F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560B52F505D200021D18F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560BF2F505D200021D18F /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
@@ -276,6 +260,7 @@
 				C80560BB2F505D200021D18F /* MonthlyMoneyTests */,
 				C80560C52F505D200021D18F /* MonthlyMoneyUITests */,
 				C80560A82F505D1E0021D18F /* Products */,
+				C89FC5112F645FE300BA911 /* AppIcon-Development.icon */,
 				C89FC5112F645FE300BA9102 /* AppIcon.icon */,
 				9946E8A0B8D1E85F6E4B41A9 /* Frameworks */,
 				A6571033CDE154EE16335CA9 /* MonthlyMoneyWatch */,
@@ -328,8 +313,6 @@
 				E47A91E82E3E7AAE0677BAA0 /* Resources */,
 			);
 			buildRules = (
-			);
-			dependencies = (
 			);
 			name = MonthlyMoneyWidgets;
 			productName = MonthlyMoneyWidgets;
@@ -431,8 +414,6 @@
 			);
 			buildRules = (
 			);
-			dependencies = (
-			);
 			name = MonthlyMoneyWatchWidgets;
 			productName = MonthlyMoneyWatchWidgets;
 			productReference = 618369B1E98949C1B3018E49 /* MonthlyMoneyWatchWidgets.appex */;
@@ -470,7 +451,7 @@
 			);
 			mainGroup = C805609E2F505D1E0021D18F;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
+			preferredProjectObjectVersion = 110;
 			productRefGroup = C80560A82F505D1E0021D18F /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -488,66 +469,52 @@
 /* Begin PBXResourcesBuildPhase section */
 		9B1A017DC08A2E2FDF0AC398 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				34A8FDE52D9F43C8A6249E11 /* AppIcon.icon in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		ABE59B82456C6986F7EB9402 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560A52F505D1E0021D18F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				C89FC5122F645FE300BA9102 /* AppIcon.icon in Resources */,
+				34A8FDE52D9F43C8A6249E12 /* AppIcon-Development.icon in Resources */,
 				C80560D72F505D310021D18F /* AGENTS.md in Resources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560B62F505D200021D18F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560C02F505D200021D18F /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		E47A91E82E3E7AAE0677BAA0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0A327B12F6E199EAC43E3C9A /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				714C29CFA77F1AE12AA340AA /* DailyBudgetSharedStorage.swift in Sources */,
 				7935611AB2CD5013B3A4D96C /* DailyBudgetWidgetSnapshot.swift in Sources */,
 				04335193EFD24AF39A4D0F26 /* DailyBudgetSummaryWidget.swift in Sources */,
 				FA08CF2565A4FBFBBD04ABC2 /* MonthlyMoneyWatchWidgetsBundle.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		333A6381D738A3A308861AE5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				F74C8453686CA2762ED80D4E /* MonthlyMoneyWatchApp.swift in Sources */,
 				E3970AE622FAD54105E4C2BB /* MonthlyMoneyWatchView.swift in Sources */,
@@ -556,39 +523,30 @@
 				32D0D9536F62E507661DCB9E /* DailyBudgetSharedStorage.swift in Sources */,
 				BB6EA2B183AEFA8729CB0BA3 /* DailyBudgetWidgetSnapshot.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560A32F505D1E0021D18F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560B42F505D200021D18F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C80560BE2F505D200021D18F /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 		D5F883A7C406371826D19A85 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
 			files = (
 				CE4F59FC5F2A30DA822D23BC /* DailyBudgetSharedStorage.swift in Sources */,
 				58EB56DEB65E79BF64A59553 /* DailyBudgetWidgetSnapshot.swift in Sources */,
 				31F41EF487745961DA374722 /* DailyBudgetSummaryWidget.swift in Sources */,
 				E49B5168330F361F3E9B9B56 /* MonthlyMoneyWidgetsBundle.swift in Sources */,
 			);
-			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
@@ -623,7 +581,7 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		038122A4DD6C3EEE94218EA6 /* Debug */ = {
+		038122A4DD6C3EEE94218EA6 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWatch" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -646,7 +604,7 @@
 			};
 			name = Debug;
 		};
-		08CBC79B3589DE0338732383 /* Debug */ = {
+		08CBC79B3589DE0338732383 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWidgets" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -671,7 +629,7 @@
 			};
 			name = Debug;
 		};
-		319FB4E1076360D3D8E7F780 /* Release */ = {
+		319FB4E1076360D3D8E7F780 /* Release configuration for PBXNativeTarget "MonthlyMoneyWatch" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -695,7 +653,7 @@
 			};
 			name = Release;
 		};
-		8E73723C842EB36B8C63FCBA /* Release */ = {
+		8E73723C842EB36B8C63FCBA /* Release configuration for PBXNativeTarget "MonthlyMoneyWatchWidgets" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -721,7 +679,7 @@
 			};
 			name = Release;
 		};
-		93C036C26D643E71B85A7F7D /* Release */ = {
+		93C036C26D643E71B85A7F7D /* Release configuration for PBXNativeTarget "MonthlyMoneyWidgets" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -747,7 +705,7 @@
 			};
 			name = Release;
 		};
-		C80560CC2F505D200021D18F /* Debug */ = {
+		C80560CC2F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoney" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -759,6 +717,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MonthlyMoney/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -780,7 +739,7 @@
 			};
 			name = Debug;
 		};
-		C80560CD2F505D200021D18F /* Release */ = {
+		C80560CD2F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoney" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -792,6 +751,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = MonthlyMoney/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -813,7 +773,7 @@
 			};
 			name = Release;
 		};
-		C80560CE2F505D200021D18F /* Debug */ = {
+		C80560CE2F505D200021D18F /* Debug configuration for PBXProject "MonthlyMoney" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -878,7 +838,7 @@
 			};
 			name = Debug;
 		};
-		C80560CF2F505D200021D18F /* Release */ = {
+		C80560CF2F505D200021D18F /* Release configuration for PBXProject "MonthlyMoney" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -936,7 +896,7 @@
 			};
 			name = Release;
 		};
-		C80560D12F505D200021D18F /* Debug */ = {
+		C80560D12F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoneyTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -958,7 +918,7 @@
 			};
 			name = Debug;
 		};
-		C80560D22F505D200021D18F /* Release */ = {
+		C80560D22F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoneyTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -980,7 +940,7 @@
 			};
 			name = Release;
 		};
-		C80560D42F505D200021D18F /* Debug */ = {
+		C80560D42F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoneyUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -1000,7 +960,7 @@
 			};
 			name = Debug;
 		};
-		C80560D52F505D200021D18F /* Release */ = {
+		C80560D52F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoneyUITests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
@@ -1020,7 +980,7 @@
 			};
 			name = Release;
 		};
-		F99E13A3B65141DC9A9775A9 /* Debug */ = {
+		F99E13A3B65141DC9A9775A9 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWatchWidgets" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
@@ -1045,70 +1005,244 @@
 			};
 			name = Debug;
 		};
+		038122A4DD6C3EEE94218A7 /* Debug-Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = "";
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatch/MonthlyMoneyWatch-Development.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "MonthlyMoney Dev";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.diffeng.MonthlyMoney.dev;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.dev.watchkitapp;
+				PRODUCT_NAME = MonthlyMoneyWatch;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG MONTHLYMONEY_DEVELOPMENT";
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug-Development;
+		};
+		F99E13A3B65141DC9A9775B0 /* Debug-Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWatchWidgets/MonthlyMoneyWatchWidgets-Development.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWatchWidgets/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.dev.watchkitapp.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG MONTHLYMONEY_DEVELOPMENT";
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug-Development;
+		};
+		08CBC79B3589DE033873239 /* Debug-Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoneyWidgets/MonthlyMoneyWidgets-Development.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MonthlyMoneyWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.dev.widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG MONTHLYMONEY_DEVELOPMENT";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug-Development;
+		};
+		C80560D62F505D200021D18F /* Debug-Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon-Development;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = MonthlyMoney/MonthlyMoney-Development.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 975JU2ENN7;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = MonthlyMoney/Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.diffeng.MonthlyMoney.dev;
+				PRODUCT_NAME = "MonthlyMoney Dev";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG MONTHLYMONEY_DEVELOPMENT";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug-Development;
+		};
+		C80560D72F505D200021D18F /* Debug-Development */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 975JU2ENN7;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG MONTHLYMONEY_DEVELOPMENT";
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				DEVELOPMENT_TEAM = 975JU2ENN7;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug-Development;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
 		06E97C7A655F6E82416E90EB /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				319FB4E1076360D3D8E7F780 /* Release */,
-				038122A4DD6C3EEE94218EA6 /* Debug */,
+				319FB4E1076360D3D8E7F780 /* Release configuration for PBXNativeTarget "MonthlyMoneyWatch" */,
+				038122A4DD6C3EEE94218EA6 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWatch" */,				038122A4DD6C3EEE94218A7 /* Debug-Development */,
+
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		48200DC55AB7819A5B7AE252 /* Build configuration list for PBXNativeTarget "MonthlyMoneyWatchWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				8E73723C842EB36B8C63FCBA /* Release */,
-				F99E13A3B65141DC9A9775A9 /* Debug */,
+				8E73723C842EB36B8C63FCBA /* Release configuration for PBXNativeTarget "MonthlyMoneyWatchWidgets" */,
+				F99E13A3B65141DC9A9775A9 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWatchWidgets" */,				F99E13A3B65141DC9A9775B0 /* Debug-Development */,
+
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		55C1D00EBCEDF0CEB50B81DF /* Build configuration list for PBXNativeTarget "MonthlyMoneyWidgets" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				93C036C26D643E71B85A7F7D /* Release */,
-				08CBC79B3589DE0338732383 /* Debug */,
+				93C036C26D643E71B85A7F7D /* Release configuration for PBXNativeTarget "MonthlyMoneyWidgets" */,
+				08CBC79B3589DE0338732383 /* Debug configuration for PBXNativeTarget "MonthlyMoneyWidgets" */,				08CBC79B3589DE033873239 /* Debug-Development */,
+
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		C80560A22F505D1E0021D18F /* Build configuration list for PBXProject "MonthlyMoney" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C80560CE2F505D200021D18F /* Debug */,
-				C80560CF2F505D200021D18F /* Release */,
+				C80560CE2F505D200021D18F /* Debug configuration for PBXProject "MonthlyMoney" */,
+				C80560CF2F505D200021D18F /* Release configuration for PBXProject "MonthlyMoney" */,				C80560D72F505D200021D18F /* Debug-Development */,
+
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		C80560CB2F505D200021D18F /* Build configuration list for PBXNativeTarget "MonthlyMoney" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C80560CC2F505D200021D18F /* Debug */,
-				C80560CD2F505D200021D18F /* Release */,
+				C80560CC2F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoney" */,
+				C80560CD2F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoney" */,				C80560D62F505D200021D18F /* Debug-Development */,
+
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		C80560D02F505D200021D18F /* Build configuration list for PBXNativeTarget "MonthlyMoneyTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C80560D12F505D200021D18F /* Debug */,
-				C80560D22F505D200021D18F /* Release */,
+				C80560D12F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoneyTests" */,
+				C80560D22F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoneyTests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 		C80560D32F505D200021D18F /* Build configuration list for PBXNativeTarget "MonthlyMoneyUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				C80560D42F505D200021D18F /* Debug */,
-				C80560D52F505D200021D18F /* Release */,
+				C80560D42F505D200021D18F /* Debug configuration for PBXNativeTarget "MonthlyMoneyUITests" */,
+				C80560D52F505D200021D18F /* Release configuration for PBXNativeTarget "MonthlyMoneyUITests" */,
 			);
-			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
