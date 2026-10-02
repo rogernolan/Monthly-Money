@@ -21,29 +21,13 @@ struct EntryEditorTypePicker: View {
 
     var body: some View {
         EntryEditorField(title: "Type") {
-            HStack(spacing: 2) {
+            Picker("Type", selection: $selection) {
                 ForEach(MonthEntryKind.allCases) { kind in
-                    Button {
-                        selection = kind
-                    } label: {
-                        Text(kind.title)
-                            .font(.subheadline.weight(.medium))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                            .foregroundStyle(selection == kind ? Color.white : Color.primary)
-                            .background {
-                                if selection == kind {
-                                    RoundedRectangle(cornerRadius: 7)
-                                        .fill(kind == .credit ? Color.green : Color.red)
-                                }
-                            }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityValue(selection == kind ? "Selected" : "")
+                    Text(kind.title).tag(kind)
                 }
             }
-            .padding(2)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+            .labelsHidden()
+            .pickerStyle(.menu)
             .accessibilityIdentifier("entry-editor-type")
         }
     }
@@ -57,32 +41,26 @@ struct EntryEditorRepeatPicker: View {
     var body: some View {
         EntryEditorField(title: "Repeat") {
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 2) {
+                Picker("Repeat", selection: Binding(
+                    get: { selection },
+                    set: { mode in
+                        if MonthRepeatMode.availableModes(
+                            existing: existingMode, calendarContinuation: calendarContinuation
+                        ).contains(mode) {
+                            selection = mode
+                        }
+                    }
+                )) {
                     ForEach(MonthRepeatMode.allCases, id: \.self) { mode in
                         let available = MonthRepeatMode.availableModes(
                             existing: existingMode, calendarContinuation: calendarContinuation
                         ).contains(mode)
-                        Button {
-                            selection = mode
-                        } label: {
-                            Text(mode.title)
-                                .font(.subheadline.weight(.medium))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 8)
-                                .foregroundStyle(selection == mode ? Color.white : (available ? Color.primary : Color.secondary))
-                                .background {
-                                    if selection == mode {
-                                        RoundedRectangle(cornerRadius: 7).fill(Color.accentColor)
-                                    }
-                                }
-                        }
-                        .buttonStyle(.plain)
+                        Text(mode.title).tag(mode)
                         .disabled(!available)
-                        .accessibilityValue(selection == mode ? "Selected" : (available ? "" : "Unavailable for this entry"))
                     }
                 }
-                .padding(2)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 9))
+                .labelsHidden()
+                .pickerStyle(.segmented)
                 .accessibilityIdentifier("entry-editor-repeat")
                 if existingMode == .periodic && selection == .oneOff {
                     Text("Only this occurrence becomes a one-off entry. Later repeats continue.")

@@ -737,8 +737,10 @@ private struct MonthItemEditorView: View {
                 )
                     .disabled(!isEditable)
 
-                Toggle("Planned", isOn: $draft.isPlanned)
-                    .disabled(!isEditable)
+                if draft.repeatMode == .oneOff {
+                    Toggle("Planned", isOn: $draft.isPlanned)
+                        .disabled(!isEditable)
+                }
 
             }
 
@@ -994,7 +996,7 @@ private struct MonthItemEditorView: View {
     }
 
     private var sourceOverride: PlannedItemSource {
-        if !draft.isPlanned {
+        if draft.repeatMode == .oneOff && !draft.isPlanned {
             return .importedUnplanned
         }
         guard let editableItem else {
@@ -1033,7 +1035,8 @@ private struct MonthItemEditorView: View {
                         amount: draft.amount,
                         dueDate: dueDate,
                         type: draft.resolvedType(existingItemType: item.type),
-                        notes: draft.notes
+                        notes: draft.notes,
+                        isPlanned: draft.isPlanned
                     ) { dismiss() }
                     return
                 }

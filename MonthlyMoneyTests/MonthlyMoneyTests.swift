@@ -3815,6 +3815,68 @@ final class MonthlyMoneyTests: XCTestCase {
         })
     }
 
+    func testRepeatingEntriesArePlannedEvenWhenCreatedOrUpdatedFromUnplanned() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let calendar = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Rent", amount: 100, dueDay: 1,
+            source: .importedUnplanned, repeatMode: .calendar
+        ))
+        XCTAssertEqual(calendar.source, .manual)
+
+        let oneOff = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Insurance", amount: 20, dueDay: 2,
+            source: .importedUnplanned, repeatMode: .oneOff
+        ))
+        XCTAssertEqual(oneOff.source, .importedUnplanned)
+        state.update(
+            item: oneOff, label: "Insurance", amount: 20, dueDay: 2, dueText: nil,
+            type: .fixedDebit, sourceOverride: .importedUnplanned,
+            repeatMode: .calendar, copiesToNextMonthAutomatically: true, notes: ""
+        )
+        XCTAssertEqual(oneOff.repeatMode, .calendar)
+        XCTAssertEqual(oneOff.source, .manual)
+    }
+
+    func testPromotingUnplannedOneOffToPeriodicMakesItPlanned() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let original = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1,
+            source: .importedUnplanned, repeatMode: .oneOff
+        ))
+        let start = try XCTUnwrap(state.periodicDueDate(for: 1, budgetMonth: state.selectedMonth))
+
+        XCTAssertTrue(state.promoteOneOffToPeriodic(
+            original, label: "Medicine", matchingString: nil, amount: 10,
+            startDate: start, type: .fixedDebit, notes: "", repeatDays: 7
+        ))
+        let saved = try XCTUnwrap(try repository.periodicRepeatData().plannedItems.first { $0.id == original.id })
+        XCTAssertEqual(saved.source, .manual)
+    }
+
+    func testDetachingPeriodicOccurrenceCanCreateUnplannedOneOff() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let anchor = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 1,
+            repeatDays: 7, repeatMode: .periodic
+        ))
+        let occurrence = try XCTUnwrap(state.periodicWomOccurrence(for: anchor))
+
+        XCTAssertTrue(state.savePeriodicOccurrenceAsOneOff(
+            occurrence, label: "One-off medicine", matchingString: nil,
+            amount: 10, dueDate: occurrence.dueDate, type: .fixedDebit,
+            notes: "", isPlanned: false
+        ))
+        let saved = try XCTUnwrap(try repository.periodicRepeatData().plannedItems.first { $0.id == anchor.id })
+        XCTAssertEqual(saved.repeatMode, .oneOff)
+        XCTAssertEqual(saved.source, .importedUnplanned)
+    }
+
     func testChangingCalendarEntryToNoneKeepsNextMonthCalendarRepeat() async throws {
         var today = Self.date(year: 2026, month: 6, day: 15)
         let repository = try makeRepository()

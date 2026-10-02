@@ -171,6 +171,7 @@ private struct PeriodicWomOccurrenceEditorView: View {
     @State private var notes: String
     @State private var type: PlannedItemType
     @State private var repeatMode: MonthRepeatMode = .periodic
+    @State private var isPlanned = true
     @State private var scope: PeriodicOccurrenceEditScope = .thisOccurrence
     @State private var isShowingDeleteConfirmation = false
 
@@ -212,6 +213,10 @@ private struct PeriodicWomOccurrenceEditorView: View {
                     .accessibilityIdentifier("wom-occurrence-type")
 
                 EntryEditorRepeatPicker(selection: $repeatMode, existingMode: .periodic)
+
+                if repeatMode == .oneOff {
+                    Toggle("Planned", isOn: $isPlanned)
+                }
 
             }
 
@@ -318,7 +323,8 @@ private struct PeriodicWomOccurrenceEditorView: View {
                 amount: amount,
                 dueDate: occurrence.dueDate,
                 type: type,
-                notes: notes
+                notes: notes,
+                isPlanned: isPlanned
             ) { dismiss() }
             return
         }

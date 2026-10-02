@@ -1533,7 +1533,8 @@ final class AppState: ObservableObject {
         let originalSource = item.source
         item.source = resolvedUpdatedSource(
             originalSource: originalSource,
-            sourceOverride: sourceOverride
+            sourceOverride: sourceOverride,
+            repeatMode: resolvedRepeatMode
         )
         do {
             try repository.savePlannedItem(item)
@@ -1577,7 +1578,7 @@ final class AppState: ObservableObject {
                 accountID: account.id,
                 monthKey: selectedMonth,
                 type: type,
-                source: source,
+                source: resolvedRepeatMode == .oneOff || source != .importedUnplanned ? source : .manual,
                 label: label,
                 amount: amount,
                 matchingString: normalizeMatchingString(matchingString),
@@ -1918,7 +1919,8 @@ final class AppState: ObservableObject {
         amount: Decimal,
         dueDate: CivilDate,
         type: PlannedItemType,
-        notes: String
+        notes: String,
+        isPlanned: Bool = true
     ) -> Bool {
         let targetMonth = budgetMonth(for: dueDate)
         guard canEdit(month: occurrence.budgetMonth), canEdit(month: targetMonth),
@@ -1936,7 +1938,9 @@ final class AppState: ObservableObject {
             accountID: occurrence.accountID,
             monthKey: targetMonth,
             type: type,
-            source: existing?.source ?? .manual,
+            source: isPlanned
+                ? (existing?.source == .copiedFromPreviousMonth ? .copiedFromPreviousMonth : .manual)
+                : .importedUnplanned,
             label: label,
             amount: amount,
             matchingString: normalizeMatchingString(matchingString),
@@ -1989,7 +1993,7 @@ final class AppState: ObservableObject {
             accountID: existing.accountID,
             monthKey: budgetMonth(for: startDate),
             type: type,
-            source: existing.source,
+            source: existing.source == .importedUnplanned ? .manual : existing.source,
             label: label,
             amount: amount,
             matchingString: normalizeMatchingString(matchingString),
@@ -2324,15 +2328,11 @@ final class AppState: ObservableObject {
 
     private func resolvedUpdatedSource(
         originalSource: PlannedItemSource,
-        sourceOverride: PlannedItemSource?
+        sourceOverride: PlannedItemSource?,
+        repeatMode: RepeatMode
     ) -> PlannedItemSource {
-        if let sourceOverride {
-            return sourceOverride
-        }
-        if originalSource == .importedUnplanned {
-            return .manual
-        }
-        return originalSource
+        let source = sourceOverride ?? (originalSource == .importedUnplanned ? .manual : originalSource)
+        return repeatMode != .oneOff && source == .importedUnplanned ? .manual : source
     }
 
     private func effectiveOpeningBalance(for month: YearMonth) -> Decimal {

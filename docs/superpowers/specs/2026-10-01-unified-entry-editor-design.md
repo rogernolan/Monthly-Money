@@ -4,7 +4,7 @@ Month entries and WoM periodic occurrences use the same three-section form layou
 
 ## Details
 
-Show Title, Match string, Amount, Type, and Repeat in that order. Type is a two-way Debit/Credit picker; its selected segment is red for Debit and green for Credit. Repeat is a three-way None/Calendar/Periodic picker. Existing repeat entries may change to None for this occurrence. Direct Calendar-to-Periodic and Periodic-to-Calendar conversions are unavailable. New entries can choose any repeat type. Existing one-off entries can become periodic while retaining their identity and paid/import metadata.
+Show Title, Match string, Amount, Type, and Repeat in that order. Type is a plain Debit/Credit pop-up menu. Repeat is the standard system segmented picker with None, Calendar, and Periodic choices. Show Planned only when Repeat is None; Calendar and Periodic entries are always planned. Existing repeat entries may change to None for this occurrence. Direct Calendar-to-Periodic and Periodic-to-Calendar conversions are unavailable. New entries can choose any repeat type. Existing one-off entries can become periodic while retaining their identity and paid/import metadata.
 
 ## Repeat details
 
