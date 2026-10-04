@@ -224,6 +224,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
         let recurrenceID: UUID
     }
 
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws {
+        try Self.backfillPeriodicRepeats(in: context)
+    }
+
     private static func backfillPeriodicRepeats(in context: NSManagedObjectContext) throws {
         let budgetRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.budget)
         let budgets = try context.fetch(budgetRequest)
@@ -232,6 +236,24 @@ final class CoreDataAccountDataStore: AccountDataStore {
         })
         let itemRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.plannedItem)
         let items = try context.fetch(itemRequest)
+        let repeatRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeat)
+        var repeatsByID: [UUID: NSManagedObject] = [:]
+        for repeatObject in try context.fetch(repeatRequest) {
+            if let id = repeatObject.value(forKey: "id") as? UUID {
+                repeatsByID[id] = repeatObject
+            }
+        }
+        let revisionRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicRepeatRevision)
+        var revisionsByRepeatID: [UUID: [PeriodicRepeatRevision]] = [:]
+        for revisionObject in try context.fetch(revisionRequest) {
+            if let revision = CoreDataMapping.periodicRepeatRevision(from: revisionObject) {
+                revisionsByRepeatID[revision.repeatID, default: []].append(revision)
+            }
+        }
+        let occurrenceRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+        var plannedIDsWithOccurrence = Set(try context.fetch(occurrenceRequest).compactMap {
+            $0.value(forKey: "plannedItemID") as? UUID
+        })
         var groups: [LegacyRepeatKey: [(NSManagedObject, PlannedItem, CivilDate)]] = [:]
 
         for managedItem in items {
@@ -254,31 +276,51 @@ final class CoreDataAccountDataStore: AccountDataStore {
             }
             guard let latest = ordered.last, let interval = latest.1.repeatDays,
                   let budget = budgetsByID[key.budgetID] else { continue }
-            let repeatObject = NSEntityDescription.insertNewObject(
-                forEntityName: CoreDataEntityName.periodicRepeat, into: context
-            )
-            repeatObject.setValue(key.recurrenceID, forKey: "id")
-            repeatObject.setValue(key.budgetID, forKey: "budgetID")
-            repeatObject.setValue(key.accountID, forKey: "accountID")
-            repeatObject.setValue(budget, forKey: "budget")
+            let repeatObject: NSManagedObject
+            if let existing = repeatsByID[key.recurrenceID] {
+                repeatObject = existing
+            } else {
+                repeatObject = NSEntityDescription.insertNewObject(
+                    forEntityName: CoreDataEntityName.periodicRepeat, into: context
+                )
+                repeatObject.setValue(key.recurrenceID, forKey: "id")
+                repeatObject.setValue(key.budgetID, forKey: "budgetID")
+                repeatObject.setValue(key.accountID, forKey: "accountID")
+                repeatObject.setValue(budget, forKey: "budget")
+                repeatsByID[key.recurrenceID] = repeatObject
+            }
 
             let repeatID = repeatObject.value(forKey: "id") as! UUID
-            let revision = NSEntityDescription.insertNewObject(
-                forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context
-            )
-            revision.setValue(UUID(), forKey: "id")
-            revision.setValue(repeatID, forKey: "repeatID")
-            revision.setValue(latest.2.rawValue, forKey: "effectiveDateRaw")
-            revision.setValue(latest.2.rawValue, forKey: "anchorDateRaw")
-            revision.setValue(Int32(interval), forKey: "repeatDays")
-            revision.setValue(latest.1.type.rawValue, forKey: "typeRaw")
-            revision.setValue(latest.1.label, forKey: "label")
-            revision.setValue(latest.1.matchingString, forKey: "matchingString")
-            revision.setValue(latest.1.amount as NSDecimalNumber, forKey: "amount")
-            revision.setValue(latest.1.notes, forKey: "notes")
-            revision.setValue(repeatObject, forKey: "repeat")
+            if revisionsByRepeatID[repeatID, default: []].isEmpty {
+                let revision = NSEntityDescription.insertNewObject(
+                    forEntityName: CoreDataEntityName.periodicRepeatRevision, into: context
+                )
+                revision.setValue(UUID(), forKey: "id")
+                revision.setValue(repeatID, forKey: "repeatID")
+                revision.setValue(latest.2.rawValue, forKey: "effectiveDateRaw")
+                revision.setValue(latest.2.rawValue, forKey: "anchorDateRaw")
+                revision.setValue(Int32(interval), forKey: "repeatDays")
+                revision.setValue(latest.1.type.rawValue, forKey: "typeRaw")
+                revision.setValue(latest.1.label, forKey: "label")
+                revision.setValue(latest.1.matchingString, forKey: "matchingString")
+                revision.setValue(latest.1.amount as NSDecimalNumber, forKey: "amount")
+                revision.setValue(latest.1.notes, forKey: "notes")
+                revision.setValue(repeatObject, forKey: "repeat")
+                if let value = CoreDataMapping.periodicRepeatRevision(from: revision) {
+                    revisionsByRepeatID[repeatID, default: []].append(value)
+                }
+            }
 
             for (managedItem, item, date) in ordered {
+                guard plannedIDsWithOccurrence.insert(item.id).inserted else { continue }
+                let activeRevision = revisionsByRepeatID[repeatID]?
+                    .filter { $0.effectiveDate <= date }
+                    .max { $0.effectiveDate < $1.effectiveDate }
+                let isOverride = activeRevision.map { definition in
+                    item.type != definition.type || item.label != definition.label
+                        || item.matchingString != definition.matchingString || item.amount != definition.amount
+                        || item.repeatDays != definition.repeatDays || item.notes != definition.notes
+                } ?? true
                 let occurrence = NSEntityDescription.insertNewObject(
                     forEntityName: CoreDataEntityName.periodicOccurrence, into: context
                 )
@@ -287,12 +329,7 @@ final class CoreDataAccountDataStore: AccountDataStore {
                 occurrence.setValue(repeatID, forKey: "repeatID")
                 occurrence.setValue(date.rawValue, forKey: "scheduledDateRaw")
                 occurrence.setValue(date.rawValue, forKey: "dueDateRaw")
-                occurrence.setValue(
-                    item.type != latest.1.type || item.label != latest.1.label
-                        || item.matchingString != latest.1.matchingString || item.amount != latest.1.amount
-                        || item.repeatDays != latest.1.repeatDays || item.notes != latest.1.notes,
-                    forKey: "isOverride"
-                )
+                occurrence.setValue(isOverride, forKey: "isOverride")
                 occurrence.setValue(repeatObject, forKey: "repeat")
                 _ = managedItem
             }
@@ -912,9 +949,10 @@ final class CoreDataAccountDataStore: AccountDataStore {
             ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.plannedItem, into: context)
         CoreDataMapping.apply(item, to: itemObject)
         try attachToBudgetRelationship(managedObject: itemObject, budgetID: item.budgetID)
-        let occurrenceObject = NSEntityDescription.insertNewObject(
-            forEntityName: CoreDataEntityName.periodicOccurrence, into: context
-        )
+        let occurrenceRequest = NSFetchRequest<NSManagedObject>(entityName: CoreDataEntityName.periodicOccurrence)
+        occurrenceRequest.predicate = NSPredicate(format: "plannedItemID == %@", item.id as CVarArg)
+        let occurrenceObject = try context.fetch(occurrenceRequest).first
+            ?? NSEntityDescription.insertNewObject(forEntityName: CoreDataEntityName.periodicOccurrence, into: context)
         CoreDataMapping.apply(occurrence, to: occurrenceObject)
         occurrenceObject.setValue(repeatObject, forKey: "repeat")
         try save()

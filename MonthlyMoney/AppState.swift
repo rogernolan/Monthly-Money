@@ -556,6 +556,7 @@ final class AppState: ObservableObject {
     private let nowProvider: () -> Date
     private var currentParticipantID: String
     private var isHydratingPersistedBudgetState = false
+    private var hasWaitedForInitialCloudImport = false
     private var dismissedSharedBudgetAdoptionIDs: Set<UUID> = []
     init(
         repository: AccountRepository,
@@ -601,6 +602,7 @@ final class AppState: ObservableObject {
         do {
             currentParticipantID = await currentParticipantIDProvider()
             try await waitForInitialCloudImportIfNeeded()
+            hasWaitedForInitialCloudImport = true
             _ = try repository.reconcileDuplicateLocalBudgets()
             try migrateLegacyOwnerIdentifiersIfNeeded()
 
@@ -632,6 +634,9 @@ final class AppState: ObservableObject {
     }
 
     func refresh() throws {
+        if hasWaitedForInitialCloudImport {
+            try repository.backfillLegacyPeriodicRepeatsIfNeeded()
+        }
         try restoreLocalBudgetIfNeeded()
         try migrateBalanceLastUpdatedTimestampsIfNeeded()
         try ensureHiddenDailyAccountIfNeeded()
@@ -2115,7 +2120,7 @@ final class AppState: ObservableObject {
                 .max(by: { $0.effectiveDate < $1.effectiveDate }) else { return }
 
         let previousItems = Dictionary(uniqueKeysWithValues: priorData.plannedItems.map { ($0.id, $0) })
-        let materializedMonths = Set(records.map { YearMonth(year: $0.dueDate.year, month: $0.dueDate.month) })
+        let materializedMonths = Set(records.compactMap { previousItems[$0.plannedItemID]?.resolvedMonthKey })
         guard let lastMaterializedMonth = materializedMonths.max(),
               let through = Self.civilDate(
                 from: budgetMonthEndDate(after: lastMaterializedMonth).addingTimeInterval(-86_400)

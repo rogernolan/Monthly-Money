@@ -3999,6 +3999,63 @@ final class MonthlyMoneyTests: XCTestCase {
         try assertPromoteAndDetachRoundTrip(in: store)
     }
 
+    func testLateImportedLegacyPeriodicRowsAreBackfilledOnceOnRefresh() async throws {
+        let privateStore = try CoreDataAccountDataStore.makeInMemory()
+        Self.retainHostedTestObject(privateStore)
+        let repository = AccountRepository(
+            privateStore: privateStore, sharedStore: InMemoryAccountDataStore()
+        )
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 15) })
+        await state.bootstrapIfNeeded()
+        let account = try XCTUnwrap(try repository.accounts().first)
+        let repeatID = UUID()
+        let first = PlannedItem(
+            budgetID: account.budgetID, accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 6), type: .fixedDebit,
+            label: "Imported medicine", amount: 10, dueDay: 15,
+            repeatDays: 7, recurrenceID: repeatID, repeatMode: .periodic
+        )
+        try privateStore.upsertPlannedItems([first])
+
+        try state.refresh()
+        try state.refresh()
+        var data = try repository.periodicRepeatData()
+        XCTAssertEqual(data.repeats.filter { $0.id == repeatID }.count, 1)
+        XCTAssertEqual(data.revisions.filter { $0.repeatID == repeatID }.count, 1)
+        XCTAssertEqual(data.occurrences.filter { $0.plannedItemID == first.id }.count, 1)
+        let existingRevision = try XCTUnwrap(data.revisions.first { $0.repeatID == repeatID })
+        existingRevision.label = "Edited definition"
+        try privateStore.upsertPeriodicRepeatRevisions([existingRevision])
+
+        let second = PlannedItem(
+            budgetID: account.budgetID, accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 6), type: .fixedDebit,
+            label: "Imported medicine", amount: 10, dueDay: 22,
+            repeatDays: 7, recurrenceID: repeatID, repeatMode: .periodic
+        )
+        try privateStore.upsertPlannedItems([second])
+        try state.refresh()
+        data = try repository.periodicRepeatData()
+        XCTAssertEqual(data.repeats.filter { $0.id == repeatID }.count, 1)
+        XCTAssertEqual(data.revisions.filter { $0.repeatID == repeatID }.count, 1)
+        XCTAssertEqual(data.revisions.first { $0.repeatID == repeatID }?.label, "Edited definition")
+        XCTAssertEqual(data.occurrences.filter { $0.repeatID == repeatID }.count, 2)
+
+        let earlier = PlannedItem(
+            budgetID: account.budgetID, accountID: account.id,
+            monthKey: YearMonth(year: 2026, month: 6), type: .fixedDebit,
+            label: "Imported medicine", amount: 10, dueDay: 8,
+            repeatDays: 7, recurrenceID: repeatID, repeatMode: .periodic
+        )
+        try privateStore.upsertPlannedItems([earlier])
+        try state.refresh()
+        data = try repository.periodicRepeatData()
+        XCTAssertEqual(data.occurrences.filter { $0.repeatID == repeatID }.count, 3)
+        XCTAssertTrue(state.womOccurrenceGroups.flatMap(\.occurrences).contains {
+            $0.repeatID == repeatID && $0.scheduledDate == CivilDate(year: 2026, month: 6, day: 8)!
+        })
+    }
+
     func testSwiftDataPromotesAndDetachesPeriodicEntryWithoutDuplicateRows() throws {
         let schema = Schema(versionedSchema: MonthlyMoneySchemaV4.self)
         let directory = FileManager.default.temporaryDirectory
@@ -4069,6 +4126,31 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(try store.fetchPeriodicRepeatSkips(repeatIDs: [repeatRecord.id]).contains {
             $0.scheduledDate == date
         })
+
+        let secondRepeat = PeriodicRepeat(budgetID: budget.id, accountID: account.id)
+        let secondRevision = PeriodicRepeatRevision(
+            repeatID: secondRepeat.id, effectiveDate: date, anchorDate: date,
+            repeatDays: 14, type: .fixedDebit, label: "One-time medicine",
+            matchingString: nil, amount: 12, notes: ""
+        )
+        let repromoted = PlannedItem(
+            id: original.id, budgetID: budget.id, accountID: account.id,
+            monthKey: month, type: .fixedDebit, label: "One-time medicine", amount: 12,
+            dueDay: 15, repeatDays: 14, recurrenceID: secondRepeat.id,
+            repeatMode: .periodic, isPaid: true
+        )
+        let secondOccurrence = PeriodicOccurrenceRecord(
+            plannedItemID: original.id, budgetID: budget.id,
+            repeatID: secondRepeat.id, scheduledDate: date, dueDate: date
+        )
+        try store.createPeriodicRepeat(
+            repeatRecord: secondRepeat, revision: secondRevision,
+            item: repromoted, occurrence: secondOccurrence
+        )
+        let occurrenceRecords = try store.fetchPeriodicOccurrences(plannedItemIDs: [original.id])
+        XCTAssertEqual(occurrenceRecords.count, 1)
+        XCTAssertEqual(occurrenceRecords.first?.repeatID, secondRepeat.id)
+        XCTAssertEqual(try store.fetchPlannedItem(id: original.id)?.repeatMode, .periodic)
     }
 
     func testPeriodicStartDateRangeUsesPaydayMonthBoundaries() async throws {
@@ -4352,6 +4434,36 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertTrue(updatedOccurrences.contains { record in
             reconciled.plannedItems.first(where: { $0.id == record.plannedItemID })?.amount == 20
         })
+    }
+
+    func testFutureEditReconcilesIntoPaydayBudgetMonth() async throws {
+        let repository = try makeRepository()
+        let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 6, day: 27) })
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 26
+        state.selectedMonth = YearMonth(year: 2026, month: 7)
+        try state.refresh()
+        let anchor = try XCTUnwrap(state.createEntry(
+            type: .fixedDebit, label: "Medicine", amount: 10, dueDay: 27,
+            repeatDays: 10, repeatMode: .periodic
+        ))
+        XCTAssertEqual(anchor.monthKey, "2026-07")
+        let occurrence = try XCTUnwrap(state.periodicWomOccurrence(for: anchor))
+        XCTAssertEqual(occurrence.scheduledDate, CivilDate(year: 2026, month: 6, day: 27)!)
+
+        XCTAssertTrue(state.savePeriodicOccurrence(
+            occurrence, label: "Medicine", matchingString: nil, amount: 10,
+            dueDate: occurrence.dueDate, type: .fixedDebit, notes: "",
+            repeatDays: 5, scope: .thisAndFuture
+        ))
+
+        let data = try repository.periodicRepeatData()
+        let newDate = CivilDate(year: 2026, month: 7, day: 2)!
+        let newRecord = try XCTUnwrap(data.occurrences.first {
+            $0.repeatID == anchor.recurrenceID && $0.scheduledDate == newDate
+        })
+        let newItem = try XCTUnwrap(data.plannedItems.first { $0.id == newRecord.plannedItemID })
+        XCTAssertEqual(newItem.monthKey, "2026-07")
     }
 
     func testUpdatingMonthItemPersistsMatchingStringAndAllowsClearing() async throws {

@@ -12,6 +12,7 @@ protocol AccountDataStore {
     var implementationKind: DataStoreImplementationKind { get }
 
     func awaitInitialCloudImport(timeout: Duration) async throws
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws
     func acceptShareInvitations(_ metadata: [CKShare.Metadata]) async throws
     func hasActiveShare(for budgetID: UUID) throws -> Bool
 
@@ -70,6 +71,7 @@ protocol AccountDataStore {
 }
 
 extension AccountDataStore {
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws {}
     func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat] { _ = budgetID; return [] }
     func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision] { _ = repeatIDs; return [] }
     func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip] { _ = repeatIDs; return [] }
@@ -703,7 +705,17 @@ final class SwiftDataAccountDataStore: AccountDataStore {
         } else {
             modelContext.insert(item)
         }
-        modelContext.insert(occurrence)
+        if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(
+            predicate: #Predicate { $0.plannedItemID == itemID }
+        )).first {
+            existing.budgetID = occurrence.budgetID
+            existing.repeatID = occurrence.repeatID
+            existing.scheduledDateRaw = occurrence.scheduledDateRaw
+            existing.dueDateRaw = occurrence.dueDateRaw
+            existing.isOverride = occurrence.isOverride
+        } else {
+            modelContext.insert(occurrence)
+        }
         try modelContext.save()
     }
 
@@ -981,6 +993,11 @@ final class AccountRepository {
 
     func awaitInitialPrivateCloudImport(timeout: Duration) async throws {
         try await privateStore.awaitInitialCloudImport(timeout: timeout)
+    }
+
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws {
+        try privateStore.backfillLegacyPeriodicRepeatsIfNeeded()
+        try sharedStore.backfillLegacyPeriodicRepeatsIfNeeded()
     }
 
     func prepareShareSession(forSharedBudgetID budgetID: UUID) async throws -> BudgetShareSession {
