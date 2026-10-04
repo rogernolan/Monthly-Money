@@ -12,6 +12,7 @@ protocol AccountDataStore {
     var implementationKind: DataStoreImplementationKind { get }
 
     func awaitInitialCloudImport(timeout: Duration) async throws
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws
     func acceptShareInvitations(_ metadata: [CKShare.Metadata]) async throws
     func hasActiveShare(for budgetID: UUID) throws -> Bool
 
@@ -31,6 +32,21 @@ protocol AccountDataStore {
     func upsertPlannedItems(_ items: [PlannedItem]) throws
     func deletePlannedItem(id: UUID) throws
     func deletePlannedItems(accountID: UUID) throws
+    func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat]
+    func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision]
+    func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip]
+    func fetchPeriodicOccurrences(plannedItemIDs: Set<UUID>) throws -> [PeriodicOccurrenceRecord]
+    func deletePeriodicOccurrences(plannedItemIDs: Set<UUID>) throws
+    func upsertPeriodicRepeats(_ repeats: [PeriodicRepeat]) throws
+    func upsertPeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision]) throws
+    func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws
+    func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws
+    func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws
+    func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws
+    func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws
+    func deletePeriodicRepeats(budgetID: UUID) throws
+    func deletePeriodicRepeats(accountID: UUID) throws
     func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth]
     func upsertPopulatedMonths(_ months: [PopulatedMonth]) throws
     func deletePopulatedMonths(budgetID: UUID) throws
@@ -55,6 +71,27 @@ protocol AccountDataStore {
 }
 
 extension AccountDataStore {
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws {}
+    func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat] { _ = budgetID; return [] }
+    func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision] { _ = repeatIDs; return [] }
+    func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip] { _ = repeatIDs; return [] }
+    func fetchPeriodicOccurrences(plannedItemIDs: Set<UUID>) throws -> [PeriodicOccurrenceRecord] { _ = plannedItemIDs; return [] }
+    func deletePeriodicOccurrences(plannedItemIDs: Set<UUID>) throws { _ = plannedItemIDs }
+    func upsertPeriodicRepeats(_ repeats: [PeriodicRepeat]) throws { _ = repeats }
+    func upsertPeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision]) throws { _ = revisions }
+    func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws { _ = skips }
+    func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws { _ = occurrences }
+    func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws { _ = item; _ = occurrence }
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        try upsertPlannedItems([item])
+        try upsertPeriodicOccurrences([occurrence])
+        try upsertPeriodicRepeatSkips([skip])
+    }
+    func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws { _ = repeatRecord; _ = revision; _ = item; _ = occurrence }
+    func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws { _ = repeatID; _ = boundary; _ = revision }
+    func deletePeriodicRepeats(budgetID: UUID) throws { _ = budgetID }
+    func deletePeriodicRepeats(accountID: UUID) throws { _ = accountID }
+
     func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
         _ = budgetID
         return []
@@ -88,6 +125,14 @@ enum DataStoreImplementationKind: Equatable {
     case coreData
 }
 
+struct PeriodicRepeatData {
+    let repeats: [PeriodicRepeat]
+    let revisions: [PeriodicRepeatRevision]
+    let skips: [PeriodicRepeatSkip]
+    let occurrences: [PeriodicOccurrenceRecord]
+    let plannedItems: [PlannedItem]
+}
+
 @MainActor
 final class InMemoryAccountDataStore: AccountDataStore {
     let implementationKind: DataStoreImplementationKind = .inMemory
@@ -98,6 +143,10 @@ final class InMemoryAccountDataStore: AccountDataStore {
     private var transactionsByID: [UUID: Transaction] = [:]
     private var importedTransactionRecordsByID: [UUID: ImportedTransactionRecord] = [:]
     private var wheelOfMoneyItemsByID: [UUID: WheelOfMoneyItem] = [:]
+    private var periodicRepeatsByID: [UUID: PeriodicRepeat] = [:]
+    private var periodicRepeatRevisionsByID: [UUID: PeriodicRepeatRevision] = [:]
+    private var periodicRepeatSkipsByID: [UUID: PeriodicRepeatSkip] = [:]
+    private var periodicOccurrencesByPlannedItemID: [UUID: PeriodicOccurrenceRecord] = [:]
 
     init() {}
 
@@ -118,6 +167,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func deleteBudget(id: UUID) throws {
+        try deletePeriodicRepeats(budgetID: id)
         budgetsByID[id] = nil
         try deletePopulatedMonths(budgetID: id)
     }
@@ -135,6 +185,7 @@ final class InMemoryAccountDataStore: AccountDataStore {
     }
 
     func deleteAccount(id: UUID) throws {
+        try deletePeriodicRepeats(accountID: id)
         accountsByID[id] = nil
     }
 
@@ -160,10 +211,103 @@ final class InMemoryAccountDataStore: AccountDataStore {
 
     func deletePlannedItem(id: UUID) throws {
         plannedItemsByID[id] = nil
+        periodicOccurrencesByPlannedItemID[id] = nil
     }
 
     func deletePlannedItems(accountID: UUID) throws {
+        let plannedIDs = Set(plannedItemsByID.values.filter { $0.accountID == accountID }.map(\.id))
         plannedItemsByID = plannedItemsByID.filter { $0.value.accountID != accountID }
+        try deletePeriodicOccurrences(plannedItemIDs: plannedIDs)
+    }
+
+    func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat] {
+        periodicRepeatsByID.values.filter { $0.budgetID == budgetID }
+    }
+
+    func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision] {
+        periodicRepeatRevisionsByID.values.filter { repeatIDs.contains($0.repeatID) }
+    }
+
+    func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip] {
+        periodicRepeatSkipsByID.values.filter { repeatIDs.contains($0.repeatID) }
+    }
+
+    func fetchPeriodicOccurrences(plannedItemIDs: Set<UUID>) throws -> [PeriodicOccurrenceRecord] {
+        periodicOccurrencesByPlannedItemID.values.filter { plannedItemIDs.contains($0.plannedItemID) }
+    }
+
+    func deletePeriodicOccurrences(plannedItemIDs: Set<UUID>) throws {
+        for id in plannedItemIDs { periodicOccurrencesByPlannedItemID[id] = nil }
+    }
+
+    func upsertPeriodicRepeats(_ repeats: [PeriodicRepeat]) throws {
+        for value in repeats { periodicRepeatsByID[value.id] = value }
+    }
+
+    func upsertPeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision]) throws {
+        for value in revisions { periodicRepeatRevisionsByID[value.id] = value }
+    }
+
+    func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws {
+        for value in skips {
+            periodicRepeatSkipsByID[value.id] = value
+        }
+    }
+
+    func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws {
+        for value in occurrences { periodicOccurrencesByPlannedItemID[value.plannedItemID] = value }
+    }
+
+    func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        plannedItemsByID[item.id] = item
+        periodicOccurrencesByPlannedItemID[item.id] = occurrence
+    }
+
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID,
+              item.repeatMode == .oneOff, occurrence.repeatID == nil,
+              occurrence.scheduledDate == skip.scheduledDate else { throw RepositoryError.invalidCrossScopeReference }
+        plannedItemsByID[item.id] = item
+        periodicOccurrencesByPlannedItemID[item.id] = occurrence
+        periodicRepeatSkipsByID[skip.id] = skip
+    }
+
+    func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard repeatRecord.id == revision.repeatID, repeatRecord.id == occurrence.repeatID,
+              item.id == occurrence.plannedItemID, item.budgetID == repeatRecord.budgetID,
+              item.accountID == repeatRecord.accountID else { throw RepositoryError.invalidCrossScopeReference }
+        periodicRepeatsByID[repeatRecord.id] = repeatRecord
+        periodicRepeatRevisionsByID[revision.id] = revision
+        plannedItemsByID[item.id] = item
+        periodicOccurrencesByPlannedItemID[item.id] = occurrence
+    }
+
+    func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws {
+        periodicRepeatRevisionsByID = periodicRepeatRevisionsByID.filter {
+            $0.value.repeatID != repeatID || $0.value.effectiveDate < boundary
+        }
+        periodicRepeatRevisionsByID[revision.id] = revision
+    }
+
+    func deletePeriodicRepeats(budgetID: UUID) throws {
+        let repeatIDs = Set(periodicRepeatsByID.values.filter { $0.budgetID == budgetID }.map(\.id))
+        periodicRepeatsByID = periodicRepeatsByID.filter { !repeatIDs.contains($0.key) }
+        periodicRepeatRevisionsByID = periodicRepeatRevisionsByID.filter { !repeatIDs.contains($0.value.repeatID) }
+        periodicRepeatSkipsByID = periodicRepeatSkipsByID.filter { !repeatIDs.contains($0.value.repeatID) }
+        periodicOccurrencesByPlannedItemID = periodicOccurrencesByPlannedItemID.filter { $0.value.budgetID != budgetID }
+    }
+
+    func deletePeriodicRepeats(accountID: UUID) throws {
+        let repeatIDs = Set(periodicRepeatsByID.values.filter { $0.accountID == accountID }.map(\.id))
+        periodicRepeatsByID = periodicRepeatsByID.filter { !repeatIDs.contains($0.key) }
+        periodicRepeatRevisionsByID = periodicRepeatRevisionsByID.filter { !repeatIDs.contains($0.value.repeatID) }
+        periodicRepeatSkipsByID = periodicRepeatSkipsByID.filter { !repeatIDs.contains($0.value.repeatID) }
+        periodicOccurrencesByPlannedItemID = periodicOccurrencesByPlannedItemID.filter {
+            !repeatIDs.contains($0.value.repeatID ?? UUID())
+        }
     }
 
     func fetchPopulatedMonths(budgetID: UUID) throws -> [PopulatedMonth] {
@@ -326,6 +470,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
     func deleteAccount(id: UUID) throws {
         let descriptor = FetchDescriptor<Account>(predicate: #Predicate { $0.id == id })
         if let account = try modelContext.fetch(descriptor).first {
+            try deletePeriodicRepeats(accountID: id)
             modelContext.delete(account)
             try modelContext.save()
         }
@@ -377,6 +522,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
                 existing.isPaid = item.isPaid
                 existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
                 existing.notes = item.notes
+                existing.calendarContinuationPayload = item.calendarContinuationPayload
             } else {
                 modelContext.insert(item)
             }
@@ -387,6 +533,7 @@ final class SwiftDataAccountDataStore: AccountDataStore {
     func deletePlannedItem(id: UUID) throws {
         let descriptor = FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == id })
         if let item = try modelContext.fetch(descriptor).first {
+            try deletePeriodicOccurrences(plannedItemIDs: [id])
             modelContext.delete(item)
             try modelContext.save()
         }
@@ -394,7 +541,208 @@ final class SwiftDataAccountDataStore: AccountDataStore {
 
     func deletePlannedItems(accountID: UUID) throws {
         let descriptor = FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.accountID == accountID })
-        try modelContext.fetch(descriptor).forEach(modelContext.delete)
+        let items = try modelContext.fetch(descriptor)
+        try deletePeriodicOccurrences(plannedItemIDs: Set(items.map(\.id)))
+        items.forEach(modelContext.delete)
+        try modelContext.save()
+    }
+
+    func fetchPeriodicRepeats(budgetID: UUID) throws -> [PeriodicRepeat] {
+        let descriptor = FetchDescriptor<PeriodicRepeat>(predicate: #Predicate { $0.budgetID == budgetID })
+        return try modelContext.fetch(descriptor)
+    }
+
+    func fetchPeriodicRepeatRevisions(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatRevision] {
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatRevision>()).filter { repeatIDs.contains($0.repeatID) }
+    }
+
+    func fetchPeriodicRepeatSkips(repeatIDs: Set<UUID>) throws -> [PeriodicRepeatSkip] {
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatSkip>()).filter { repeatIDs.contains($0.repeatID) }
+    }
+
+    func fetchPeriodicOccurrences(plannedItemIDs: Set<UUID>) throws -> [PeriodicOccurrenceRecord] {
+        try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>()).filter { plannedItemIDs.contains($0.plannedItemID) }
+    }
+
+    func upsertPeriodicRepeats(_ repeats: [PeriodicRepeat]) throws {
+        for value in repeats {
+            let id = value.id
+            if try modelContext.fetch(FetchDescriptor<PeriodicRepeat>(predicate: #Predicate { $0.id == id })).isEmpty {
+                modelContext.insert(value)
+            }
+        }
+        try modelContext.save()
+    }
+
+    func upsertPeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision]) throws {
+        for value in revisions {
+            let id = value.id
+            if try modelContext.fetch(FetchDescriptor<PeriodicRepeatRevision>(predicate: #Predicate { $0.id == id })).isEmpty {
+                modelContext.insert(value)
+            }
+        }
+        try modelContext.save()
+    }
+
+    func upsertPeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip]) throws {
+        for value in skips {
+            let id = value.id
+            if try modelContext.fetch(FetchDescriptor<PeriodicRepeatSkip>(predicate: #Predicate { $0.id == id })).isEmpty {
+                modelContext.insert(value)
+            }
+        }
+        try modelContext.save()
+    }
+
+    func upsertPeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord]) throws {
+        for value in occurrences {
+            let id = value.plannedItemID
+            if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(predicate: #Predicate { $0.plannedItemID == id })).first {
+                existing.repeatID = value.repeatID
+                existing.scheduledDateRaw = value.scheduledDateRaw
+                existing.dueDateRaw = value.dueDateRaw
+                existing.isOverride = value.isOverride
+            } else {
+                modelContext.insert(value)
+            }
+        }
+        try modelContext.save()
+    }
+
+    func upsertPlannedItemAndPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        let itemID = item.id
+        if let existing = try modelContext.fetch(FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })).first {
+            existing.budgetID = item.budgetID
+            existing.accountID = item.accountID
+            existing.monthKey = item.monthKey
+            existing.type = item.type
+            existing.source = item.source
+            existing.label = item.label
+            existing.matchingString = item.matchingString
+            existing.amount = item.amount
+            existing.dueDay = item.dueDay
+            existing.dueText = item.dueText
+            existing.repeatDays = item.repeatDays
+            existing.recurrenceID = item.recurrenceID
+            existing.repeatMode = item.repeatMode
+            existing.importedPostedAt = item.importedPostedAt
+            existing.isPaid = item.isPaid
+            existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
+            existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
+        } else {
+            modelContext.insert(item)
+        }
+        let occurrenceID = occurrence.plannedItemID
+        if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(predicate: #Predicate { $0.plannedItemID == occurrenceID })).first {
+            existing.repeatID = occurrence.repeatID
+            existing.scheduledDateRaw = occurrence.scheduledDateRaw
+            existing.dueDateRaw = occurrence.dueDateRaw
+            existing.isOverride = occurrence.isOverride
+        } else {
+            modelContext.insert(occurrence)
+        }
+        try modelContext.save()
+    }
+
+    func upsertDetachedPeriodicOccurrence(_ item: PlannedItem, occurrence: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == occurrence.plannedItemID, item.budgetID == occurrence.budgetID,
+              item.repeatMode == .oneOff, occurrence.repeatID == nil,
+              occurrence.scheduledDate == skip.scheduledDate else { throw RepositoryError.invalidCrossScopeReference }
+        let itemID = item.id
+        if let existing = try modelContext.fetch(FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })).first {
+            existing.monthKey = item.monthKey
+            existing.type = item.type
+            existing.label = item.label
+            existing.matchingString = item.matchingString
+            existing.amount = item.amount
+            existing.dueDay = item.dueDay
+            existing.repeatDays = nil
+            existing.recurrenceID = nil
+            existing.repeatMode = .oneOff
+            existing.copiesToNextMonthAutomatically = false
+            existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
+        } else {
+            modelContext.insert(item)
+        }
+        let occurrenceID = occurrence.plannedItemID
+        if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(predicate: #Predicate { $0.plannedItemID == occurrenceID })).first {
+            existing.repeatID = nil
+            existing.scheduledDateRaw = occurrence.scheduledDateRaw
+            existing.dueDateRaw = occurrence.dueDateRaw
+            existing.isOverride = true
+        } else {
+            modelContext.insert(occurrence)
+        }
+        modelContext.insert(skip)
+        try modelContext.save()
+    }
+
+    func createPeriodicRepeat(repeatRecord: PeriodicRepeat, revision: PeriodicRepeatRevision, item: PlannedItem, occurrence: PeriodicOccurrenceRecord) throws {
+        guard repeatRecord.id == revision.repeatID, repeatRecord.id == occurrence.repeatID,
+              item.id == occurrence.plannedItemID, item.budgetID == repeatRecord.budgetID,
+              item.accountID == repeatRecord.accountID else { throw RepositoryError.invalidCrossScopeReference }
+        modelContext.insert(repeatRecord)
+        modelContext.insert(revision)
+        let itemID = item.id
+        if let existing = try modelContext.fetch(FetchDescriptor<PlannedItem>(predicate: #Predicate { $0.id == itemID })).first {
+            existing.monthKey = item.monthKey
+            existing.type = item.type
+            existing.label = item.label
+            existing.matchingString = item.matchingString
+            existing.amount = item.amount
+            existing.dueDay = item.dueDay
+            existing.repeatDays = item.repeatDays
+            existing.recurrenceID = item.recurrenceID
+            existing.repeatMode = item.repeatMode
+            existing.copiesToNextMonthAutomatically = item.copiesToNextMonthAutomatically
+            existing.notes = item.notes
+            existing.calendarContinuationPayload = item.calendarContinuationPayload
+        } else {
+            modelContext.insert(item)
+        }
+        if let existing = try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>(
+            predicate: #Predicate { $0.plannedItemID == itemID }
+        )).first {
+            existing.budgetID = occurrence.budgetID
+            existing.repeatID = occurrence.repeatID
+            existing.scheduledDateRaw = occurrence.scheduledDateRaw
+            existing.dueDateRaw = occurrence.dueDateRaw
+            existing.isOverride = occurrence.isOverride
+        } else {
+            modelContext.insert(occurrence)
+        }
+        try modelContext.save()
+    }
+
+    func replacePeriodicRepeatRevisions(repeatID: UUID, from boundary: CivilDate, with revision: PeriodicRepeatRevision) throws {
+        let revisions = try modelContext.fetch(FetchDescriptor<PeriodicRepeatRevision>())
+        revisions.filter { $0.repeatID == repeatID && $0.effectiveDate >= boundary }.forEach(modelContext.delete)
+        modelContext.insert(revision)
+        try modelContext.save()
+    }
+
+    func deletePeriodicRepeats(budgetID: UUID) throws {
+        let repeats = try fetchPeriodicRepeats(budgetID: budgetID)
+        let repeatIDs = Set(repeats.map(\.id))
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatRevision>()).filter { repeatIDs.contains($0.repeatID) }.forEach(modelContext.delete)
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatSkip>()).filter { repeatIDs.contains($0.repeatID) }.forEach(modelContext.delete)
+        try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>()).filter { $0.repeatID.map(repeatIDs.contains) == true }.forEach(modelContext.delete)
+        repeats.forEach(modelContext.delete)
+        try modelContext.save()
+    }
+
+    func deletePeriodicRepeats(accountID: UUID) throws {
+        let repeats = try modelContext.fetch(FetchDescriptor<PeriodicRepeat>()).filter { $0.accountID == accountID }
+        let repeatIDs = Set(repeats.map(\.id))
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatRevision>()).filter { repeatIDs.contains($0.repeatID) }.forEach(modelContext.delete)
+        try modelContext.fetch(FetchDescriptor<PeriodicRepeatSkip>()).filter { repeatIDs.contains($0.repeatID) }.forEach(modelContext.delete)
+        try modelContext.fetch(FetchDescriptor<PeriodicOccurrenceRecord>()).filter { $0.repeatID.map(repeatIDs.contains) == true }.forEach(modelContext.delete)
+        repeats.forEach(modelContext.delete)
         try modelContext.save()
     }
 
@@ -645,6 +993,11 @@ final class AccountRepository {
 
     func awaitInitialPrivateCloudImport(timeout: Duration) async throws {
         try await privateStore.awaitInitialCloudImport(timeout: timeout)
+    }
+
+    func backfillLegacyPeriodicRepeatsIfNeeded() throws {
+        try privateStore.backfillLegacyPeriodicRepeatsIfNeeded()
+        try sharedStore.backfillLegacyPeriodicRepeatsIfNeeded()
     }
 
     func prepareShareSession(forSharedBudgetID budgetID: UUID) async throws -> BudgetShareSession {
@@ -898,6 +1251,121 @@ final class AccountRepository {
             }
     }
 
+    func periodicRepeatData(for budgetID: UUID? = nil) throws -> PeriodicRepeatData {
+        let budget: Budget?
+        if let budgetID {
+            budget = try privateStore.fetchBudget(id: budgetID) ?? sharedStore.fetchBudget(id: budgetID)
+        } else {
+            budget = try activeBudget()
+        }
+        guard let budget,
+              let store = try storeHoldingBudget(id: budget.id) else {
+            return PeriodicRepeatData(repeats: [], revisions: [], skips: [], occurrences: [], plannedItems: [])
+        }
+        let repeats = try store.fetchPeriodicRepeats(budgetID: budget.id)
+        let repeatIDs = Set(repeats.map(\.id))
+        let revisions = try store.fetchPeriodicRepeatRevisions(repeatIDs: repeatIDs)
+        let skips = try store.fetchPeriodicRepeatSkips(repeatIDs: repeatIDs)
+        let accountIDs = Set(try store.fetchAccounts().filter { $0.budgetID == budget.id }.map(\.id))
+        let plannedItems = try store.fetchPlannedItems(accountIDs: accountIDs, monthKey: nil)
+            .filter { $0.budgetID == budget.id }
+        let plannedIDs = Set(plannedItems.map(\.id))
+        let occurrences = try store.fetchPeriodicOccurrences(plannedItemIDs: plannedIDs)
+        return PeriodicRepeatData(repeats: repeats, revisions: revisions, skips: skips, occurrences: occurrences, plannedItems: plannedItems)
+    }
+
+    func savePeriodicRepeat(_ repeatRecord: PeriodicRepeat) throws {
+        guard let store = try storeHoldingBudget(id: repeatRecord.budgetID),
+              try store.fetchAccount(id: repeatRecord.accountID)?.budgetID == repeatRecord.budgetID else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.upsertPeriodicRepeats([repeatRecord])
+        try touchBudget(id: repeatRecord.budgetID, in: store)
+    }
+
+    func createPeriodicRepeat(
+        repeatRecord: PeriodicRepeat,
+        revision: PeriodicRepeatRevision,
+        item: PlannedItem,
+        occurrence: PeriodicOccurrenceRecord
+    ) throws {
+        guard repeatRecord.id == revision.repeatID, repeatRecord.id == occurrence.repeatID,
+              item.id == occurrence.plannedItemID,
+              let (store, account) = try storeAndAccount(for: repeatRecord.accountID),
+              account.budgetID == repeatRecord.budgetID, item.accountID == account.id,
+              item.budgetID == repeatRecord.budgetID else { throw RepositoryError.invalidCrossScopeReference }
+        try store.createPeriodicRepeat(repeatRecord: repeatRecord, revision: revision, item: item, occurrence: occurrence)
+        try touchBudget(id: repeatRecord.budgetID, in: store)
+    }
+
+    func savePeriodicRepeatRevisions(_ revisions: [PeriodicRepeatRevision], budgetID: UUID) throws {
+        guard let store = try storeHoldingBudget(id: budgetID) else { throw RepositoryError.invalidCrossScopeReference }
+        let repeats = try store.fetchPeriodicRepeats(budgetID: budgetID)
+        let repeatIDs = Set(repeats.map(\.id))
+        guard revisions.allSatisfy({ repeatIDs.contains($0.repeatID) }) else { throw RepositoryError.invalidCrossScopeReference }
+        try store.upsertPeriodicRepeatRevisions(revisions)
+        try touchBudget(id: budgetID, in: store)
+    }
+
+    func replacePeriodicRepeatRevision(
+        repeatID: UUID,
+        from boundary: CivilDate,
+        with revision: PeriodicRepeatRevision,
+        budgetID: UUID
+    ) throws {
+        guard revision.repeatID == repeatID,
+              let store = try storeHoldingBudget(id: budgetID),
+              try store.fetchPeriodicRepeats(budgetID: budgetID).contains(where: { $0.id == repeatID }) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.replacePeriodicRepeatRevisions(repeatID: repeatID, from: boundary, with: revision)
+        try touchBudget(id: budgetID, in: store)
+    }
+
+    func savePeriodicRepeatSkips(_ skips: [PeriodicRepeatSkip], budgetID: UUID) throws {
+        guard let store = try storeHoldingBudget(id: budgetID) else { throw RepositoryError.invalidCrossScopeReference }
+        let repeats = try store.fetchPeriodicRepeats(budgetID: budgetID)
+        let repeatIDs = Set(repeats.map(\.id))
+        guard skips.allSatisfy({ repeatIDs.contains($0.repeatID) }) else { throw RepositoryError.invalidCrossScopeReference }
+        try store.upsertPeriodicRepeatSkips(skips)
+        try touchBudget(id: budgetID, in: store)
+    }
+
+    func savePeriodicOccurrences(_ occurrences: [PeriodicOccurrenceRecord], budgetID: UUID) throws {
+        guard let store = try storeHoldingBudget(id: budgetID) else { throw RepositoryError.invalidCrossScopeReference }
+        let accountIDs = Set(try store.fetchAccounts().filter { $0.budgetID == budgetID }.map(\.id))
+        let plannedIDs = Set(try store.fetchPlannedItems(accountIDs: accountIDs, monthKey: nil).map(\.id))
+        guard occurrences.allSatisfy({ plannedIDs.contains($0.plannedItemID) && $0.budgetID == budgetID }) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.upsertPeriodicOccurrences(occurrences)
+        try touchBudget(id: budgetID, in: store)
+    }
+
+    func savePeriodicOccurrence(_ item: PlannedItem, record: PeriodicOccurrenceRecord) throws {
+        guard item.id == record.plannedItemID, item.budgetID == record.budgetID,
+              let (store, account) = try storeAndAccount(for: item.accountID), account.budgetID == item.budgetID else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        if let repeatID = record.repeatID,
+           try !store.fetchPeriodicRepeats(budgetID: item.budgetID).contains(where: { $0.id == repeatID }) {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.upsertPlannedItemAndPeriodicOccurrence(item, occurrence: record)
+        try touchBudget(id: item.budgetID, in: store)
+    }
+
+    func saveDetachedPeriodicOccurrence(_ item: PlannedItem, record: PeriodicOccurrenceRecord, skip: PeriodicRepeatSkip) throws {
+        guard item.id == record.plannedItemID, item.budgetID == record.budgetID,
+              record.repeatID == nil, item.repeatMode == .oneOff,
+              let (store, account) = try storeAndAccount(for: item.accountID), account.budgetID == item.budgetID,
+              try store.fetchPeriodicRepeats(budgetID: item.budgetID).contains(where: { $0.id == skip.repeatID }) else {
+            throw RepositoryError.invalidCrossScopeReference
+        }
+        try store.upsertDetachedPeriodicOccurrence(item, occurrence: record, skip: skip)
+        try touchBudget(id: item.budgetID, in: store)
+    }
+
     func hasPlannedItem(id: UUID) throws -> Bool {
         try privateStore.fetchPlannedItem(id: id) != nil || sharedStore.fetchPlannedItem(id: id) != nil
     }
@@ -978,7 +1446,7 @@ final class AccountRepository {
         try preferredBudget(from: sharedStore.fetchBudgets())
     }
 
-    func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth])? {
+    func localBudgetSnapshot() throws -> (budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth], periodicRepeats: [PeriodicRepeat], periodicRepeatRevisions: [PeriodicRepeatRevision], periodicRepeatSkips: [PeriodicRepeatSkip], periodicOccurrences: [PeriodicOccurrenceRecord])? {
         guard let budget = try localBudget() else { return nil }
         let accounts = try privateStore.fetchAccounts().filter { $0.budgetID == budget.id }
         let accountIDs = Set(accounts.map(\.id))
@@ -989,10 +1457,15 @@ final class AccountRepository {
         let wheelOfMoneyItems = try privateStore.fetchWheelOfMoneyItems(budgetID: budget.id)
             .filter { $0.budgetID == budget.id }
         let populatedMonths = try privateStore.fetchPopulatedMonths(budgetID: budget.id)
-        return (budget, accounts, plannedItems, transactions, wheelOfMoneyItems, populatedMonths)
+        let periodicRepeats = try privateStore.fetchPeriodicRepeats(budgetID: budget.id)
+        let repeatIDs = Set(periodicRepeats.map(\.id))
+        let periodicRepeatRevisions = try privateStore.fetchPeriodicRepeatRevisions(repeatIDs: repeatIDs)
+        let periodicRepeatSkips = try privateStore.fetchPeriodicRepeatSkips(repeatIDs: repeatIDs)
+        let periodicOccurrences = try privateStore.fetchPeriodicOccurrences(plannedItemIDs: Set(plannedItems.map(\.id)))
+        return (budget, accounts, plannedItems, transactions, wheelOfMoneyItems, populatedMonths, periodicRepeats, periodicRepeatRevisions, periodicRepeatSkips, periodicOccurrences)
     }
 
-    func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth] = []) throws {
+    func insertShared(budget: Budget, accounts: [Account], plannedItems: [PlannedItem], transactions: [Transaction], wheelOfMoneyItems: [WheelOfMoneyItem], populatedMonths: [PopulatedMonth] = [], periodicRepeats: [PeriodicRepeat] = [], periodicRepeatRevisions: [PeriodicRepeatRevision] = [], periodicRepeatSkips: [PeriodicRepeatSkip] = [], periodicOccurrences: [PeriodicOccurrenceRecord] = []) throws {
         try sharedStore.upsertBudget(budget)
         for account in accounts {
             try sharedStore.upsertAccount(account)
@@ -1003,6 +1476,10 @@ final class AccountRepository {
         try sharedStore.upsertImportedTransactionRecords(importedRecords)
         try sharedStore.upsertWheelOfMoneyItems(wheelOfMoneyItems)
         try sharedStore.upsertPopulatedMonths(populatedMonths)
+        try sharedStore.upsertPeriodicRepeats(periodicRepeats)
+        try sharedStore.upsertPeriodicRepeatRevisions(periodicRepeatRevisions)
+        try sharedStore.upsertPeriodicRepeatSkips(periodicRepeatSkips)
+        try sharedStore.upsertPeriodicOccurrences(periodicOccurrences)
     }
 
     func deleteLocalBudget(id: UUID) throws {

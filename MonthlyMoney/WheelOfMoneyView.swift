@@ -1,9 +1,20 @@
 import SwiftUI
 
 enum WheelOfMoneyRowContent {
+    static let annualisedCostTitle = "Annualised cost"
+    static let singleOccurrenceRepeatPeriodHelp = "Cannot edit repeat period of a single entry. Select 'This and future' if you wish to change the repeat period."
+
     static func notesLine(for item: WheelOfMoneyItem) -> String? {
         let trimmed = item.notes.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    static func dayText(for date: CivilDate) -> String {
+        MonthItemRowContent.ordinal(date.day)
+    }
+
+    static func directionSymbol(for type: PlannedItemType) -> String {
+        type == .credit ? "arrowtriangle.up.fill" : "arrowtriangle.down.fill"
     }
 }
 
@@ -11,211 +22,359 @@ struct WheelOfMoneyView: View {
     @EnvironmentObject private var state: AppState
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.colorScheme) private var colorScheme
-
-    @State private var activeEditorItem: WheelOfMoneyItem?
-    @State private var isPresentingNewItem = false
-    @State private var pendingDeleteItem: WheelOfMoneyItem?
+    @State private var activeOccurrence: PeriodicWomOccurrence?
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                header
-                    .padding(.horizontal, 16)
-                    .padding(.top, 2)
-                    .padding(.bottom, 4)
+        VStack(spacing: 0) {
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                savingsChip(
+                    title: WheelOfMoneyRowContent.annualisedCostTitle,
+                    amount: state.annualizedPeriodicRepeatCost,
+                    accessibilityIdentifier: "wom-chip-annualised-cost-value"
+                )
+                savingsChip(
+                    title: "Monthly savings target",
+                    amount: state.monthlyPeriodicRepeatSavingsTarget,
+                    accessibilityIdentifier: "wom-chip-monthly-savings-target-value"
+                )
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 10)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("wom-fixed-summary")
 
-                Divider()
+            Divider()
 
-                List {
-                    if state.filteredWheelOfMoneyItems.isEmpty {
-                        Text("No items")
-                            .foregroundStyle(.secondary)
-                    }
+            List {
+                if state.womOccurrenceGroups.allSatisfy({ $0.occurrences.isEmpty }) {
+                    ContentUnavailableView("No periodic repeats", systemImage: "repeat", description: Text("Every-N-days items will appear here."))
+                }
 
-                    ForEach(state.filteredWheelOfMoneyItems, id: \.id) { item in
-                        row(for: item)
-                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                Button(role: .destructive) {
-                                    pendingDeleteItem = item
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
+                ForEach(visibleGroups) { group in
+                    Section(monthTitle(group.month)) {
+                        ForEach(group.occurrences) { occurrence in
+                            Button {
+                                activeOccurrence = occurrence
+                            } label: {
+                                occurrenceRow(occurrence)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("wom-occurrence-\(occurrence.id)")
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button("Delete", systemImage: "trash", role: .destructive) {
+                                    _ = state.deletePeriodicOccurrence(occurrence, scope: .thisOccurrence)
+                                }
+                                .accessibilityIdentifier("wom-occurrence-delete-\(occurrence.id)")
+                            }
+                        }
                     }
                 }
-                .listStyle(.insetGrouped)
             }
-
-            Button {
-                isPresentingNewItem = true
-            } label: {
-                Image(systemName: "plus")
-                    .font(.headline.weight(.bold))
-                    .foregroundStyle(.white)
-                    .frame(width: 56, height: 56)
-                    .background(Circle().fill(.green))
-            }
-            .padding(.trailing, 18)
-            .padding(.bottom, 10)
+            .listStyle(.insetGrouped)
         }
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $activeEditorItem) { item in
-            WheelOfMoneyItemEditorView(item: item)
+        .navigationTitle("WoM")
+        .navigationDestination(item: $activeOccurrence) { occurrence in
+            PeriodicWomOccurrenceEditorView(occurrence: occurrence)
                 .environmentObject(state)
-        }
-        .navigationDestination(isPresented: $isPresentingNewItem) {
-            WheelOfMoneyItemEditorView()
-                .environmentObject(state)
-        }
-        .alert(
-            "Delete item?",
-            isPresented: Binding(
-                get: { pendingDeleteItem != nil },
-                set: { if !$0 { pendingDeleteItem = nil } }
-            ),
-            presenting: pendingDeleteItem
-        ) { item in
-            Button("Cancel", role: .cancel) {
-                pendingDeleteItem = nil
-            }
-            Button("Delete", role: .destructive) {
-                state.delete(wheelOfMoneyItem: item)
-                pendingDeleteItem = nil
-            }
-        } message: { item in
-            Text("Delete \"\(item.title)\"? This cannot be undone.")
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("WoM")
-                .font(.largeTitle.weight(.bold))
-                .foregroundStyle(.primary)
-                .padding(.bottom, 2)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                chip(
-                    title: "Annual total",
-                    value: state.wheelOfMoneyMetrics.annualTotal,
-                    accessibilityValueID: "wom-chip-annual-total-value"
-                )
-                chip(
-                    title: "Monthly average",
-                    value: state.wheelOfMoneyMetrics.monthlyAverage,
-                    accessibilityValueID: "wom-chip-monthly-average-value"
-                )
-                chip(
-                    title: "Pending total",
-                    value: state.wheelOfMoneyMetrics.pendingTotal,
-                    accessibilityValueID: "wom-chip-pending-total-value"
-                )
-                chip(
-                    title: "Remaining average",
-                    value: state.wheelOfMoneyMetrics.remainingAverage,
-                    accessibilityValueID: "wom-chip-remaining-average-value",
-                    tint: state.wheelOfMoneyMetrics.remainingAverageExceedsMonthlyAverage ? ChipPalette.forColorScheme(colorScheme).negativeTop : .white
-                )
-            }
-
-            Picker("Filter", selection: $state.wheelOfMoneyFilter) {
-                ForEach(WheelOfMoneyFilter.allCases, id: \.self) { filter in
-                    Text(filter.rawValue.capitalized).tag(filter)
-                }
-            }
-            .pickerStyle(.segmented)
-        }
+    private var visibleGroups: [PeriodicWomMonthGroup] {
+        guard let current = state.womOccurrenceGroups.first?.month else { return [] }
+        return state.womOccurrenceGroups.filter { $0.month == current || !$0.occurrences.isEmpty }
     }
 
-    private func chip(
-        title: String,
-        value: Decimal,
-        accessibilityValueID: String,
-        tint: Color = .white
-    ) -> some View {
+    private func savingsChip(title: String, amount: Decimal, accessibilityIdentifier: String) -> some View {
+        let style = chipStyle(for: amount)
         let palette = ChipPalette.forColorScheme(colorScheme)
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .trailing, spacing: 4) {
             Text(title)
                 .font(.caption2)
                 .foregroundStyle(palette.titleColor)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(AppState.currency(value))
-                .font(.system(
-                    size: ChipTypography.monthValueFontSize(for: horizontalSizeClass),
-                    weight: .bold,
-                    design: .rounded
-                ))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            Text(AppState.currency(amount))
+                .font(.system(size: ChipTypography.monthValueFontSize(for: horizontalSizeClass), weight: .semibold))
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
-                .accessibilityIdentifier(accessibilityValueID)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier(accessibilityIdentifier)
         }
         .foregroundStyle(palette.valueColor)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+        .multilineTextAlignment(.trailing)
+        .frame(maxWidth: .infinity, minHeight: 54, alignment: .topTrailing)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: resolvedTintColors(from: tint, palette: palette),
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: .black.opacity(0.04), radius: 8, y: 2)
+                .fill(LinearGradient(colors: [style.top, style.bottom], startPoint: .topLeading, endPoint: .bottomTrailing))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(palette.plainBorder.opacity(0.53), lineWidth: 1)
+                .stroke(style.border.opacity(0.35), lineWidth: 1)
         )
     }
 
-    private func resolvedTintColors(from tint: Color, palette: ChipPalette) -> [Color] {
-        if tint == .white {
-            return [palette.plainTop, palette.plainBottom]
+    private func chipStyle(for value: Decimal) -> (top: Color, bottom: Color, border: Color) {
+        let palette = ChipPalette.forColorScheme(colorScheme)
+        if value < 0 { return (palette.negativeTop, palette.negativeBottom, .red) }
+        if value < 100 {
+            return (Color(red: 0.99, green: 0.95, blue: 0.82), Color(red: 0.96, green: 0.88, blue: 0.63), .orange)
         }
-        if tint == palette.negativeTop {
-            return [palette.negativeTop, palette.negativeBottom]
-        }
-        return [tint, tint]
+        return (Color(red: 0.87, green: 0.95, blue: 0.89), Color(red: 0.72, green: 0.88, blue: 0.76), .green)
     }
 
-    private func row(for item: WheelOfMoneyItem) -> some View {
+    private func monthTitle(_ month: YearMonth) -> String {
+        let date = Calendar(identifier: .gregorian).date(from: DateComponents(year: month.year, month: month.month, day: 1)) ?? .now
+        return date.formatted(Date.FormatStyle().month(.wide).year().locale(Locale(identifier: "en_GB")))
+    }
+
+    private func occurrenceRow(_ occurrence: PeriodicWomOccurrence) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 8) {
-                Text(item.title)
+                Image(systemName: WheelOfMoneyRowContent.directionSymbol(for: occurrence.type))
+                    .font(.caption.bold())
+                    .foregroundStyle(occurrence.type == .credit ? Color.green : Color.red)
+                    .accessibilityHidden(true)
+
+                Text(occurrence.label)
                     .frame(maxWidth: .infinity, alignment: .leading)
 
-                Text(AppState.currency(item.amount))
+                Text(AppState.currency(occurrence.amount))
                     .fontWeight(.semibold)
-
-                Button {
-                    state.setWheelOfMoneyPaid(item: item, paid: !item.isPaid)
-                } label: {
-                    Image(systemName: item.isPaid ? "checkmark.square.fill" : "square")
-                        .font(.title3)
-                        .foregroundStyle(item.isPaid ? Color.accentColor : .secondary)
-                }
-                .buttonStyle(.plain)
-                .frame(width: 44)
-
                 Image(systemName: "chevron.right")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.tertiary)
             }
-            .contentShape(Rectangle())
-            .onTapGesture {
-                activeEditorItem = item
-            }
-
-            if let notes = WheelOfMoneyRowContent.notesLine(for: item) {
-                Text(notes)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            Text("\(WheelOfMoneyRowContent.dayText(for: occurrence.dueDate)) · Every \(occurrence.repeatDays) days")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityIdentifier("wom-occurrence-date-\(occurrence.id)")
+            if !occurrence.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text(occurrence.notes).font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 6)
+    }
+}
+
+private struct PeriodicWomOccurrenceEditorView: View {
+    @EnvironmentObject private var state: AppState
+    @Environment(\.dismiss) private var dismiss
+    let occurrence: PeriodicWomOccurrence
+    @State private var label: String
+    @State private var matchingString: String
+    @State private var amountText: String
+    @State private var startDate: Date
+    @State private var repeatDaysText: String
+    @State private var notes: String
+    @State private var type: PlannedItemType
+    @State private var repeatMode: MonthRepeatMode = .periodic
+    @State private var isPlanned = true
+    @State private var scope: PeriodicOccurrenceEditScope = .thisOccurrence
+    @State private var isShowingDeleteConfirmation = false
+
+    init(occurrence: PeriodicWomOccurrence) {
+        self.occurrence = occurrence
+        _label = State(initialValue: occurrence.label)
+        _matchingString = State(initialValue: occurrence.matchingString ?? "")
+        _amountText = State(initialValue: NSDecimalNumber(decimal: occurrence.amount).stringValue)
+        _startDate = State(initialValue: Self.date(from: occurrence.dueDate))
+        _repeatDaysText = State(initialValue: String(occurrence.repeatDays))
+        _notes = State(initialValue: occurrence.notes)
+        _type = State(initialValue: occurrence.type)
+    }
+
+    var body: some View {
+        Form {
+            Section("Details") {
+                labeledTextField(title: "Title", text: $label, identifier: "wom-occurrence-title")
+                labeledTextField(title: "Match string", text: $matchingString, identifier: "wom-occurrence-matching-text")
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+
+                EntryEditorField(title: "Amount") {
+                    HStack(spacing: 2) {
+                        Text("£").foregroundStyle(.secondary)
+                        TextField("", text: $amountText)
+                            .keyboardType(.decimalPad)
+                            .frame(width: 96)
+                            .multilineTextAlignment(.leading)
+                            .accessibilityLabel("Amount")
+                            .accessibilityIdentifier("wom-occurrence-amount")
+                    }
+                }
+
+                EntryEditorTypePicker(selection: Binding(
+                        get: { type == .credit ? MonthEntryKind.credit : .debit },
+                        set: { type = $0 == .credit ? .credit : .fixedDebit }
+                    ))
+                    .accessibilityIdentifier("wom-occurrence-type")
+
+                EntryEditorRepeatPicker(selection: $repeatMode, existingMode: .periodic)
+
+                if repeatMode == .oneOff {
+                    Toggle("Planned", isOn: $isPlanned)
+                }
+
+            }
+
+            if repeatMode == .periodic {
+                Section("Repeat details") {
+                    EntryEditorField(title: "Apply to") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Picker("Apply to", selection: $scope) {
+                                ForEach(PeriodicOccurrenceEditScope.allCases) { option in
+                                    Text(option.rawValue).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("wom-occurrence-apply-to")
+                            Text(scope == .thisOccurrence
+                                 ? "Only this occurrence will change."
+                                 : "This date and later dates will use a new schedule revision.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    EntryEditorField(title: "Start date") {
+                        Group {
+                            if scope == .thisAndFuture {
+                                DatePicker("Start date", selection: $startDate,
+                                           in: Self.date(from: occurrence.scheduledDate)...,
+                                           displayedComponents: .date)
+                            } else {
+                                DatePicker("Start date", selection: $startDate, displayedComponents: .date)
+                            }
+                        }
+                        .labelsHidden()
+                        .datePickerStyle(.compact)
+                        .accessibilityIdentifier("wom-occurrence-start-date")
+                    }
+
+                    EntryEditorField(title: "Repeat period (days)") {
+                        VStack(alignment: .leading, spacing: 4) {
+                            TextField("", text: $repeatDaysText)
+                                .keyboardType(.numberPad)
+                                .disabled(scope != .thisAndFuture)
+                                .accessibilityIdentifier("wom-occurrence-repeat-days")
+                            Text(scope == .thisOccurrence
+                                 ? WheelOfMoneyRowContent.singleOccurrenceRepeatPeriodHelp
+                                 : "The start date must be on or after \(occurrence.scheduledDate.rawValue).")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section("Notes") {
+                TextEditor(text: $notes)
+                    .frame(minHeight: 160)
+                Button("Delete", systemImage: "trash", role: .destructive) {
+                    isShowingDeleteConfirmation = true
+                }
+                .accessibilityIdentifier("wom-occurrence-delete")
+                .confirmationDialog(
+                    scope == .thisOccurrence ? "Delete this occurrence?" : "Delete this and future repeats?",
+                    isPresented: $isShowingDeleteConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Delete", role: .destructive) {
+                        if state.deletePeriodicOccurrence(occurrence, scope: scope) {
+                            dismiss()
+                        }
+                    }
+                    Button("Cancel", role: .cancel) { }
+                } message: {
+                    Text(scope == .thisOccurrence
+                         ? "Only this occurrence will be deleted."
+                         : "This repeat and its future occurrences will be deleted. Earlier occurrences will remain.")
+                }
+            }
+        }
+        .navigationTitle(label.isEmpty ? "Repeat occurrence" : label)
+        .onChange(of: repeatMode) { _, mode in
+            if mode == .oneOff { scope = .thisOccurrence }
+        }
+        .onChange(of: scope) { _, newScope in
+            if newScope == .thisAndFuture,
+               Self.civilDate(from: startDate).map({ $0 < occurrence.scheduledDate }) == true {
+                startDate = Self.date(from: occurrence.scheduledDate)
+            }
+        }
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") { save() }
+                    .accessibilityIdentifier("wom-occurrence-editor-save")
+            }
+        }
+    }
+
+    private func save() {
+        guard let amount = Self.decimal(from: amountText),
+              let dueDate = Self.civilDate(from: startDate) else { return }
+        if repeatMode == .oneOff {
+            if state.savePeriodicOccurrenceAsOneOff(
+                occurrence,
+                label: label,
+                matchingString: matchingString,
+                amount: amount,
+                dueDate: occurrence.dueDate,
+                type: type,
+                notes: notes,
+                isPlanned: isPlanned
+            ) { dismiss() }
+            return
+        }
+        let interval = scope == .thisOccurrence ? occurrence.repeatDays : (Int(repeatDaysText) ?? 0)
+        guard state.savePeriodicOccurrence(
+            occurrence,
+            label: label,
+            matchingString: matchingString,
+            amount: amount,
+            dueDate: dueDate,
+            type: type,
+            notes: notes,
+            repeatDays: interval,
+            scope: scope
+        ) else { return }
+        dismiss()
+    }
+
+    private func labeledTextField(title: String, text: Binding<String>, identifier: String) -> some View {
+        EntryEditorField(title: title) {
+            TextField("", text: text)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(identifier)
+        }
+    }
+
+    private static func decimal(from text: String) -> Decimal? {
+        let cleaned = text
+            .replacingOccurrences(of: "£", with: "")
+            .replacingOccurrences(of: ",", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Decimal(string: cleaned, locale: Locale(identifier: "en_GB"))
+    }
+
+    private static func date(from civilDate: CivilDate) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar.date(from: DateComponents(
+            year: civilDate.year,
+            month: civilDate.month,
+            day: civilDate.day,
+            hour: 12
+        ))!
+    }
+
+    private static func civilDate(from date: Date) -> CivilDate? {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let components = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = components.year, let month = components.month, let day = components.day else { return nil }
+        return CivilDate(year: year, month: month, day: day)
     }
 }
