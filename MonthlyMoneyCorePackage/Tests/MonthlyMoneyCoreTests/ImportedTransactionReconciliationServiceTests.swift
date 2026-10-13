@@ -355,6 +355,35 @@ final class ImportedTransactionReconciliationServiceTests: XCTestCase {
         XCTAssertEqual(try repository.localBudgetSnapshot()?.transactions.count ?? 0, 0)
     }
 
+
+    func testReconciliationReflowsAlreadyLinkedImportsWhenPaydayChanges() throws {
+        for (date, payday, expected) in [
+            ("2026-09-28T12:00:00Z", 28, YearMonth(year: 2026, month: 10)),
+            ("2026-02-28T12:00:00Z", 31, YearMonth(year: 2026, month: 3)),
+            ("2026-12-31T12:00:00Z", 31, YearMonth(year: 2027, month: 1))
+        ] {
+            let repository = makeRepository()
+            let account = try makeAccount(in: repository, name: "Current")
+            let record = makeImportedRecord(
+                budgetID: account.budgetID, accountID: account.id, externalTransactionID: "salary",
+                postedAt: Self.date(date), amount: 1200, payee: "Salary", transactionType: "CREDIT"
+            )
+            try repository.createImportedTransactionRecord(record)
+            let service = ImportedTransactionReconciliationService(repository: repository)
+            _ = try service.reconcile(account: account)
+            let originalID = try XCTUnwrap(record.appliedPlannedItemID)
+            let budget = try XCTUnwrap(try repository.activeBudget())
+            budget.dailyBudgetPaydayDay = payday
+            try repository.saveBudget(budget)
+
+            _ = try service.reconcile(account: account)
+
+            XCTAssertEqual(try repository.plannedItems(for: expected).map(\.id), [originalID])
+            XCTAssertEqual(try repository.plannedItems(for: nil).count, 1)
+            XCTAssertEqual(record.appliedPlannedItemID, originalID)
+        }
+    }
+
     private func makeRepository() -> AccountRepository {
         AccountRepository(
             privateStore: InMemoryAccountDataStore(),

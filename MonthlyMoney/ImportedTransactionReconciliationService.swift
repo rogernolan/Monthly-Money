@@ -48,6 +48,39 @@ final class ImportedTransactionReconciliationService {
         return try reconcile(account: account, importedRecords: importedRecords)
     }
 
+    /// Rebuild stored month assignments from bank dates without reapplying imports.
+    func reflowBudgetMonths() throws {
+        let items = try repository.plannedItems(for: nil)
+        guard !items.isEmpty else { return }
+        let accountIDs = Set(items.map(\.accountID))
+        let records = try repository.importedTransactionRecords(accountIDs: accountIDs)
+        var linkedRecords: [UUID: ImportedTransactionRecord] = [:]
+        for record in records {
+            if let itemID = record.appliedPlannedItemID {
+                linkedRecords[itemID] = record
+            }
+        }
+
+        for item in items {
+            let record = linkedRecords[item.id]
+            let linkedDate = record?.accountID == item.accountID ? record?.postedAt : nil
+            // Planned entries can inherit a predecessor's import date during
+            // calendar copying. Their actual posting date needs a linked bank record.
+            let storedDate = item.source == .importedUnplanned ? item.importedPostedAt : nil
+            guard let postedAt = linkedDate ?? storedDate else { continue }
+            let month = try monthKey(for: postedAt).rawValue
+            guard item.monthKey != month else { continue }
+            let previousMonth = item.monthKey
+            item.monthKey = month
+            do {
+                try repository.savePlannedItem(item)
+            } catch {
+                item.monthKey = previousMonth
+                throw error
+            }
+        }
+    }
+
     private func reconcile(
         account: Account,
         importedRecords: [ImportedTransactionRecord]
@@ -107,6 +140,7 @@ final class ImportedTransactionReconciliationService {
             return false
         }
 
+        linkedItem.monthKey = try monthKey(for: record.postedAt).rawValue
         linkedItem.isPaid = true
         linkedItem.amount = abs(record.amount)
         linkedItem.dueDay = Self.dayComponent(for: record.postedAt, calendar: calendar)
