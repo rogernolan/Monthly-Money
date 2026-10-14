@@ -642,6 +642,7 @@ final class AppState: ObservableObject {
         try ensureHiddenDailyAccountIfNeeded()
         try cleanupHiddenDailyImportedDataIfNeeded()
         try loadPersistedBudgetState()
+        try ImportedTransactionReconciliationService(repository: repository).reflowBudgetMonths()
         accounts = try repository.accounts()
         monthItems = try repository.plannedItems(for: selectedMonth)
         wheelOfMoneyItems = try repository.wheelOfMoneyItems()
@@ -1102,8 +1103,7 @@ final class AppState: ObservableObject {
                 guard let budget = try repository.activeBudget() else { return }
                 budget.dailyBudgetPaydayDay = min(max(newValue, 1), 31)
                 try repository.saveBudget(budget)
-                publishDailyBudgetWatchSnapshot()
-                objectWillChange.send()
+                try refresh()
             } catch {
                 print("Update daily budget payday failed: \(error)")
             }

@@ -372,6 +372,162 @@ final class MonthlyMoneyTests: XCTestCase {
         XCTAssertEqual(try repository.activeBudget()?.dailyBudgetPaydayDay, 28)
     }
 
+
+    func testPaydayChangesReflowImportedEntriesAndReloadSelectedMonth() async throws {
+        for repository in try paydayReflowRepositories() {
+            let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 9, day: 15) })
+            await state.bootstrapIfNeeded()
+            state.dailyBudgetPaydayDay = 29
+            let account = try XCTUnwrap(try repository.accounts().first)
+            let september = YearMonth(year: 2026, month: 9)
+            let october = YearMonth(year: 2026, month: 10)
+            for day in [27, 28, 29] {
+                let record = ImportedTransactionRecord(
+                    accountID: account.id, sourceKind: "nationwide_ofx", sourceAccountIdentifier: "account",
+                    externalTransactionID: "salary-\(day)", postedAt: Self.date(year: 2026, month: 9, day: day),
+                    amount: Decimal(day), payee: "Salary \(day)", transactionType: "CREDIT", rawSourcePayload: "{}"
+                )
+                try repository.createImportedTransactionRecord(record)
+            }
+            _ = try ImportedTransactionReconciliationService(repository: repository).reconcile(account: account)
+            let originalLinkedIDs = Set(try repository.importedTransactionRecords(accountIDs: [account.id]).compactMap(\.appliedPlannedItemID))
+            state.selectedMonth = september
+            try state.refresh()
+            XCTAssertEqual(Set(state.monthItems.map(\.dueDay)), [27, 28])
+
+            state.dailyBudgetPaydayDay = 28
+            XCTAssertEqual(state.monthItems.map(\.dueDay), [27])
+            XCTAssertEqual(Set(try repository.plannedItems(for: october).map(\.dueDay)), [28, 29])
+
+            state.dailyBudgetPaydayDay = 27
+            XCTAssertTrue(state.monthItems.isEmpty)
+            XCTAssertEqual(try repository.plannedItems(for: october).count, 3)
+
+            state.dailyBudgetPaydayDay = 29
+            XCTAssertEqual(Set(state.monthItems.map(\.dueDay)), [27, 28])
+            state.dailyBudgetPaydayDay = 1
+            XCTAssertEqual(state.monthItems.count, 3)
+            XCTAssertTrue(try repository.plannedItems(for: october).isEmpty)
+            XCTAssertEqual(state.monthItems.reduce(Decimal.zero) { $0 + $1.amount }, 84)
+            XCTAssertTrue(state.monthItems.allSatisfy(\.isPaid))
+            XCTAssertEqual(Set(state.monthItems.map(\.id)), originalLinkedIDs)
+            let savedRecords = try repository.importedTransactionRecords(accountIDs: [account.id])
+            XCTAssertEqual(savedRecords.count, 3)
+            XCTAssertEqual(Set(savedRecords.compactMap(\.appliedPlannedItemID)), originalLinkedIDs)
+        }
+    }
+
+    func testRefreshReflowsStaleImportsWithoutChangingEntriesOrCalendarCopies() throws {
+        for repository in try paydayReflowRepositories() {
+            let account = try repository.createAccount(name: "Current", role: .regular, type: .current, ownerParticipantID: "owner")
+            let budget = try XCTUnwrap(try repository.activeBudget())
+            budget.dailyBudgetPaydayDay = 28
+            try repository.saveBudget(budget)
+            let september = YearMonth(year: 2026, month: 9)
+            let october = YearMonth(year: 2026, month: 10)
+            let postedAt = Self.date(year: 2026, month: 9, day: 28)
+            let matched = PlannedItem(
+                accountID: account.id, monthKey: september, type: .credit, source: .copiedFromPreviousMonth,
+                label: "Edited salary", amount: 1234, matchingString: "salary", dueDay: 27,
+                repeatMode: .calendar, isPaid: false, notes: "Keep this edit"
+            )
+            try repository.createPlannedItem(matched)
+            let record = ImportedTransactionRecord(
+                accountID: account.id, sourceKind: "nationwide_ofx", sourceAccountIdentifier: "account",
+                externalTransactionID: "salary", postedAt: postedAt, amount: 1200, payee: "Salary",
+                transactionType: "CREDIT", rawSourcePayload: "{}", appliedPlannedItemID: matched.id
+            )
+            try repository.createImportedTransactionRecord(record)
+            let calendarCopy = PlannedItem(
+                accountID: account.id, monthKey: october, type: .credit, source: .copiedFromPreviousMonth,
+                label: "Next salary", amount: 1234, dueDay: 28, repeatMode: .calendar,
+                importedPostedAt: postedAt, isPaid: false
+            )
+            let unlinkedImport = PlannedItem(
+                accountID: account.id, monthKey: september, type: .fixedDebit, source: .importedUnplanned,
+                label: "Legacy import", amount: 12, dueDay: 28, importedPostedAt: postedAt, isPaid: true
+            )
+            let manual = PlannedItem(accountID: account.id, monthKey: september, type: .credit, label: "Plan", amount: 10, dueDay: 29)
+            for item in [calendarCopy, unlinkedImport, manual] { try repository.createPlannedItem(item) }
+
+            let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 9, day: 15) })
+            state.selectedMonth = september
+            try state.refresh()
+            try state.refresh()
+
+            XCTAssertEqual(state.monthItems.map(\.id), [manual.id])
+            XCTAssertEqual(Set(try repository.plannedItems(for: october).map(\.id)), [matched.id, calendarCopy.id, unlinkedImport.id])
+            let saved = try XCTUnwrap(try repository.plannedItem(id: matched.id))
+            XCTAssertEqual(saved.amount, 1234)
+            XCTAssertEqual(saved.dueDay, 27)
+            XCTAssertEqual(saved.label, "Edited salary")
+            XCTAssertEqual(saved.notes, "Keep this edit")
+            XCTAssertFalse(saved.isPaid)
+            XCTAssertEqual(saved.repeatMode, .calendar)
+            XCTAssertNil(saved.importedPostedAt)
+            XCTAssertEqual(try repository.importedTransactionRecords(accountIDs: [account.id]).first?.appliedPlannedItemID, matched.id)
+            XCTAssertEqual(try repository.plannedItems(for: nil).count, 4)
+            state.dailyBudgetPaydayDay = 1
+            XCTAssertEqual(Set(state.monthItems.map(\.id)), [matched.id, unlinkedImport.id, manual.id])
+            XCTAssertEqual(try repository.plannedItems(for: october).map(\.id), [calendarCopy.id])
+        }
+    }
+
+
+    func testRepopulatingKeepsManualCalendarTargetInItsBudgetMonth() async throws {
+        for repository in try paydayReflowRepositories() {
+            let state = AppState(repository: repository, nowProvider: { Self.date(year: 2026, month: 10, day: 15) })
+            await state.bootstrapIfNeeded()
+            let account = try XCTUnwrap(try repository.accounts().first)
+            let september = YearMonth(year: 2026, month: 9)
+            let october = YearMonth(year: 2026, month: 10)
+            let postedAt = Self.date(year: 2026, month: 9, day: 28)
+            let source = PlannedItem(
+                accountID: account.id, monthKey: september, type: .credit,
+                label: "Salary", amount: 1200, matchingString: "salary", dueDay: 28,
+                repeatMode: .calendar, importedPostedAt: postedAt, isPaid: true
+            )
+            let target = PlannedItem(
+                accountID: account.id, monthKey: october, type: .credit,
+                label: "Salary", amount: 1000, matchingString: "salary", dueDay: 28, repeatMode: .calendar
+            )
+            try repository.createPlannedItem(source)
+            try repository.createPlannedItem(target)
+            let record = ImportedTransactionRecord(
+                accountID: account.id, sourceKind: "nationwide_ofx", sourceAccountIdentifier: "account",
+                externalTransactionID: "salary", postedAt: postedAt, amount: 1200, payee: "Salary",
+                transactionType: "CREDIT", rawSourcePayload: "{}", appliedPlannedItemID: source.id
+            )
+            try repository.createImportedTransactionRecord(record)
+            state.selectedMonth = september
+            try state.refresh()
+            XCTAssertTrue(state.canCopyRepeatingEntriesToNextMonth)
+
+            state.copyRepeatingEntriesToNextMonth()
+
+            XCTAssertEqual(try repository.plannedItems(for: october).map(\.id), [target.id])
+            XCTAssertEqual(state.monthItems.map(\.id), [source.id])
+            let savedTarget = try XCTUnwrap(try repository.plannedItem(id: target.id))
+            XCTAssertEqual(savedTarget.amount, 1200)
+            XCTAssertFalse(savedTarget.isPaid)
+            XCTAssertEqual(savedTarget.source, .manual)
+        }
+    }
+
+    private func paydayReflowRepositories() throws -> [AccountRepository] {
+        let container = try ModelContainer(for: Self.makeSchema(), configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+        Self.retainHostedTestObject(container)
+        let swiftData = AccountRepository(
+            privateStore: SwiftDataAccountDataStore(modelContainer: container),
+            sharedStore: InMemoryAccountDataStore()
+        )
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let coreData = try MonthlyMoneyPersistenceFactory.makeRepository(plan: Self.localCoreDataPlan(baseDirectory: directory), schema: Self.makeSchema())
+        Self.retainHostedTestObject(coreData)
+        return [try makeRepository(), swiftData, coreData]
+    }
+
     func testPreviousMonthEditingSettingPersistsOnActiveBudget() async throws {
         let repository = try makeRepository()
         let state = AppState(repository: repository)
