@@ -2022,6 +2022,124 @@ final class MonthlyMoneyTests: XCTestCase {
         )
     }
 
+    func testMonthItemProjectedBalancesApplyOnlyUnpaidTransactions() {
+        let accountID = UUID()
+        let month = YearMonth(year: 2026, month: 3)
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Salary", amount: 100),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Bill", amount: 80),
+            PlannedItem(accountID: accountID, monthKey: month, type: .transfer, label: "Transfer", amount: 30),
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Paid credit", amount: 500, isPaid: true),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Paid debit", amount: 400, isPaid: true),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Placeholder", amount: 0)
+        ]
+
+        let balances = MonthCalculationEngine.projectedBalances(startingBalance: 20, items: items)
+
+        XCTAssertEqual(items.compactMap { balances[$0.id] }, [120, 40, 10, 10, 10, 10])
+        XCTAssertEqual(balances[items.last!.id], MonthCalculationEngine.projectedBalance(openingBalance: 20, from: items))
+        XCTAssertTrue(MonthCalculationEngine.projectedBalances(startingBalance: 20, items: []).isEmpty)
+    }
+
+    func testMonthItemProjectedBalancesPreserveExactZeroAndNegativeAmounts() {
+        let accountID = UUID()
+        let month = YearMonth(year: 2026, month: 3)
+        let items = [
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "First", amount: Decimal(string: "0.10")!),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Zero", amount: Decimal(string: "0.20")!),
+            PlannedItem(accountID: accountID, monthKey: month, type: .fixedDebit, label: "Negative", amount: Decimal(string: "0.01")!),
+            PlannedItem(accountID: accountID, monthKey: month, type: .credit, label: "Recovery", amount: 1)
+        ]
+
+        let balances = MonthCalculationEngine.projectedBalances(startingBalance: Decimal(string: "0.30")!, items: items)
+
+        XCTAssertEqual(items.compactMap { balances[$0.id] }, [Decimal(string: "0.20")!, 0, Decimal(string: "-0.01")!, Decimal(string: "0.99")!])
+    }
+
+    func testMonthItemProjectedBalancesUsePaydayOrderAcrossFilters() async throws {
+        let state = AppState(repository: try makeRepository(), nowProvider: { Self.date(year: 2026, month: 3, day: 12) })
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 25
+        state.selectedMonth = YearMonth(year: 2026, month: 3)
+        state.primaryBankBalance = 100
+        let accountID = try XCTUnwrap(state.accounts.first?.id)
+        let bill = PlannedItem(accountID: accountID, monthKey: state.selectedMonth, type: .fixedDebit, label: "Bill", amount: 150, dueDay: 1)
+        let salary = PlannedItem(accountID: accountID, monthKey: state.selectedMonth, type: .credit, label: "Salary", amount: 200, dueDay: 25)
+        let floating = PlannedItem(accountID: accountID, monthKey: state.selectedMonth, type: .transfer, label: "Floating", amount: 25)
+        state.monthItems = [floating, bill, salary]
+
+        let balances = state.monthItemProjectedBalances
+
+        XCTAssertEqual(balances[salary.id], 300)
+        XCTAssertEqual(balances[bill.id], 150)
+        XCTAssertEqual(balances[floating.id], 125)
+        for filter in MonthItemFilter.allCases {
+            for item in MonthItemFilterRules.filteredItems(state.monthItems, for: filter) {
+                XCTAssertEqual(state.monthItemProjectedBalances[item.id], balances[item.id])
+            }
+        }
+        XCTAssertEqual(balances[floating.id], state.projectedBalanceFromCurrentBalance)
+    }
+
+    func testMonthItemProjectedBalancesRecalculateAfterEntryAndBalanceChanges() async throws {
+        let state = AppState(repository: try makeRepository(), nowProvider: { Self.date(year: 2026, month: 3, day: 12) })
+        await state.bootstrapIfNeeded()
+        state.selectedMonth = YearMonth(year: 2026, month: 3)
+        state.primaryBankBalance = 100
+        let bill = try XCTUnwrap(state.createEntry(type: .fixedDebit, label: "Bill", amount: 40, dueDay: 20))
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 60)
+
+        let credit = try XCTUnwrap(state.createEntry(type: .credit, label: "Credit", amount: 20, dueDay: 19))
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 80)
+        state.primaryBankBalance = 150
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 130)
+        state.update(item: bill, label: "Updated bill", matchingString: nil, amount: 50, dueDay: 20,
+                     dueText: nil, type: .fixedDebit, copiesToNextMonthAutomatically: true, notes: "")
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 120)
+        state.setPaid(item: bill, paid: true)
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 170)
+        state.delete(item: credit)
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 150)
+        XCTAssertNil(state.monthItemProjectedBalances[credit.id])
+    }
+
+    func testMonthItemProjectedBalancesUseFutureOpeningBalance() async throws {
+        let state = AppState(repository: try makeRepository(), nowProvider: { Self.date(year: 2026, month: 3, day: 12) })
+        await state.bootstrapIfNeeded()
+        state.selectedMonth = YearMonth(year: 2026, month: 3)
+        state.primaryBankBalance = 100
+        _ = try XCTUnwrap(state.createEntry(type: .fixedDebit, label: "Current bill", amount: 20, dueDay: 20, copiesToNextMonthAutomatically: false))
+        state.selectedMonth = YearMonth(year: 2026, month: 4)
+        try state.refresh()
+        let bill = try XCTUnwrap(state.createEntry(type: .fixedDebit, label: "Future bill", amount: 30, dueDay: 20))
+
+        XCTAssertEqual(state.openingBalance, 80)
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 50)
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], state.projectedBalanceFromCurrentBalance)
+    }
+
+    func testMonthItemProjectedBalancesRecalculateAfterOFXImport() async throws {
+        let state = AppState(repository: try makeRepository(), nowProvider: { Self.date(year: 2026, month: 3, day: 12) })
+        await state.bootstrapIfNeeded()
+        state.dailyBudgetPaydayDay = 1
+        state.selectedMonth = YearMonth(year: 2026, month: 3)
+        state.primaryBankBalance = 100
+        let bill = try XCTUnwrap(state.createEntry(type: .fixedDebit, label: "Pending bill", amount: 40, dueDay: 20))
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], 60)
+
+        _ = try state.importOFXData(
+            Self.makeOFXData(postedDate: "20260302000000", transactionAmount: "-12.34", ledgerBalance: "87.66"),
+            fileName: "statement.ofx",
+            into: try XCTUnwrap(state.accounts.first?.id)
+        )
+
+        let imported = try XCTUnwrap(state.monthItems.first { $0.source == .importedUnplanned })
+        XCTAssertTrue(imported.isPaid)
+        XCTAssertEqual(state.monthItemProjectedBalances[imported.id], Decimal(string: "87.66"))
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], Decimal(string: "47.66"))
+        XCTAssertEqual(state.monthItemProjectedBalances[bill.id], state.projectedBalanceFromCurrentBalance)
+    }
+
     func testDefaultPersistencePlanUsesCloudBackedPrivateStoreAndSharedStore() {
         let plan = MonthlyMoneyPersistencePlan.defaultPlan()
 

@@ -1223,6 +1223,13 @@ final class AppState: ObservableObject {
         return base - monthTotals.netOutgoingsDue
     }
 
+    var monthItemProjectedBalances: [UUID: Decimal] {
+        MonthCalculationEngine.projectedBalances(
+            startingBalance: isSelectedMonthInFuture ? openingBalance : primaryBankBalance,
+            items: MonthItemSortRules.sortedItems(monthItems, paydayDay: dailyBudgetPaydayDay, month: selectedMonth)
+        )
+    }
+
     var isSelectedMonthInFuture: Bool {
         selectedMonth > currentYearMonth
     }
