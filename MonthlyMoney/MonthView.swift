@@ -540,7 +540,8 @@ struct MonthView: View {
     }
 
     private func itemSection(title: String, items: [PlannedItem]) -> some View {
-        Section(title) {
+        let projectedBalances = state.monthItemProjectedBalances
+        return Section(title) {
             if items.isEmpty {
                 Text("No items")
                     .foregroundStyle(.secondary)
@@ -563,6 +564,22 @@ struct MonthView: View {
                             VStack(alignment: .trailing, spacing: 2) {
                                 Text(AppState.currency(item.amount))
                                     .fontWeight(.semibold)
+
+                                if let balance = projectedBalances[item.id] {
+                                    Text(AppState.currency(balance))
+                                        .font(.caption)
+                                        .monospacedDigit()
+                                        .foregroundStyle(balance <= 0 ? Color.white : Color.secondary)
+                                        .background {
+                                            RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                                .fill(balance <= 0 ? Color(red: 0.75, green: 0.05, blue: 0.05) : Color.clear)
+                                                .padding(.horizontal, -4)
+                                                .padding(.vertical, -1)
+                                        }
+                                        .accessibilityLabel("Projected balance")
+                                        .accessibilityValue(AppState.currency(balance))
+                                        .accessibilityIdentifier("month-row-projected-balance-\(item.id)")
+                                }
 
                                 if let footnote = MonthItemRowContent.amountFootnote(for: item) {
                                     Text(footnote)

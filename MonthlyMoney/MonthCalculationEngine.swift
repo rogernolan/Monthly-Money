@@ -62,6 +62,18 @@ enum MonthCalculationEngine {
         openingBalance - netOutgoingsDue(from: items)
     }
 
+    static func projectedBalances(startingBalance: Decimal, items: [PlannedItem]) -> [UUID: Decimal] {
+        var balance = startingBalance
+        var balances: [UUID: Decimal] = [:]
+        for item in items {
+            if !item.isPaid {
+                balance += item.type == .credit ? item.amount : -item.amount
+            }
+            balances[item.id] = balance
+        }
+        return balances
+    }
+
     static func suggestedLiving(
         projectedNetCredit: Decimal,
         livingBuffer: Decimal,
